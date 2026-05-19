@@ -45,13 +45,12 @@ export default async function HomePage() {
             )}
           </div>
 
-          <div className="flex items-center gap-5 md:gap-8">
+          <div className="flex items-center gap-6 md:gap-10">
             <Image
-              src="/comffee-logo-white.png"
+              src="/comffee-logo-white-trimmed.png"
               alt="Comffee"
-              width={0}
-              height={0}
-              sizes="20vw"
+              width={506}
+              height={642}
               style={{ height: "calc(clamp(2.75rem, 8vw, 6rem) * 1.8)", width: "auto" }}
               className="flex-shrink-0"
             />
