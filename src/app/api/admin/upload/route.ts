@@ -44,12 +44,12 @@ export async function POST(request: Request) {
 
   try {
     const admin = getSupabaseAdmin();
-    let buffer = Buffer.from(await file.arrayBuffer());
+    let buffer: Buffer = Buffer.from(await file.arrayBuffer());
     let contentType = file.type;
 
     if (isHeic) {
       const sharp = (await import("sharp")).default;
-      buffer = await sharp(buffer).jpeg({ quality: 92 }).toBuffer();
+      buffer = await sharp(buffer).jpeg({ quality: 92 }).toBuffer() as Buffer;
       contentType = "image/jpeg";
     }
 
