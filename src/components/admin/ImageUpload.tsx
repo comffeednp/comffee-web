@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Upload, X } from "lucide-react";
+import { ImageIcon, Loader2, Upload, X } from "lucide-react";
 
 interface Props {
   name: string;
@@ -106,8 +106,14 @@ export default function ImageUpload({
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
             {previews.map((p) => (
               <div key={p.id} className="relative group">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.objectUrl} alt="" className="w-full aspect-square object-cover rounded-md border border-line-bright" />
+                {p.finalUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.finalUrl} alt="" className="w-full aspect-square object-cover rounded-md border border-line-bright" />
+                ) : (
+                  <div className="w-full aspect-square flex items-center justify-center rounded-md border border-line-bright bg-bg-card">
+                    <ImageIcon className="h-8 w-8 text-mocha" />
+                  </div>
+                )}
                 {/* Spinner overlay while still uploading */}
                 {p.finalUrl === null && (
                   <div className="absolute inset-0 flex items-center justify-center rounded-md bg-bg/60 backdrop-blur-sm">
