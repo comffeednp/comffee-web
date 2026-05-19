@@ -1,4 +1,4 @@
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import type {
   Branch,
   BranchAmenity,
@@ -8,13 +8,20 @@ import type {
   BranchType,
 } from "@/lib/supabase/types";
 
+// Cookie-free anon client — safe for SSG pages reading public data
+function getSupabaseAnon() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createClient(url, anon, { auth: { persistSession: false } });
+}
+
 /**
  * Loads all published branches, optionally filtered by type. Used by the
  * home page, /branches index, and /playcation landing.
  */
 export async function getPublishedBranches(type?: BranchType): Promise<Branch[]> {
   try {
-    const supabase = await getSupabaseServer();
+    const supabase = getSupabaseAnon();
     let query = supabase
       .from("branches")
       .select("*")
@@ -32,7 +39,7 @@ export async function getPublishedBranches(type?: BranchType): Promise<Branch[]>
 /** Loads a fully hydrated branch (amenities, photos, rates) by slug. */
 export async function getBranchBySlug(slug: string): Promise<BranchFull | null> {
   try {
-    const supabase = await getSupabaseServer();
+    const supabase = getSupabaseAnon();
     const { data: branch } = await supabase
       .from("branches")
       .select("*")
@@ -73,7 +80,7 @@ export async function getBranchBySlug(slug: string): Promise<BranchFull | null> 
 /** All branch slugs — for `generateStaticParams` on the [slug] route. */
 export async function getAllBranchSlugs(): Promise<string[]> {
   try {
-    const supabase = await getSupabaseServer();
+    const supabase = getSupabaseAnon();
     const { data } = await supabase
       .from("branches")
       .select("slug")
