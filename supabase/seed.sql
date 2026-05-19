@@ -5,13 +5,13 @@
 
 -- Site settings ---------------------------------------------------------------
 insert into public.site_settings (key, value) values
-  ('company_name',  to_jsonb('Comffe Drink & Play'::text)),
+  ('company_name',  to_jsonb('Comffee Drink & Play'::text)),
   ('tagline',       to_jsonb('Coffee. Computers. Console. The internet cafe & Playcation network built for gamers, students, and night owls.'::text)),
   ('contact_phone', to_jsonb('+63 917 000 0000'::text)),
   ('contact_email', to_jsonb('hello@comffe.ph'::text)),
   ('address',       to_jsonb('Quezon City, Metro Manila, Philippines'::text)),
   ('hero_copy',     to_jsonb('Fast PCs. Hotter coffee. Console nights you''ll actually remember.'::text)),
-  ('footer_blurb',  to_jsonb('Comffe runs internet cafes, gaming dens, and Playcation stays across the Philippines. Power on with us.'::text)),
+  ('footer_blurb',  to_jsonb('Comffee runs internet cafes, gaming dens, and Playcation stays across the Philippines. Power on with us.'::text)),
   ('social_facebook',  to_jsonb('https://facebook.com/comffe'::text)),
   ('social_instagram', to_jsonb('https://instagram.com/comffe'::text)),
   ('social_tiktok',    to_jsonb('https://tiktok.com/@comffe'::text))
