@@ -28,13 +28,15 @@ export async function POST(request: Request) {
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "file_too_large" }, { status: 400 });
   }
-  if (!ALLOWED_MIMES.includes(file.type)) {
+
+  // Check extension first — Chrome on Windows sends HEIC with type="" (unknown MIME)
+  const isHeic = file.name.toLowerCase().endsWith(".heic") ||
+    file.name.toLowerCase().endsWith(".heif") ||
+    HEIC_MIMES.has(file.type);
+
+  if (!isHeic && !ALLOWED_MIMES.includes(file.type)) {
     return NextResponse.json({ error: "bad_mime" }, { status: 400 });
   }
-
-  const isHeic = HEIC_MIMES.has(file.type) ||
-    file.name.toLowerCase().endsWith(".heic") ||
-    file.name.toLowerCase().endsWith(".heif");
 
   const safeFolder = folder.replace(/[^a-z0-9-_/]/gi, "");
   const baseName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -48,8 +50,8 @@ export async function POST(request: Request) {
     let contentType = file.type;
 
     if (isHeic) {
-      const sharp = (await import("sharp")).default;
-      buffer = await sharp(buffer).jpeg({ quality: 92 }).toBuffer() as Buffer;
+      const heicConvert = (await import("heic-convert")).default;
+      buffer = Buffer.from(await heicConvert({ buffer, format: "JPEG", quality: 0.92 }));
       contentType = "image/jpeg";
     }
 
