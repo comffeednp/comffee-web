@@ -50,7 +50,7 @@ Upgraded hardware, premium peripherals, and a monitor arm for better ergonomics.
 - **Keyboard:** Royal Kludge RK R98 Pro mechanical (with knob)
 - **Chair:** Musso Retro Series 249B
 $desc$,
-    v_pub_base || '/lagro/img_2886.jpg',
+    v_pub_base || '/lagro/4e063a7b-7142-445a-b870-d90bb4edff48_l0_001-4_11_2025--9_10_10-am.jpg',
     'Open daily — check branch for hours',
     true,
     1
@@ -96,10 +96,6 @@ $desc$,
      v_pub_base || '/lagro/img_2313.jpg', NULL, 4),
     (v_branch_id, 'lagro/img_6188.jpg',
      v_pub_base || '/lagro/img_6188.jpg', NULL, 5),
-    (v_branch_id, 'lagro/76ca5ec9-91d4-4f44-be33-87c051b742e8.jpg',
-     v_pub_base || '/lagro/76ca5ec9-91d4-4f44-be33-87c051b742e8.jpg', NULL, 6),
-    (v_branch_id, 'lagro/8603290e-5996-4724-be95-2c2b35749ed0.jpg',
-     v_pub_base || '/lagro/8603290e-5996-4724-be95-2c2b35749ed0.jpg', NULL, 7),
     (v_branch_id, 'lagro/4e063a7b-7142-445a-b870-d90bb4edff48_l0_001-4_11_2025--9_10_10-am.jpg',
      v_pub_base || '/lagro/4e063a7b-7142-445a-b870-d90bb4edff48_l0_001-4_11_2025--9_10_10-am.jpg', NULL, 8),
     (v_branch_id, 'lagro/9ae41509-b639-4a92-95fc-a903a1ffcc3e_l0_001-4_11_2025--9_24_49-am.jpg',
