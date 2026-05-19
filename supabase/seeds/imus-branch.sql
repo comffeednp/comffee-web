@@ -124,7 +124,7 @@ Comffee maintains a full inventory record of unit contents before and after ever
     max_guests, max_pax, extra_pax_fee_php
   ) VALUES
     (v_branch_id, 'playcation', 'Overnight',
-     'Full resthouse · up to 8 guests · ₱500/head for additional guests (max 20 total)',
+     'Full resthouse · up to 8 guests · ₱500/head for additional guests (max 20 total) · Free street parking',
      8000, 'night', 1,
      '14:00', '11:00',
      20, 8, 500),

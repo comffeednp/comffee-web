@@ -18,36 +18,50 @@ BEGIN
     'playcation-anonas',
     'Comffee Playcation · Anonas',
     'playcation',
-    'Private gaming unit in Infina Towers — PC setup, PS5, and overnight staycation for your squad.',
-    'Infina Towers, Aurora Boulevard, Project 4',
+    'High-rise bootcamp setup on the 21st floor — gaming rigs, PS5, and room for 6, near MRT Anonas.',
+    '21F North Tower, City of Ortigas Skyline, Aurora Blvd',
     'Quezon City',
     14.6272, 121.0567,
     $desc$## The Space
 
-A private playcation unit inside Infina Towers, Aurora Boulevard — fully set up for gaming marathons, binge-watching sessions, and comfortable overnight stays. Overnight bookings only; no daycation or single-session rates.
+A private playcation unit on the 21st floor of the North Tower, City of Ortigas Skyline — with a skyline view and direct access to MRT Anonas. Built as a bootcamp-ready overnight setup for squads of up to 6. Overnight bookings only; no daycation rates.
+
+## Sleeping Arrangements
+
+- 1 sofa bed
+- 1 single bed
+- 1 single floor mattress
+- 1 full double floor mattress
+
+Comfortable for up to 6 guests. Clean beds, linens, and towels provided (base set for 3 pax).
 
 ## Gaming Setup
 
 - Ryzen 5 5600 · RX 580 8GB · 27" 180Hz monitors
 - Premium peripherals at every station
-- PlayStation 5 with Netflix, YouTube, and streaming apps on TV
+- PlayStation 5 with TV — Netflix, YouTube, and streaming apps available
 
 ## Staycation Inclusions
 
 - Private unit, exclusive use for your group
-- Clean beds and linens provided
-- Towels included (good for 3 pax)
+- Towels and linens provided
 - Fully air-conditioned
 - High-speed Wi-Fi
+- Shower with water heater
+- Filtered drinking water
 - Microwave, electric kettle, and rice cooker
 - Refrigerator
-- Drinking water available
+
+## Building Facilities
+
+- Convenience store at Basement 1 (open until 10:00 PM)
+- Basement parking available at ₱300/night
 $desc$,
     v_pub_base || '/anonas/402b7ce3-eefb-451a-a463-db709c5493eb.jpg',
     'Check-in 2:00 PM · Check-out 11:00 AM · Early in / Late out ₱300/hr',
     '09812214592',
     'comffeeinternetcafe@gmail.com',
-    10,
+    6,
     true,
     6
   )
@@ -79,25 +93,29 @@ $desc$,
     max_guests, max_pax, extra_pax_fee_php
   ) VALUES (
     v_branch_id, 'playcation', 'Overnight',
-    'Private unit · up to 3 guests · ₱600/head for additional guests',
+    'Private unit · up to 3 guests · ₱600/head for guests 4–6 · Basement parking ₱300/night',
     3990, 'night', 1,
     '14:00', '11:00',
-    10, 3, 600
+    6, 3, 600
   );
 
   -- ── AMENITIES ─────────────────────────────────────────────────────────────
   DELETE FROM public.branch_amenities WHERE branch_id = v_branch_id;
 
   INSERT INTO public.branch_amenities (branch_id, icon, label, description, sort_order) VALUES
-    (v_branch_id, 'monitor',  'Gaming PCs',            'Ryzen 5 5600 · RX 580 8GB · 27" 180Hz monitors',      0),
-    (v_branch_id, 'keyboard', 'Premium Peripherals',   'Full gaming peripheral setup at every station',         1),
-    (v_branch_id, 'gamepad',  'PlayStation 5',         'PS5 with TV · Netflix, YouTube, streaming apps',        2),
-    (v_branch_id, 'bed',      'Beds & Linens',         'Clean beds and linens provided',                        3),
-    (v_branch_id, 'bath',     'Towels Included',       'Provided for up to 3 guests',                           4),
-    (v_branch_id, 'aircon',   'Air-Conditioned',       'Fully air-conditioned unit',                            5),
-    (v_branch_id, 'wifi',     'High-Speed Wi-Fi',      NULL,                                                    6),
-    (v_branch_id, 'utensils', 'Kitchen Area',          'Microwave · electric kettle · rice cooker · ref',       7),
-    (v_branch_id, 'home',     'Private Unit',          'Exclusive use · overnight only · no daycation',         8);
+    (v_branch_id, 'monitor',  'Gaming PCs',            'Ryzen 5 5600 · RX 580 8GB · 27" 180Hz monitors',            0),
+    (v_branch_id, 'keyboard', 'Premium Peripherals',   'Full gaming peripheral setup at every station',               1),
+    (v_branch_id, 'gamepad',  'PlayStation 5',         'PS5 with TV · Netflix, YouTube, streaming apps',              2),
+    (v_branch_id, 'bed',      'Sleeping for 6',        '1 sofa bed · 1 single bed · 2 floor mattresses',             3),
+    (v_branch_id, 'bath',     'Towels & Linens',       'Provided · shower with water heater',                         4),
+    (v_branch_id, 'aircon',   'Air-Conditioned',       'Fully air-conditioned unit',                                  5),
+    (v_branch_id, 'wifi',     'High-Speed Wi-Fi',      NULL,                                                          6),
+    (v_branch_id, 'utensils', 'Kitchen Area',          'Microwave · electric kettle · rice cooker · refrigerator',    7),
+    (v_branch_id, 'droplets', 'Filtered Water',        'Filtered drinking water available',                           8),
+    (v_branch_id, 'store',    'Convenience Store',     'Basement 1 · open until 10:00 PM',                           9),
+    (v_branch_id, 'parking',  'Basement Parking',      '₱300/night · subject to availability',                       10),
+    (v_branch_id, 'building', '21F Skyline View',      'North Tower · City of Ortigas Skyline · near MRT Anonas',    11),
+    (v_branch_id, 'home',     'Private Unit',          'Exclusive use · overnight only · no daycation',              12);
 
   -- ── PHOTOS ────────────────────────────────────────────────────────────────
   DELETE FROM public.branch_photos WHERE branch_id = v_branch_id;
