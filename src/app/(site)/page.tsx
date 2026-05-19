@@ -308,8 +308,7 @@ function FeaturedNetwork({
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-[1500ms] ease-out group-hover:scale-105"
         />
       )}
-      {/* Light overlay so text remains legible — reads on white + black text */}
-      <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/50 to-white/10" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
       <div className="relative h-full flex flex-col justify-between p-8 md:p-10">
         <div className="flex items-start justify-between">
