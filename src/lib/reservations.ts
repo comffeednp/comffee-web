@@ -1,0 +1,231 @@
+/**
+ * Reservation helpers — soft-hold creation, availability checks, confirmation.
+ *
+ * The single `reservations` table holds website bookings, Airbnb-imported blocks,
+ * and manual blocks. The Postgres GIST exclusion constraint
+ * (see migration 0001) makes overlapping confirmed/held rows mathematically
+ * impossible — so the only thing we have to handle ourselves is graceful
+ * failure when the constraint fires.
+ */
+
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import type { ReservationStatus } from "@/lib/supabase/types";
+import { nightsBetween } from "@/lib/dates";
+
+const HOLD_WINDOW_MINUTES = 20;
+
+export interface AvailabilityCheck {
+  available: boolean;
+  conflicts: Array<{ check_in: string; check_out: string; source: string }>;
+}
+
+/** Check if a date range is free for the given branch (excludes a soft-hold ID if provided). */
+export async function checkAvailability(
+  branchId: string,
+  checkIn: string,
+  checkOut: string,
+  excludeReservationId?: string,
+): Promise<AvailabilityCheck> {
+  if (nightsBetween(checkIn, checkOut) < 1) {
+    return { available: false, conflicts: [] };
+  }
+  const supabase = getSupabaseAdmin();
+  let q = supabase
+    .from("reservations")
+    .select("id, check_in, check_out, source, status, hold_expires_at")
+    .eq("branch_id", branchId)
+    .in("status", ["pending_hold", "confirmed"])
+    // overlap test: existing.check_in < new.check_out AND existing.check_out > new.check_in
+    .lt("check_in", checkOut)
+    .gt("check_out", checkIn);
+  if (excludeReservationId) q = q.neq("id", excludeReservationId);
+
+  const { data, error } = await q;
+  if (error) {
+    throw new Error(`availability check failed: ${error.message}`);
+  }
+
+  const now = new Date().getTime();
+  const realConflicts = (data ?? []).filter((r) => {
+    // Treat expired holds as gone
+    if (r.status === "pending_hold" && r.hold_expires_at) {
+      const exp = new Date(r.hold_expires_at).getTime();
+      if (exp < now) return false;
+    }
+    return true;
+  });
+
+  return {
+    available: realConflicts.length === 0,
+    conflicts: realConflicts.map((c) => ({
+      check_in: c.check_in,
+      check_out: c.check_out,
+      source: c.source,
+    })),
+  };
+}
+
+export interface CreateHoldInput {
+  branchId: string;
+  checkIn: string;
+  checkOut: string;
+  guestName: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  numGuests?: number;
+  totalPhp: number;
+  securityDepositPhp?: number;
+  paymentType?: "full" | "partial";
+  balancePhp?: number;
+  balanceDueDate?: string;
+  sumsubApplicantId?: string;
+}
+
+export interface CreatedHold {
+  id: string;
+  hold_expires_at: string;
+}
+
+/**
+ * Create a soft-hold reservation. Returns the new row's id + expiry.
+ * The Postgres GIST exclusion constraint will reject the insert if there's
+ * a conflict — we surface that as a clear error for the caller.
+ */
+export async function createHold(input: CreateHoldInput): Promise<CreatedHold> {
+  const supabase = getSupabaseAdmin();
+  const expiresAt = new Date(
+    Date.now() + HOLD_WINDOW_MINUTES * 60 * 1000,
+  ).toISOString();
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .insert({
+      branch_id: input.branchId,
+      source: "website",
+      status: "pending_hold",
+      check_in: input.checkIn,
+      check_out: input.checkOut,
+      guest_name: input.guestName,
+      guest_email: input.guestEmail ?? null,
+      guest_phone: input.guestPhone ?? null,
+      num_guests: input.numGuests ?? 1,
+      total_php: input.totalPhp,
+      security_deposit_php: input.securityDepositPhp ?? 0,
+      payment_type: input.paymentType ?? "full",
+      balance_php: input.balancePhp ?? 0,
+      balance_due_date: input.balanceDueDate ?? null,
+      sumsub_applicant_id: input.sumsubApplicantId ?? null,
+      hold_expires_at: expiresAt,
+    })
+    .select("id, hold_expires_at")
+    .single();
+
+  if (error) {
+    if (
+      error.message.includes("reservations_no_overlap") ||
+      error.code === "23P01"
+    ) {
+      throw new Error("CONFLICT: those dates were just taken — try different dates");
+    }
+    throw new Error(`hold create failed: ${error.message}`);
+  }
+  return data as CreatedHold;
+}
+
+/** Mark a reservation as confirmed (called from PayMongo webhook). */
+export async function confirmReservation(reservationId: string) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("reservations")
+    .update({
+      status: "confirmed" as ReservationStatus,
+      hold_expires_at: null,
+    })
+    .eq("id", reservationId);
+  if (error) throw new Error(`confirm failed: ${error.message}`);
+}
+
+/** Cancel a reservation (admin action or webhook on payment failure). */
+export async function cancelReservation(reservationId: string, reason?: string) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("reservations")
+    .update({
+      status: "cancelled" as ReservationStatus,
+      hold_expires_at: null,
+      notes: reason ?? null,
+    })
+    .eq("id", reservationId);
+  if (error) throw new Error(`cancel failed: ${error.message}`);
+}
+
+/** Set the PayMongo intent ID on a reservation (after we've created the link). */
+export async function attachPaymentIntent(
+  reservationId: string,
+  paymongoIntentId: string,
+) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("reservations")
+    .update({ paymongo_intent_id: paymongoIntentId })
+    .eq("id", reservationId);
+  if (error) throw new Error(`attach intent failed: ${error.message}`);
+}
+
+/** Look up a reservation by id (admin context — uses service role). */
+export async function getReservationById(id: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*, branch:branches(id, slug, name, type, hero_image_url)")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Look up a reservation by PayMongo intent ID (used in webhook). */
+export async function getReservationByIntent(intentId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("paymongo_intent_id", intentId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Compute the total for a Playcation booking based on branch rates, nights, and guest count. */
+export async function computePlaycationTotal(
+  branchId: string,
+  nights: number,
+  numGuests = 1,
+): Promise<number> {
+  if (nights < 1) return 0;
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("branch_rates")
+    .select("price_php, unit, sort_order, category, max_pax, extra_pax_fee_php")
+    .eq("branch_id", branchId)
+    .order("sort_order", { ascending: true });
+
+  const rates = (data ?? []) as Array<{
+    price_php: number;
+    unit: string;
+    sort_order: number;
+    category: string;
+    max_pax: number | null;
+    extra_pax_fee_php: number | null;
+  }>;
+  const nightly = rates.find((r) => r.unit === "night") ?? rates[0];
+  if (!nightly) return 0;
+
+  const base = Number(nightly.price_php) * nights;
+  const maxPax = nightly.max_pax ?? null;
+  const extraFee = nightly.extra_pax_fee_php ?? 0;
+  const extraPax = maxPax != null ? Math.max(0, numGuests - maxPax) : 0;
+  const extraCharge = extraPax * extraFee * nights;
+
+  return base + extraCharge;
+}

@@ -1,0 +1,500 @@
+@import "tailwindcss";
+
+/* Leaflet z-index containment — keep map tiles below the sticky admin header */
+.leaflet-container { z-index: 0 !important; }
+.leaflet-pane,
+.leaflet-tile-pane,
+.leaflet-shadow-pane,
+.leaflet-overlay-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane { z-index: 1 !important; }
+.leaflet-control-container { z-index: 2 !important; }
+
+/* ============================================================
+   COMFFE DRINK & PLAY — BRAND SYSTEM
+   Theme: "Computer Cafe Gothic" — terminal aesthetic, RGB glow,
+   monospace dominance, monitor framing, espresso warmth.
+   ============================================================ */
+
+:root {
+  /* Espresso base */
+  --color-bg: #0a0807;          /* Near-black espresso */
+  --color-bg-soft: #14100d;     /* Slightly elevated */
+  --color-bg-card: #1c1714;     /* Card surface */
+  --color-bg-elev: #2a2320;     /* Elevated surface */
+  --color-line: #2e2622;        /* Hairline borders */
+  --color-line-bright: #3d3430; /* Visible borders */
+
+  /* Coffee neutrals */
+  --color-cream: #f4ecdf;       /* Off-white text */
+  --color-cream-dim: #c9bfae;   /* Dim text */
+  --color-mocha: #8a7a68;       /* Muted body */
+  --color-bean: #4a3a30;        /* Dark accent */
+
+  /* Gaming neon — CRT phosphor + RGB */
+  --color-phosphor: #7CFFB2;    /* Terminal green */
+  --color-phosphor-dim: #2da66a;
+  --color-rgb-r: #ff3864;       /* Hot magenta-red */
+  --color-rgb-g: #7CFFB2;       /* Phosphor green */
+  --color-rgb-b: #58e1ff;       /* Cyan blue */
+  --color-amber: #ffb547;       /* Caramel/coffee crema */
+
+  /* Brand accent (default CTA) */
+  --color-accent: #ffb547;
+  --color-accent-hot: #ff8a3d;
+
+  /* Tailwind v4 mappings */
+  --background: var(--color-bg);
+  --foreground: var(--color-cream);
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-cream);
+  --color-bg-soft: var(--color-bg-soft);
+  --color-bg-card: var(--color-bg-card);
+  --color-bg-elev: var(--color-bg-elev);
+  --color-line: var(--color-line);
+  --color-line-bright: var(--color-line-bright);
+  --color-cream: var(--color-cream);
+  --color-cream-dim: var(--color-cream-dim);
+  --color-mocha: var(--color-mocha);
+  --color-bean: var(--color-bean);
+  --color-phosphor: var(--color-phosphor);
+  --color-phosphor-dim: var(--color-phosphor-dim);
+  --color-rgb-r: var(--color-rgb-r);
+  --color-rgb-g: var(--color-rgb-g);
+  --color-rgb-b: var(--color-rgb-b);
+  --color-amber: var(--color-amber);
+  --color-accent: var(--color-accent);
+  --color-accent-hot: var(--color-accent-hot);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-cream);
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-cream);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--color-phosphor);
+  color: var(--color-bg);
+}
+
+/* Visible focus ring on every interactive element — keyboard a11y */
+:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .crt-flicker {
+    animation: none;
+  }
+}
+
+/* Skip-to-content link for screen readers / keyboard users */
+.skip-link {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0.75rem 1rem;
+  background: var(--color-amber);
+  color: var(--color-bg);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  z-index: 100;
+  transform: translateY(-100%);
+  transition: transform 150ms;
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* ============================================================
+   CRT SCANLINES — subtle screen-like overlay
+   ============================================================ */
+.crt-scanlines {
+  position: relative;
+}
+.crt-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+.crt-flicker {
+  animation: crt-flicker 6s infinite;
+}
+@keyframes crt-flicker {
+  0%, 96%, 100% { opacity: 1; }
+  97% { opacity: 0.92; }
+  98% { opacity: 0.97; }
+}
+
+/* ============================================================
+   GLOW UTILITIES — RGB-style accents
+   ============================================================ */
+.glow-amber {
+  box-shadow:
+    0 0 0 1px rgba(255, 181, 71, 0.5),
+    0 0 32px rgba(255, 181, 71, 0.35),
+    0 0 80px rgba(255, 138, 61, 0.18);
+}
+.glow-phosphor {
+  box-shadow:
+    0 0 0 1px rgba(124, 255, 178, 0.5),
+    0 0 24px rgba(124, 255, 178, 0.4),
+    0 0 64px rgba(124, 255, 178, 0.2);
+}
+.glow-rgb {
+  box-shadow:
+    0 0 0 1px rgba(124, 255, 178, 0.4),
+    -8px 0 24px rgba(255, 56, 100, 0.25),
+    8px 0 24px rgba(88, 225, 255, 0.25);
+}
+.text-glow-amber {
+  text-shadow: 0 0 8px rgba(255, 181, 71, 0.6), 0 0 24px rgba(255, 138, 61, 0.4);
+}
+.text-glow-phosphor {
+  text-shadow: 0 0 8px rgba(124, 255, 178, 0.7), 0 0 24px rgba(124, 255, 178, 0.4);
+}
+
+/* ============================================================
+   GRID BACKGROUND — circuit board / motherboard texture
+   ============================================================ */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(124, 255, 178, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 255, 178, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.bg-grid-dense {
+  background-image:
+    linear-gradient(rgba(255, 181, 71, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 181, 71, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.bg-noise {
+  background-image: radial-gradient(rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* ============================================================
+   MONITOR FRAME — wrap photo galleries to look like a screen
+   ============================================================ */
+.monitor-frame {
+  position: relative;
+  padding: 1.25rem;
+  background: linear-gradient(180deg, #1c1714 0%, #14100d 100%);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 30px 80px -20px rgba(0, 0, 0, 0.8);
+}
+.monitor-frame::before {
+  content: "";
+  position: absolute;
+  top: 0.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5rem;
+  height: 0.25rem;
+  background: var(--color-bean);
+  border-radius: 999px;
+}
+.monitor-screen {
+  position: relative;
+  background: var(--color-bg);
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-line);
+  overflow: hidden;
+}
+
+/* ============================================================
+   KEYBOARD KEY BUTTON — chunky tactile CTA
+   ============================================================ */
+.key-cap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1rem 1.75rem;
+  background: linear-gradient(180deg, #2a2320 0%, #1c1714 100%);
+  border: 1px solid var(--color-line-bright);
+  border-bottom-width: 4px;
+  border-radius: 0.625rem;
+  font-family: var(--font-mono), monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  color: var(--color-cream);
+  transition: all 120ms ease;
+  cursor: pointer;
+}
+.key-cap:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+  box-shadow:
+    0 0 0 1px rgba(255, 181, 71, 0.4),
+    0 0 24px rgba(255, 181, 71, 0.25);
+}
+.key-cap:active {
+  transform: translateY(2px);
+  border-bottom-width: 1px;
+}
+.key-cap-primary {
+  background: linear-gradient(180deg, #ffb547 0%, #ff8a3d 100%);
+  color: #1a0f06;
+  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 181, 71, 0.5),
+    0 0 28px rgba(255, 181, 71, 0.4),
+    0 0 80px rgba(255, 138, 61, 0.18);
+}
+.key-cap-primary:hover {
+  color: #1a0f06;
+  background: linear-gradient(180deg, #ffc56b 0%, #ffa050 100%);
+}
+.key-cap-phosphor {
+  background: linear-gradient(180deg, #14100d 0%, #0a0807 100%);
+  border-color: rgba(124, 255, 178, 0.5);
+  color: var(--color-phosphor);
+}
+.key-cap-phosphor:hover {
+  color: var(--color-phosphor);
+  border-color: var(--color-phosphor);
+}
+
+/* ============================================================
+   TERMINAL TYPE — labels, status chips
+   ============================================================ */
+.terminal-label {
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--color-phosphor);
+}
+.terminal-label::before {
+  content: "// ";
+  opacity: 0.6;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border-radius: 999px;
+  background: rgba(124, 255, 178, 0.08);
+  color: var(--color-phosphor);
+  border: 1px solid rgba(124, 255, 178, 0.3);
+}
+.status-chip::before {
+  content: "";
+  display: block;
+  width: 0.45rem;
+  height: 0.45rem;
+  background: var(--color-phosphor);
+  border-radius: 999px;
+  box-shadow: 0 0 6px var(--color-phosphor);
+  animation: pulse 2s infinite;
+}
+.status-chip-amber {
+  background: rgba(255, 181, 71, 0.08);
+  color: var(--color-amber);
+  border-color: rgba(255, 181, 71, 0.3);
+}
+.status-chip-amber::before {
+  background: var(--color-amber);
+  box-shadow: 0 0 6px var(--color-amber);
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============================================================
+   BLINKING CURSOR
+   ============================================================ */
+.cursor-blink::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 0.15em;
+  color: var(--color-phosphor);
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ============================================================
+   GLITCH HOVER (for headings)
+   ============================================================ */
+.hover-glitch {
+  position: relative;
+  display: inline-block;
+}
+.hover-glitch:hover {
+  animation: glitch 350ms;
+}
+@keyframes glitch {
+  0%   { transform: translate(0); text-shadow: none; }
+  20%  { transform: translate(-1px, 1px); text-shadow: 1px 0 var(--color-rgb-r), -1px 0 var(--color-rgb-b); }
+  40%  { transform: translate(1px, -1px); text-shadow: -1px 0 var(--color-rgb-r), 1px 0 var(--color-rgb-b); }
+  60%  { transform: translate(-1px, -1px); text-shadow: 1px 0 var(--color-rgb-g); }
+  80%  { transform: translate(1px, 1px); }
+  100% { transform: translate(0); text-shadow: none; }
+}
+
+/* ============================================================
+   ASCII / circuit decorations
+   ============================================================ */
+.dotted-corner {
+  position: relative;
+}
+.dotted-corner::before,
+.dotted-corner::after {
+  content: "+";
+  position: absolute;
+  font-family: var(--font-mono), monospace;
+  color: var(--color-amber);
+  font-size: 1rem;
+  opacity: 0.6;
+}
+.dotted-corner::before { top: -0.5rem; left: -0.5rem; }
+.dotted-corner::after { bottom: -0.5rem; right: -0.5rem; }
+
+/* ============================================================
+   SECTION HELPERS
+   ============================================================ */
+.container-edge { padding-left: 1.5rem; padding-right: 1.5rem; }
+@media (min-width: 768px) {
+  .container-edge { padding-left: 3rem; padding-right: 3rem; }
+}
+@media (min-width: 1280px) {
+  .container-edge { padding-left: 5rem; padding-right: 5rem; }
+}
+
+/* horizontal scroll snap for photo strips */
+.snap-strip {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.snap-strip > * {
+  scroll-snap-align: center;
+}
+.snap-strip::-webkit-scrollbar { display: none; }
+.snap-strip { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; }
+
+/* fade-up reveal initial state for SSR */
+.reveal-init {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+/* ============================================================
+   PRINT STYLES — clean receipts for admin order/booking pages
+   ============================================================ */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #1a0f06 !important;
+  }
+  .no-print, header, footer, nav,
+  [aria-label="Open menu"], [aria-label="Open chat"] {
+    display: none !important;
+  }
+  .crt-scanlines::after, .bg-grid, .bg-grid-dense, .bg-noise {
+    background: none !important;
+  }
+  .glow-amber, .glow-phosphor, .glow-rgb {
+    box-shadow: none !important;
+  }
+  .text-glow-amber, .text-glow-phosphor {
+    text-shadow: none !important;
+  }
+  .monitor-frame, .monitor-screen {
+    border: 1px solid #888 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 1rem !important;
+  }
+  .key-cap, button, a.key-cap {
+    display: none !important;
+  }
+  section, main, .container-edge {
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+  * {
+    color: #1a0f06 !important;
+    background-color: transparent !important;
+  }
+  .text-amber, .text-glow-amber {
+    color: #c4621c !important;
+  }
+  .text-mocha, .text-cream-dim {
+    color: #555 !important;
+  }
+  .print-break { page-break-before: always; }
+  .print-keep { page-break-inside: avoid; }
+}

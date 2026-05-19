@@ -1,0 +1,27 @@
+name: Daily cleanup
+
+# Prunes old webhook events, audit logs, cancelled reservations, and resolved
+# chat conversations so the database doesn't grow unbounded. Runs once a day
+# at 04:00 UTC (12:00 PHT).
+#
+# Required GitHub repo secrets:
+#   SITE_URL     - e.g. https://comffe.vercel.app
+#   CRON_SECRET  - same value as the CRON_SECRET in your Vercel env vars
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune old data
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/cleanup-old-events" \
+            | tee cleanup.json
+          echo
+          cat cleanup.json | grep -q '"ok":true' || (echo "cleanup failed" && exit 1)

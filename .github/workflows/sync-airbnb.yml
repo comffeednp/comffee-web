@@ -1,0 +1,35 @@
+name: Sync Airbnb calendars
+
+# Pulls Airbnb iCal feeds every 15 minutes and sweeps expired soft-holds.
+# Free Vercel cron only allows daily, so we use GitHub Actions instead.
+#
+# Required GitHub repo secrets:
+#   SITE_URL     - e.g. https://comffe.vercel.app
+#   CRON_SECRET  - same value as the CRON_SECRET in your Vercel env vars
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Airbnb iCal feeds
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/sync-airbnb" \
+            | tee response.json
+          echo
+          cat response.json | grep -q '"ok":true' || (echo "sync failed" && exit 1)
+
+      - name: Release expired holds
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/release-expired-holds" \
+            | tee release.json
+          echo
+          cat release.json | grep -q '"ok":true' || (echo "release failed" && exit 1)

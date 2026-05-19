@@ -1,0 +1,297 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { requireAdmin } from "@/lib/auth/require-admin";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import {
+  updateBranchAction,
+  deleteBranchAction,
+  addAmenityAction,
+  updateAmenityAction,
+  deleteAmenityAction,
+  addRateAction,
+  updateRateAction,
+  deleteRateAction,
+  addPhotosAction,
+  deletePhotoAction,
+} from "../../_actions/branches";
+import BranchCoreFields from "@/components/admin/BranchCoreFields";
+import ImageUpload from "@/components/admin/ImageUpload";
+import PCTierEditor from "@/components/admin/PCTierEditor";
+import AmenitiesList from "@/components/admin/AmenitiesList";
+import AddAmenityForm from "@/components/admin/AddAmenityForm";
+import RatesList from "@/components/admin/RatesList";
+import { ArrowLeft, Plus, Save, Trash2, ExternalLink } from "lucide-react";
+import type {
+  Branch,
+  BranchAmenity,
+  BranchPhoto,
+  BranchRate,
+} from "@/lib/supabase/types";
+
+export const dynamic = "force-dynamic";
+
+interface Props {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ ok?: string; error?: string }>;
+}
+
+export default async function EditBranchPage({ params, searchParams }: Props) {
+  await requireAdmin();
+  const { id } = await params;
+  const { ok, error } = await searchParams;
+
+  const supabase = await getSupabaseServer();
+  const [branchRes, amenitiesRes, ratesRes, photosRes, stationsRes] = await Promise.all([
+    supabase.from("branches").select("*").eq("id", id).maybeSingle(),
+    supabase.from("branch_amenities").select("*").eq("branch_id", id).order("sort_order"),
+    supabase.from("branch_rates").select("*").eq("branch_id", id).order("sort_order"),
+    supabase.from("branch_photos").select("*").eq("branch_id", id).order("sort_order"),
+    supabase
+      .from("pc_stations")
+      .select("id, station_name, is_occupied, pc_tier, last_synced_at")
+      .eq("branch_id", id)
+      .order("station_name"),
+  ]);
+  const branch = branchRes.data as Branch | null;
+  if (!branch) notFound();
+
+  const amenities = (amenitiesRes.data ?? []) as BranchAmenity[];
+  const rates = (ratesRes.data ?? []) as BranchRate[];
+  const photos = (photosRes.data ?? []) as BranchPhoto[];
+  const pcStations = (stationsRes.data ?? []) as Array<{
+    id: string;
+    station_name: string;
+    is_occupied: boolean;
+    pc_tier: string | null;
+    last_synced_at: string;
+  }>;
+
+  return (
+    <section className="container-edge py-12 max-w-5xl">
+      <Link href="/admin/branches" className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber">
+        <ArrowLeft className="h-3 w-3" />
+        All branches
+      </Link>
+
+      <div className="mt-6 flex items-start justify-between gap-6">
+        <div>
+          <p className="terminal-label">/branches/{branch.slug}</p>
+          <h1 className="mt-2 font-display text-4xl font-bold text-cream tracking-tight">
+            {branch.name}
+          </h1>
+        </div>
+        <a
+          href={`/branches/${branch.slug}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-xs uppercase tracking-widest text-amber hover:underline inline-flex items-center gap-1.5 mt-3"
+        >
+          View on site <ExternalLink className="h-3 w-3" />
+        </a>
+      </div>
+
+      {ok && (
+        <p className="mt-6 font-mono text-xs text-phosphor">// saved at {new Date().toLocaleTimeString()}</p>
+      )}
+      {error && (
+        <p className="mt-6 font-mono text-xs text-red-400">// {error}</p>
+      )}
+
+      {/* CORE FIELDS */}
+      <form id="branch-core-form" action={updateBranchAction} className="mt-10 space-y-8">
+        <BranchCoreFields branch={branch} />
+      </form>
+
+      {/* AMENITIES */}
+      <Section id="amenities" title="Amenities" subtitle={`${amenities.length} listed`}>
+        <AmenitiesList
+          amenities={amenities}
+          branchId={branch.id}
+          updateAction={updateAmenityAction}
+          deleteAction={deleteAmenityAction}
+        />
+
+        <AddAmenityForm
+          branchId={branch.id}
+          nextOrder={amenities.length}
+          addAction={addAmenityAction}
+        />
+      </Section>
+
+      {/* RATES */}
+      <Section id="rates" title="Rates" subtitle={`${rates.length} listed`}>
+        <RatesList
+          rates={rates}
+          branchId={branch.id}
+          isPlaycation={branch.type === "playcation"}
+          updateAction={updateRateAction}
+          deleteAction={deleteRateAction}
+        />
+        <form action={addRateAction} className="mt-5 space-y-3">
+          <input type="hidden" name="branch_id" value={branch.id} />
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_2fr_auto]">
+            <input name="category" placeholder="category" className="admin-input" defaultValue={branch.type === "playcation" ? "playcation" : "internet"} />
+            <input name="label" placeholder="Label *" required className="admin-input" />
+            <input name="price_php" type="number" step="0.01" placeholder="price" required className="admin-input" />
+            <input name="unit" placeholder="unit" defaultValue={branch.type === "playcation" ? "night" : "hour"} className="admin-input" />
+            <input name="description" placeholder="Description" className="admin-input" />
+            <button type="submit" className="key-cap !py-2 !px-3">
+              <Plus className="h-4 w-4" />
+              Add
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
+              <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" className="admin-input" />
+            </div>
+            <div>
+              <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
+              <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" className="admin-input" />
+            </div>
+          </div>
+          {branch.type === "playcation" && (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// max pax included in base rate</p>
+                <input name="max_pax" type="number" min="1" placeholder="e.g. 2 (blank = no limit)" className="admin-input" />
+              </div>
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// max guests allowed (hard cap)</p>
+                <input name="max_guests" type="number" min="1" placeholder="e.g. 4 (blank = no limit)" className="admin-input" />
+              </div>
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// extra fee per additional pax (₱)</p>
+                <input name="extra_pax_fee_php" type="number" step="0.01" min="0" placeholder="e.g. 300 per extra guest" className="admin-input" />
+              </div>
+            </div>
+          )}
+        </form>
+      </Section>
+
+      {/* PHOTOS */}
+      <Section id="photos" title="Photos" subtitle={`${photos.length} in gallery`}>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {photos.map((p) => (
+            <div key={p.id} className="relative group border border-line rounded-md overflow-hidden bg-bg">
+              {p.public_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.public_url} alt={p.caption ?? ""} className="w-full aspect-[4/3] object-cover" />
+              )}
+              <div className="p-3">
+                <p className="text-xs text-cream truncate">{p.caption ?? "—"}</p>
+                <p className="font-mono text-[0.65rem] text-mocha">order: {p.sort_order}</p>
+              </div>
+              <form action={deletePhotoAction} className="absolute top-2 right-2">
+                <input type="hidden" name="id" value={p.id} />
+                <input type="hidden" name="branch_id" value={branch.id} />
+                <button className="bg-bg/80 backdrop-blur p-1.5 rounded text-red-400 hover:text-red-300" aria-label="Delete">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </form>
+            </div>
+          ))}
+          {photos.length === 0 && <p className="font-mono text-xs text-mocha col-span-full">// no photos yet</p>}
+        </div>
+        <form action={addPhotosAction} className="mt-5 space-y-3 p-5 border border-line rounded-lg bg-bg">
+          <input type="hidden" name="branch_id" value={branch.id} />
+          <input type="hidden" name="sort_order_start" value={photos.length} />
+          <ImageUpload
+            name="public_url"
+            folder={`branches/${branch.slug}`}
+            multiple
+          />
+          <button type="submit" className="key-cap !py-2 !px-3">
+            <Plus className="h-4 w-4" />
+            Add photos
+          </button>
+        </form>
+      </Section>
+
+      {/* PC STATIONS — only show for cafe branches */}
+      {branch.type === "cafe" && (
+        <Section
+          id="pc-stations"
+          title="PC stations"
+          subtitle={`${pcStations.length} synced from PanCafe`}
+        >
+          <p className="mb-4 text-sm text-cream-dim">
+            Tag each station as Regular or VIP so the reservation form shows the right rates. Run the <code className="text-amber">pancafe-sync</code> script on the cafe server if no stations appear here.
+          </p>
+          <PCTierEditor branchId={branch.id} stations={pcStations} />
+        </Section>
+      )}
+
+      {/* SAVE */}
+      <div className="mt-16 pt-10 border-t border-line flex items-center gap-3">
+        <button type="submit" form="branch-core-form" className="key-cap key-cap-primary">
+          <Save className="h-4 w-4" />
+          Save changes
+        </button>
+      </div>
+
+      {/* DANGER ZONE */}
+      <div className="mt-8 p-6 border border-red-900/50 rounded-xl bg-red-950/10">
+        <p className="font-mono text-[0.7rem] uppercase tracking-widest text-red-400">// danger zone</p>
+        <p className="mt-3 text-sm text-cream-dim">
+          Delete this branch and everything attached (amenities, photos, rates). This is permanent.
+        </p>
+        <form action={deleteBranchAction} className="mt-4">
+          <input type="hidden" name="id" value={branch.id} />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete branch
+          </button>
+        </form>
+      </div>
+
+      <style>{`
+        .admin-input {
+          width: 100%;
+          background: var(--color-bg);
+          border: 1px solid var(--color-line-bright);
+          border-radius: 0.5rem;
+          padding: 0.625rem 0.875rem;
+          color: var(--color-cream);
+          font-family: var(--font-sans);
+          font-size: 0.9rem;
+        }
+        .admin-input:focus {
+          outline: none;
+          border-color: var(--color-amber);
+          box-shadow: 0 0 0 1px rgba(255,181,71,0.4);
+        }
+      `}</style>
+    </section>
+  );
+}
+
+function Section({
+  id,
+  title,
+  subtitle,
+  children,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="mt-16 pt-10 border-t border-line">
+      <div className="flex items-end justify-between gap-4 mb-6">
+        <div>
+          <p className="terminal-label">{title.toLowerCase()}</p>
+          <h2 className="mt-1 font-display text-2xl font-bold text-cream">{title}</h2>
+        </div>
+        {subtitle && (
+          <span className="font-mono text-[0.7rem] text-mocha uppercase tracking-widest">{subtitle}</span>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}

@@ -1,0 +1,375 @@
+/**
+ * Tiny Resend client + branded HTML email templates.
+ *
+ * - No SDK dep — direct REST call to Resend API
+ * - No-op fallback when RESEND_API_KEY is unset (logs warning)
+ * - All templates inline-style for email client compatibility
+ * - Light theme (most email clients render dark backgrounds badly)
+ *
+ * Sender format: "Comffee Drink and Play <hello@yourdomain.com>"
+ * Set RESEND_FROM env var to override the default.
+ */
+
+import { formatPHP } from "@/lib/utils";
+import { formatRange } from "@/lib/dates";
+
+const API_URL = "https://api.resend.com/emails";
+const DEFAULT_FROM = "Comffee Drink and Play <onboarding@resend.dev>";
+
+export function isEmailConfigured(): boolean {
+  return !!process.env.RESEND_API_KEY;
+}
+
+interface SendEmailInput {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+}
+
+async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!isEmailConfigured()) {
+    console.warn(
+      `[email] RESEND_API_KEY not set — would have sent: ${input.subject} → ${input.to}`,
+    );
+    return { ok: false, error: "not_configured" };
+  }
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM ?? DEFAULT_FROM,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+        reply_to: input.replyTo,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[email] Resend ${res.status}: ${body}`);
+      return { ok: false, error: `resend_${res.status}` };
+    }
+    const data = (await res.json()) as { id?: string };
+    return { ok: true, id: data.id };
+  } catch (e) {
+    console.error("[email] send failed", e instanceof Error ? e.message : e);
+    return { ok: false, error: "network_error" };
+  }
+}
+
+/* ---------------- shared template chrome ---------------- */
+
+interface ChromeOptions {
+  preheader: string;
+  bodyHtml: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+function chrome({ preheader, bodyHtml, ctaLabel, ctaHref }: ChromeOptions): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comffee Drink and Play</title>
+</head>
+<body style="margin:0;padding:0;background:#f4ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1a0f06;">
+  <span style="display:none;font-size:0;line-height:0;color:transparent;mso-hide:all;">${escapeHtml(preheader)}</span>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4ecdf;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;border:1px solid #e8dcc4;box-shadow:0 8px 24px rgba(26,15,6,0.06);overflow:hidden;">
+          <tr>
+            <td style="padding:24px 32px 0;">
+              <div style="font-family:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8a7a68;">
+                COMFFEE<span style="color:#ff8a3d;">●</span> internet cafes and gaming staycations
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px 32px;">
+              ${bodyHtml}
+              ${
+                ctaLabel && ctaHref
+                  ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;">
+                    <tr><td style="background:#ff8a3d;border-radius:10px;">
+                      <a href="${escapeAttr(ctaHref)}" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+                        ${escapeHtml(ctaLabel)}
+                      </a>
+                    </td></tr>
+                  </table>`
+                  : ""
+              }
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px;background:#faf6ee;border-top:1px solid #e8dcc4;font-family:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#8a7a68;">
+              // Comffee Drink and Play · this is a transactional email
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function escapeAttr(s: string): string {
+  return escapeHtml(s);
+}
+
+function receiptRow(label: string, value: string, highlight = false): string {
+  return `<tr>
+    <td style="padding:8px 0;color:#8a7a68;font-size:13px;${highlight ? "font-weight:600;" : ""}">${escapeHtml(label)}</td>
+    <td style="padding:8px 0;color:${highlight ? "#ff8a3d" : "#1a0f06"};font-size:${highlight ? "18px" : "14px"};font-weight:${highlight ? "700" : "500"};text-align:right;">${escapeHtml(value)}</td>
+  </tr>`;
+}
+
+/* ---------------- booking confirmation ---------------- */
+
+interface BookingEmailInput {
+  to: string;
+  guestName: string;
+  branchName: string;
+  branchSlug: string;
+  checkIn: string;
+  checkOut: string;
+  numGuests: number;
+  totalPhp: number;
+  reservationId: string;
+}
+
+export async function sendBookingConfirmation(input: BookingEmailInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Booking confirmed.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — your stay at <strong>${escapeHtml(input.branchName)}</strong> is locked in. We&rsquo;ll have the controllers charged and the espresso ready.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", input.branchName)}
+      ${receiptRow("Dates", formatRange(input.checkIn, input.checkOut))}
+      ${receiptRow("Guests", String(input.numGuests))}
+      ${receiptRow("Total", formatPHP(input.totalPhp), true)}
+    </table>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // reservation_id
+    </p>
+    <p style="margin:0;color:#1a0f06;font-size:13px;font-family:'JetBrains Mono',monospace;word-break:break-all;">
+      ${escapeHtml(input.reservationId)}
+    </p>
+
+    <p style="margin:24px 0 0;color:#5a4a3c;font-size:14px;line-height:1.6;">
+      Save this email or use the lookup link below to retrieve your reservation any time. Reply directly if you need to change anything.
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Your Comffee Playcation booking · ${input.branchName}`,
+    html: chrome({
+      preheader: `Booking confirmed — ${formatRange(input.checkIn, input.checkOut)} at ${input.branchName}`,
+      bodyHtml: body,
+      ctaLabel: "View reservation",
+      ctaHref: lookupUrl,
+    }),
+    text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. Total: ${formatPHP(input.totalPhp)}. Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
+  });
+}
+
+/* ---------------- arrival reminders ---------------- */
+
+interface ArrivalReminderInput {
+  to: string;
+  guestName: string;
+  branchName: string;
+  branchAddress: string | null;
+  checkIn: string;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  reservationId: string;
+}
+
+export async function sendDayOfArrivalReminder(input: ArrivalReminderInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+  const timeInfo = input.checkInTime
+    ? `<strong>Check-in:</strong> ${input.checkInTime}${input.checkOutTime ? ` &nbsp;·&nbsp; <strong>Check-out:</strong> ${input.checkOutTime}` : ""}`
+    : "";
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Today's the day!
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — your Comffee Playcation stay at <strong>${escapeHtml(input.branchName)}</strong> is today. We&rsquo;re looking forward to having you!
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", input.branchName)}
+      ${receiptRow("Check-in date", new Date(input.checkIn + "T00:00:00").toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" }))}
+      ${input.checkInTime ? receiptRow("Check-in time", input.checkInTime) : ""}
+      ${input.checkOutTime ? receiptRow("Check-out time", input.checkOutTime) : ""}
+      ${input.branchAddress ? receiptRow("Address", input.branchAddress) : ""}
+    </table>
+
+    ${timeInfo ? `<p style="margin:0 0 8px;color:#5a4a3c;font-size:14px;line-height:1.6;">${timeInfo}</p>` : ""}
+
+    <p style="margin:16px 0 0;color:#5a4a3c;font-size:14px;line-height:1.6;">
+      Reply to this email if you have any last-minute questions. See you soon!
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Today is your Comffee Playcation day! · ${input.branchName}`,
+    html: chrome({
+      preheader: `Your stay at ${input.branchName} is today${input.checkInTime ? ` — check-in at ${input.checkInTime}` : ""}`,
+      bodyHtml: body,
+      ctaLabel: "View reservation",
+      ctaHref: lookupUrl,
+    }),
+    text: `Your Comffee Playcation at ${input.branchName} is today! ${input.checkInTime ? `Check-in: ${input.checkInTime}.` : ""} ${input.branchAddress ?? ""} Reservation: ${lookupUrl}`,
+  });
+}
+
+export async function sendPreArrivalReminder(input: ArrivalReminderInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      2 hours to go!
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — your check-in at <strong>${escapeHtml(input.branchName)}</strong> is in about 2 hours. Head over when you&rsquo;re ready!
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", input.branchName)}
+      ${input.checkInTime ? receiptRow("Check-in time", input.checkInTime, true) : ""}
+      ${input.checkOutTime ? receiptRow("Check-out time", input.checkOutTime) : ""}
+      ${input.branchAddress ? receiptRow("Address", input.branchAddress) : ""}
+    </table>
+
+    <p style="margin:16px 0 0;color:#5a4a3c;font-size:14px;line-height:1.6;">
+      Reply to this email if you need directions or have any questions. Can&rsquo;t wait to see you!
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `2 hours until your Comffee check-in · ${input.branchName}`,
+    html: chrome({
+      preheader: `Check-in at ${input.branchName}${input.checkInTime ? ` is at ${input.checkInTime}` : " is in 2 hours"}`,
+      bodyHtml: body,
+      ctaLabel: "View reservation",
+      ctaHref: lookupUrl,
+    }),
+    text: `Your Comffee Playcation check-in at ${input.branchName} is in 2 hours${input.checkInTime ? ` (${input.checkInTime})` : ""}. ${input.branchAddress ?? ""} Reservation: ${lookupUrl}`,
+  });
+}
+
+/* ---------------- order confirmation ---------------- */
+
+interface OrderEmailInput {
+  to: string;
+  customerName: string;
+  branchName: string;
+  totalPhp: number;
+  scheduledFor: string | null;
+  orderId: string;
+  items: Array<{ name: string; qty: number; lineTotalPhp: number }>;
+}
+
+export async function sendOrderConfirmation(input: OrderEmailInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const lookupUrl = `${siteUrl}/lookup?id=${input.orderId}`;
+
+  const itemsHtml = input.items
+    .map(
+      (it) =>
+        `<tr>
+          <td style="padding:6px 0;color:#1a0f06;font-size:14px;">× ${it.qty} ${escapeHtml(it.name)}</td>
+          <td style="padding:6px 0;color:#5a4a3c;font-size:13px;text-align:right;">${escapeHtml(formatPHP(it.lineTotalPhp))}</td>
+        </tr>`,
+    )
+    .join("");
+
+  const pickupTime = input.scheduledFor
+    ? new Date(input.scheduledFor).toLocaleString("en-PH", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "ASAP";
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Order placed.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.customerName.split(" ")[0])} — we&rsquo;re firing up the espresso machine. Show this email at pickup or use the lookup link.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Pickup", input.branchName)}
+      ${receiptRow("Ready by", pickupTime)}
+    </table>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // line items
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e8dcc4;">
+      ${itemsHtml}
+    </table>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;border-top:2px solid #ff8a3d;padding-top:12px;">
+      ${receiptRow("Total", formatPHP(input.totalPhp), true)}
+    </table>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // order_id
+    </p>
+    <p style="margin:0;color:#1a0f06;font-size:13px;font-family:'JetBrains Mono',monospace;word-break:break-all;">
+      ${escapeHtml(input.orderId)}
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Your Comffee order is in · ${input.branchName}`,
+    html: chrome({
+      preheader: `Order placed — ${input.items.length} items, total ${formatPHP(input.totalPhp)}`,
+      bodyHtml: body,
+      ctaLabel: "View order",
+      ctaHref: lookupUrl,
+    }),
+    text: `Order at ${input.branchName} for ${formatPHP(input.totalPhp)}. Pickup ${pickupTime}. Order ID: ${input.orderId}. View: ${lookupUrl}`,
+  });
+}
