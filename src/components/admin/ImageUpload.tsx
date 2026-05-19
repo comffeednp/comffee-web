@@ -28,21 +28,8 @@ export default function ImageUpload({
   const handlePick = () => fileRef.current?.click();
 
   const upload = async (rawFile: File): Promise<string | null> => {
-    let file = rawFile;
-    if (
-      rawFile.type === "image/heic" || rawFile.type === "image/heif" ||
-      rawFile.name.toLowerCase().endsWith(".heic") || rawFile.name.toLowerCase().endsWith(".heif")
-    ) {
-      const heic2any = (await import("heic2any")).default;
-      const converted = await heic2any({ blob: rawFile, toType: "image/jpeg", quality: 0.92 });
-      file = new File(
-        [converted instanceof Blob ? converted : converted[0]],
-        rawFile.name.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg"),
-        { type: "image/jpeg" },
-      );
-    }
     const fd = new FormData();
-    fd.append("file", file, file.name);
+    fd.append("file", rawFile, rawFile.name);
     fd.append("folder", folder);
     const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
     const data = await res.json();
