@@ -498,3 +498,26 @@ textarea:focus-visible {
   .print-break { page-break-before: always; }
   .print-keep { page-break-inside: avoid; }
 }
+
+/* ── Markdown prose renderer ──────────────────────────────────────────── */
+.prose-comffe { color: var(--color-cream-dim); font-size: 1.0625rem; line-height: 1.75; }
+.prose-comffe h1,
+.prose-comffe h2,
+.prose-comffe h3 {
+  color: var(--color-cream);
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.25;
+}
+.prose-comffe h2 { font-size: 1.25rem; letter-spacing: -0.01em; }
+.prose-comffe h3 { font-size: 1.05rem; }
+.prose-comffe p  { margin-bottom: 1rem; }
+.prose-comffe ul,
+.prose-comffe ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+.prose-comffe li { margin-bottom: 0.35rem; }
+.prose-comffe ul li { list-style-type: disc; }
+.prose-comffe ol li { list-style-type: decimal; }
+.prose-comffe strong { color: var(--color-cream); font-weight: 600; }
+.prose-comffe em { font-style: italic; }
+.prose-comffe hr { border-color: var(--color-line-bright); margin: 1.5rem 0; }

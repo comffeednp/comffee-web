@@ -195,7 +195,7 @@ export default async function BranchDetailPage({
             </Reveal>
             <Reveal delay={0.1}>
               <div
-                className="prose-comffe prose prose-invert max-w-none"
+                className="prose-comffe"
                 dangerouslySetInnerHTML={{ __html: marked(branch.description_md) }}
               />
             </Reveal>
