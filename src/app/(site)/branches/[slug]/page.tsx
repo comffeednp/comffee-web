@@ -209,7 +209,7 @@ export default async function BranchDetailPage({
       {branch.photos.length > 0 && (
         <section
           id="walkthrough"
-          className="relative py-24 md:py-32 bg-bg-soft border-y border-line overflow-hidden"
+          className="relative py-24 md:py-32 bg-bg-soft border-y border-line"
         >
           <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none" />
           <div className="container-edge relative">
@@ -220,13 +220,13 @@ export default async function BranchDetailPage({
                   Take a walk inside.
                 </h2>
                 <p className="mt-5 text-cream-dim text-lg">
-                  Drag the screen below or use the arrows. This is exactly what you&apos;ll see when you arrive.
+                  Drag the strip or use the arrows. This is exactly what you&apos;ll see when you arrive.
                 </p>
               </Reveal>
             </div>
-            <div className="mt-12">
-              <PhotoStrip photos={branch.photos} />
-            </div>
+          </div>
+          <div className="mt-12 relative">
+            <PhotoStrip photos={branch.photos} />
           </div>
         </section>
       )}
