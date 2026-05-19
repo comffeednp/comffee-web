@@ -237,6 +237,7 @@ export async function addPhotosAction(formData: FormData) {
   );
   revalidatePath(`/admin/branches/${branch_id}`);
   revalidatePath("/branches");
+  redirect(`/admin/branches/${branch_id}?ok=1`);
 }
 
 export async function addPhotoAction(formData: FormData) {
