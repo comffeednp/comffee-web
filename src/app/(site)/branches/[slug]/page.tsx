@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { marked } from "marked";
 import { getAllBranchSlugs, getBranchBySlug } from "@/lib/branches";
 import { getPCStationsForBranch } from "@/lib/pc-stations";
 import HeroParallax from "@/components/site/HeroParallax";
@@ -193,9 +194,10 @@ export default async function BranchDetailPage({
               </h2>
             </Reveal>
             <Reveal delay={0.1}>
-              <div className="prose-comffe text-cream-dim text-lg leading-relaxed whitespace-pre-line">
-                {branch.description_md}
-              </div>
+              <div
+                className="prose-comffe prose prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: marked(branch.description_md) }}
+              />
             </Reveal>
           </div>
         </section>
