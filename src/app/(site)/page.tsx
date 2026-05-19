@@ -51,10 +51,10 @@ export default async function HomePage() {
               alt="Comffee"
               width={506}
               height={642}
-              style={{ height: "calc(clamp(2.75rem, 8vw, 6rem) * 1.8)", width: "auto" }}
+              style={{ height: "calc(clamp(2.75rem, 8vw, 6rem) * 1.8)", width: "auto", filter: "brightness(0.875) sepia(0.25)" }}
               className="flex-shrink-0"
             />
-            <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-amber">
+            <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-cream">
               {brandName}
             </h1>
           </div>
