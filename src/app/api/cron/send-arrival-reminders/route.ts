@@ -39,7 +39,7 @@ async function run() {
   const supabase = getSupabaseAdmin();
   const ph = phNow();
 
-  const isDayOfWindow = ph.hour >= 8 && ph.hour < 9;
+  const isDayOfWindow = ph.hour >= 11 && ph.hour < 12;
 
   // Fetch all confirmed reservations checking in today (PH date) that still need reminders
   const { data: reservations, error } = await supabase
