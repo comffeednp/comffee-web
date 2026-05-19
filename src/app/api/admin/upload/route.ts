@@ -5,8 +5,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 
 const BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET ?? "branch-photos";
-const MAX_BYTES = 20 * 1024 * 1024; // 20MB — no client compression, allow full-res
-const ALLOWED_MIMES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+const MAX_BYTES = 20 * 1024 * 1024;
+const ALLOWED_MIMES = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/heic", "image/heif"];
+const HEIC_MIMES = new Set(["image/heic", "image/heif"]);
 
 export async function POST(request: Request) {
   // Auth gate — JWT check only (no extra DB round-trip per upload)
@@ -31,19 +32,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bad_mime" }, { status: 400 });
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const isHeic = HEIC_MIMES.has(file.type) ||
+    file.name.toLowerCase().endsWith(".heic") ||
+    file.name.toLowerCase().endsWith(".heif");
+
   const safeFolder = folder.replace(/[^a-z0-9-_/]/gi, "");
-  const filename = `${safeFolder}/${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}.${ext}`;
+  const baseName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const filename = isHeic
+    ? `${safeFolder}/${baseName}.jpg`
+    : `${safeFolder}/${baseName}.${file.name.split(".").pop()?.toLowerCase() ?? "jpg"}`;
 
   try {
     const admin = getSupabaseAdmin();
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer = Buffer.from(await file.arrayBuffer());
+    let contentType = file.type;
+
+    if (isHeic) {
+      const sharp = (await import("sharp")).default;
+      buffer = await sharp(buffer).jpeg({ quality: 92 }).toBuffer();
+      contentType = "image/jpeg";
+    }
+
     const { error: uploadErr } = await admin.storage
       .from(BUCKET)
       .upload(filename, buffer, {
-        contentType: file.type,
+        contentType,
         cacheControl: "31536000",
         upsert: false,
       });
