@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, Cpu, Gamepad2, Coffee, Zap } from "lucide-react";
 import { getPublishedBranches } from "@/lib/branches";
 import { getMenu } from "@/lib/menu";
@@ -44,9 +45,20 @@ export default async function HomePage() {
             )}
           </div>
 
-          <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-cream">
-            {brandName}
-          </h1>
+          <div className="flex items-center gap-5 md:gap-8">
+            <Image
+              src="/comffee-logo-white.png"
+              alt="Comffee"
+              width={0}
+              height={0}
+              sizes="20vw"
+              style={{ height: "calc(clamp(2.75rem, 8vw, 6rem) * 1.8)", width: "auto" }}
+              className="flex-shrink-0"
+            />
+            <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-cream">
+              {brandName}
+            </h1>
+          </div>
 
           <p className="mt-8 max-w-xl text-base md:text-lg text-cream-dim leading-relaxed">
             {settings.tagline}
