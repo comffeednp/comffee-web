@@ -70,7 +70,7 @@ Free street parking in front. Overnight paid parking available at ₱300.
 
 Comffee maintains a full inventory record of unit contents before and after every stay.$desc$,
     v_pub_base || '/imus/patio-wide.png',
-    'Check-in 2:00 PM · Check-out 12:00 PM',
+    'Check-in 2:00 PM · Check-out 11:00 AM · Early in / Late out ₱500/hr',
     20,
     true,
     5
@@ -126,19 +126,19 @@ Comffee maintains a full inventory record of unit contents before and after ever
     (v_branch_id, 'playcation', 'Overnight',
      'Full resthouse · up to 8 guests · ₱500/head for additional guests (max 20 total)',
      8000, 'night', 1,
-     '14:00', '12:00',
+     '14:00', '11:00',
      20, 8, 500),
 
     (v_branch_id, 'playcation', 'Tournament Week',
      '7-night pack · cleaning every 3 days · up to 12 pax · for esports bootcamps & online tournaments',
      50000, 'pack', 2,
-     '14:00', '12:00',
+     '14:00', '11:00',
      12, 12, NULL),
 
     (v_branch_id, 'playcation', 'Monthly Bootcamp',
      '30-night pack · weekly cleaning · up to 12 pax · for professional teams & extended prep',
      200000, 'pack', 3,
-     '14:00', '12:00',
+     '14:00', '11:00',
      12, 12, NULL);
 
   -- ── PHOTOS ────────────────────────────────────────────────────────────────
