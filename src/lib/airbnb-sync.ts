@@ -69,12 +69,13 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
         seenUids.add(ev.uid);
         const existingId = existingByUid.get(ev.uid);
         if (existingId) {
-          await supabase
+          const { error: upErr } = await supabase
             .from("reservations")
             .update({ check_in: ev.start, check_out: ev.end, guest_name: ev.summary })
             .eq("id", existingId);
+          if (upErr) throw new Error(`update failed: ${upErr.message}`);
         } else {
-          await supabase.from("reservations").insert({
+          const { error: insErr } = await supabase.from("reservations").insert({
             branch_id: cal.branch_id,
             source: "airbnb",
             status: "confirmed",
@@ -83,6 +84,7 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
             guest_name: ev.summary || "Airbnb guest",
             ical_uid: ev.uid,
           });
+          if (insErr) throw new Error(`insert failed: ${insErr.message}`);
         }
         upserted++;
       }

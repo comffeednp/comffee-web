@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { runAirbnbSync } from "@/lib/airbnb-sync";
 
 export async function addAirbnbCalendarAction(formData: FormData) {
   await requireAdmin();
@@ -36,8 +37,13 @@ export async function deleteAirbnbCalendarAction(formData: FormData) {
 export async function syncNowAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "") || undefined;
-  const { runAirbnbSync } = await import("@/lib/airbnb-sync");
-  const result = await runAirbnbSync(id);
+  let result;
+  try {
+    result = await runAirbnbSync(id);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown_error";
+    redirect(`/admin/airbnb-calendars?error=${encodeURIComponent(msg)}`);
+  }
   revalidatePath("/admin/airbnb-calendars");
   if (!result.ok) {
     redirect(`/admin/airbnb-calendars?error=${encodeURIComponent(result.error ?? "sync_failed")}`);

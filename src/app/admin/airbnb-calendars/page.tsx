@@ -5,7 +5,8 @@ import {
   deleteAirbnbCalendarAction,
   syncNowAction,
 } from "../_actions/airbnb";
-import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { SyncButton } from "@/components/admin/SyncButton";
 import { formatDateTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -89,13 +90,7 @@ export default async function AirbnbCalendarsPage({ searchParams }: Props) {
               <div className="flex items-center gap-2 shrink-0">
                 <form action={syncNowAction}>
                   <input type="hidden" name="id" value={c.id} />
-                  <button
-                    className="flex items-center gap-1.5 border border-phosphor/40 rounded-md px-3 py-1.5 text-[0.7rem] font-mono uppercase tracking-widest text-phosphor hover:bg-phosphor/10"
-                    type="submit"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    Sync now
-                  </button>
+                  <SyncButton />
                 </form>
                 <form action={deleteAirbnbCalendarAction}>
                   <input type="hidden" name="id" value={c.id} />
