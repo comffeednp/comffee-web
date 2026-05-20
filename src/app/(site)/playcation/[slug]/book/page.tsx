@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import { getBranchBySlug } from "@/lib/branches";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getMemberOptional } from "@/lib/auth/require-member";
-import { todayString, addDays } from "@/lib/dates";
+import { addDays, findEarliestAvailable } from "@/lib/dates";
 import BookingClient from "@/components/booking/BookingClient";
 import { isSumsubConfigured } from "@/lib/sumsub";
 import { ArrowLeft } from "lucide-react";
@@ -36,8 +36,12 @@ export default async function BookPlaycationPage({
   const branch = await getBranchBySlug(slug);
   if (!branch || branch.type !== "playcation") notFound();
 
+  // Philippines time (UTC+8) — server runs UTC, so shift manually
+  const nowPH = new Date(Date.now() + 8 * 3600 * 1000);
+  const todayPH = nowPH.toISOString().slice(0, 10);
+
   // Pull blocked dates within the next 6 months for the picker.
-  const horizon = addDays(todayString(), 180);
+  const horizon = addDays(todayPH, 180);
   const supabase = getSupabaseAdmin();
   const { data: blocked } = await supabase
     .from("reservations")
@@ -45,14 +49,13 @@ export default async function BookPlaycationPage({
     .eq("branch_id", branch.id)
     .in("status", ["pending_hold", "confirmed"])
     .lt("check_in", horizon)
-    .gt("check_out", todayString());
+    .gt("check_out", todayPH);
 
-  const now = Date.now();
+  const nowMs = Date.now();
   const initialBlocked = (blocked ?? [])
     .filter((b) => {
-      // Drop expired holds client-side too
       if (b.status === "pending_hold" && b.hold_expires_at) {
-        return new Date(b.hold_expires_at).getTime() > now;
+        return new Date(b.hold_expires_at).getTime() > nowMs;
       }
       return true;
     })
@@ -61,6 +64,21 @@ export default async function BookPlaycationPage({
       check_out: b.check_out,
       source: b.source,
     }));
+
+  // Earliest bookable date: today if before the branch cutoff, else tomorrow
+  const cutoff = branch.booking_cutoff_time; // "HH:MM:SS" or null
+  let minDate: string;
+  if (cutoff) {
+    const [ch, cm] = cutoff.split(":").map(Number);
+    const phMinutes = nowPH.getUTCHours() * 60 + nowPH.getUTCMinutes();
+    const cutoffMinutes = (ch ?? 22) * 60 + (cm ?? 0);
+    minDate = phMinutes >= cutoffMinutes ? addDays(todayPH, 1) : todayPH;
+  } else {
+    minDate = addDays(todayPH, 1);
+  }
+  const earliestCheckIn = findEarliestAvailable(initialBlocked, minDate);
+  const defaultCheckIn = qCheckIn ?? earliestCheckIn;
+  const defaultCheckOut = qCheckOut ?? addDays(defaultCheckIn, 1);
 
   // Compute the base nightly rate from branch_rates (first 'night' unit, fallback to first rate).
   const nightlyRateRow =
@@ -114,8 +132,8 @@ export default async function BookPlaycationPage({
           kycEnabled={isSumsubConfigured()}
           kycVerified={kycVerified}
           memberId={memberId}
-          initialCheckIn={qCheckIn}
-          initialCheckOut={qCheckOut}
+          initialCheckIn={defaultCheckIn}
+          initialCheckOut={defaultCheckOut}
         />
       </section>
     </>

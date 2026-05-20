@@ -84,6 +84,7 @@ export async function updateBranchAction(formData: FormData) {
     hero_image_url: nullable(formData.get("hero_image_url")),
     hours_text: nullable(formData.get("hours_text")),
     max_guests: numOrNull(formData.get("max_guests")),
+    booking_cutoff_time: nullable(formData.get("booking_cutoff_time")),
     sort_order: numOrNull(formData.get("sort_order")) ?? 999,
     is_published: formData.get("is_published") === "on",
   };

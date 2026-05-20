@@ -5,6 +5,7 @@ import { getReservationById } from "@/lib/reservations";
 import { formatRange, nightsBetween } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
 import ConfirmedAnimation from "@/components/booking/ConfirmedAnimation";
+import BookingConfirmedNotifier from "@/components/booking/BookingConfirmedNotifier";
 import { Calendar, MapPin, Power, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,12 @@ export default async function ConfirmedPage({
 
   return (
     <section className="relative min-h-[80vh] py-20 md:py-32 overflow-hidden">
+      <BookingConfirmedNotifier
+        reservationId={reservationId}
+        branchId={(reservation as { branch_id?: string }).branch_id ?? ""}
+        checkIn={reservation.check_in}
+        checkOut={reservation.check_out}
+      />
       <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none" />
       <div className="container-edge relative">
         <div className="max-w-3xl mx-auto text-center">

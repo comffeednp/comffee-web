@@ -1,0 +1,50 @@
+import { NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { formatRange } from "@/lib/dates";
+
+export const runtime = "nodejs";
+
+export async function POST(request: Request) {
+  let body: { sessionToken?: string; reservationId?: string };
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "bad_json" }, { status: 400 }); }
+
+  const { sessionToken, reservationId } = body;
+  if (!sessionToken || typeof sessionToken !== "string") {
+    return NextResponse.json({ error: "missing_token" }, { status: 400 });
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  // Find the conversation for this session token
+  const { data: conversation } = await supabase
+    .from("chat_conversations")
+    .select("id")
+    .eq("customer_session_token", sessionToken)
+    .maybeSingle();
+
+  if (!conversation) return NextResponse.json({ ok: true }); // no conversation yet — silently ok
+
+  // Build the confirmation message
+  let confirmText = "✓ Booking confirmed!";
+  if (reservationId) {
+    const { data: res } = await supabase
+      .from("reservations")
+      .select("check_in, check_out")
+      .eq("id", reservationId)
+      .maybeSingle();
+    if (res) confirmText += ` ${formatRange(res.check_in, res.check_out)}`;
+  }
+
+  await supabase.from("chat_messages").insert({
+    conversation_id: conversation.id,
+    sender_type: "system",
+    body: confirmText,
+  });
+
+  await supabase
+    .from("chat_conversations")
+    .update({ last_message_at: new Date().toISOString() })
+    .eq("id", conversation.id);
+
+  return NextResponse.json({ ok: true });
+}

@@ -52,6 +52,20 @@ export default function BranchCoreFields({ branch }: Props) {
         </Field>
       </div>
 
+      {(!branch || branch.type === "playcation") && (
+        <Field
+          label="Booking cutoff time"
+          hint="After this time, today's date is blocked from new bookings. Leave blank to disallow same-day bookings entirely."
+        >
+          <input
+            type="time"
+            name="booking_cutoff_time"
+            defaultValue={branch?.booking_cutoff_time ?? ""}
+            className="admin-input"
+          />
+        </Field>
+      )}
+
       <Field label="Tagline" hint="One-sentence description shown on cards and the hero">
         <input name="tagline" defaultValue={branch?.tagline ?? ""} className="admin-input" />
       </Field>

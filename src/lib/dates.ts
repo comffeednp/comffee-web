@@ -37,6 +37,25 @@ export function addDays(dateStr: string, days: number): string {
   return toDateString(d);
 }
 
+/**
+ * Earliest check-in date (>= startFrom) with no booking conflict.
+ * Jumps to the end of each blocking period instead of iterating day by day.
+ */
+export function findEarliestAvailable(
+  blocked: Array<{ check_in: string; check_out: string }>,
+  startFrom: string,
+  minNights = 1,
+): string {
+  let candidate = startFrom;
+  for (let i = 0; i < 180; i++) {
+    const checkOut = addDays(candidate, minNights);
+    const blocker = blocked.find((b) => b.check_in < checkOut && b.check_out > candidate);
+    if (!blocker) return candidate;
+    candidate = blocker.check_out;
+  }
+  return startFrom;
+}
+
 /** Pretty-print "Apr 9 → Apr 12, 2026" */
 export function formatRange(checkIn: string, checkOut: string): string {
   const a = fromDateString(checkIn);

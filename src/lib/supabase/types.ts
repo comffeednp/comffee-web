@@ -24,6 +24,7 @@ export interface Branch {
   hero_image_url: string | null;
   hours_text: string | null;
   max_guests: number | null;
+  booking_cutoff_time: string | null;
   is_published: boolean;
   sort_order: number;
   created_at: string;
