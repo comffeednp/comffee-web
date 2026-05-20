@@ -12,9 +12,11 @@ import {
   Zap,
   AlertTriangle,
 } from "lucide-react";
+// Calendar is used in SummaryRow below
 import { addDays, formatRange, nightsBetween, todayString } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
 import SumsubVerify from "@/components/booking/SumsubVerify";
+import BookingCalendar from "@/components/booking/BookingCalendar";
 
 interface Branch {
   id: string;
@@ -244,36 +246,15 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                   Live availability — synced with our Airbnb listings, no double bookings.
                 </p>
 
-                <div className="mt-8 grid gap-5 md:grid-cols-2">
-                  <Field label="check-in">
-                    <input
-                      type="date"
-                      value={state.checkIn}
-                      min={todayString()}
-                      onChange={(e) =>
-                        setState((s) => ({
-                          ...s,
-                          checkIn: e.target.value,
-                          checkOut:
-                            nightsBetween(e.target.value, s.checkOut) < 1
-                              ? addDays(e.target.value, 1)
-                              : s.checkOut,
-                        }))
-                      }
-                      className="booking-input"
-                    />
-                  </Field>
-                  <Field label="check-out">
-                    <input
-                      type="date"
-                      value={state.checkOut}
-                      min={addDays(state.checkIn, 1)}
-                      onChange={(e) =>
-                        setState((s) => ({ ...s, checkOut: e.target.value }))
-                      }
-                      className="booking-input"
-                    />
-                  </Field>
+                <div className="mt-8">
+                  <BookingCalendar
+                    blocked={initialBlocked}
+                    checkIn={state.checkIn}
+                    checkOut={state.checkOut}
+                    onChange={({ checkIn, checkOut }) =>
+                      setState(s => ({ ...s, checkIn, checkOut }))
+                    }
+                  />
                 </div>
 
                 <Field label={`number of guests${branch.maxGuests ? ` — max ${branch.maxGuests}` : ""}`}>
