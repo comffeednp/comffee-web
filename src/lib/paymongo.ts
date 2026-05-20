@@ -151,15 +151,16 @@ export function verifyWebhookSignature(
     if (k && v) parts[k.trim()] = v.trim();
   }
   const timestamp = parts.t;
-  // Use whichever signature matches the secret prefix (test secrets verify against `te`)
-  const provided = secret.startsWith("whsk_test") ? parts.te : parts.li;
-  if (!timestamp || !provided) return false;
+  if (!timestamp) return false;
   const signedPayload = `${timestamp}.${rawBody}`;
   const expected = crypto
     .createHmac("sha256", secret)
     .update(signedPayload)
     .digest("hex");
-  // constant-time compare
-  if (expected.length !== provided.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
+  // Try both te (test) and li (live) — whichever matches
+  for (const provided of [parts.te, parts.li]) {
+    if (!provided || expected.length !== provided.length) continue;
+    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))) return true;
+  }
+  return false;
 }
