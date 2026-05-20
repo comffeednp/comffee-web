@@ -26,12 +26,20 @@ const PROCESSING_FEE_PHP = Number(
   process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150",
 );
 
-function toYMD(d: Date) {
-  return d.toISOString().slice(0, 10);
+function toYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 function addDays(d: Date | string, n: number): Date {
   const base = typeof d === "string" ? new Date(d) : d;
   return new Date(base.getTime() + n * 86400000);
+}
+function addDaysStr(ymd: string, n: number): string {
+  const d = new Date(ymd);
+  d.setDate(d.getDate() + n);
+  return toYMD(d);
 }
 function nightsBetween(a: string, b: string) {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
@@ -123,9 +131,10 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
       setCheckOut(null);
       return;
     }
-    // After check-in — validate cutoff
-    if (cutoff && dayStr > cutoff) return;
-    setCheckOut(dayStr);
+    // After check-in — validate cutoff (click D = last night, departure = D+1)
+    if (isBlocked) return;
+    if (cutoff && dayStr >= cutoff) return;
+    setCheckOut(addDaysStr(dayStr, 1));
   }
 
   function clear() {
@@ -134,8 +143,10 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
     setHoverDate(null);
   }
 
-  // Range end for highlighting (hover preview or confirmed checkout)
-  const rangeEnd = checkIn && !checkOut ? hoverDate : checkOut;
+  // Range end: hover preview uses hoverDate+1 so the hovered night is included
+  const rangeEnd = checkIn && !checkOut
+    ? (hoverDate ? addDaysStr(hoverDate, 1) : null)
+    : checkOut;
 
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
   const accommodation = nights * nightlyRate;
@@ -148,10 +159,13 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
     return dayStr > lo && dayStr < hi;
   }
 
-  function isDisabledInPhase2(dayStr: string, isPast: boolean) {
-    if (!checkIn) return false;
+  function isDisabledInPhase2(dayStr: string, isPast: boolean, isBlocked: boolean) {
+    if (!checkIn || dayStr === checkIn) return false;
+    if (dayStr < checkIn) return isBlocked;  // picking new checkIn — blocked not allowed
+    // dayStr > checkIn: must not be past, blocked, or past cutoff
     if (isPast) return true;
-    if (cutoff && dayStr > cutoff) return true;
+    if (isBlocked) return true;
+    if (cutoff && dayStr >= cutoff) return true;
     return false;
   }
 
@@ -199,13 +213,12 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
           const isCheckIn = dayStr === checkIn;
           const isCheckOut = dayStr === checkOut;
           const inRange = isInRange(dayStr);
-          const disabled = isPast || isDisabledInPhase2(dayStr, isPast) || (!checkIn && isBlocked);
-          const phase2BlockedOk = checkIn && isBlocked && cutoff && dayStr <= cutoff; // blocked but valid checkout boundary
+          const disabled = isDisabledInPhase2(dayStr, isPast, isBlocked);
 
           let bg = "";
           if (isCheckIn || isCheckOut) bg = "bg-amber/30";
           else if (inRange) bg = "bg-amber/10";
-          else if (isBlocked && !isPast && !phase2BlockedOk) bg = "bg-red-500/10";
+          else if (isBlocked && !isPast && !checkIn) bg = "bg-red-500/10";
 
           let cursor = "cursor-default";
           if (!isPast && !disabled) cursor = "cursor-pointer";
@@ -214,9 +227,9 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
           return (
             <div
               key={dayStr}
-              onClick={() => handleClick(dayStr, isPast, isBlocked && !phase2BlockedOk)}
+              onClick={() => isCurrentMonth && handleClick(dayStr, isPast, isBlocked)}
               onMouseEnter={() => {
-                if (checkIn && !checkOut) setHoverDate(dayStr);
+                if (checkIn && !checkOut && !disabled && dayStr > checkIn) setHoverDate(dayStr);
               }}
               onMouseLeave={() => setHoverDate(null)}
               className={`min-h-[52px] p-1.5 border-b border-line/40 flex flex-col items-center select-none
@@ -231,12 +244,12 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
                 className={`w-7 h-7 flex items-center justify-center rounded-full font-mono text-xs transition-colors
                   ${isCheckIn || isCheckOut ? "bg-amber text-bg font-bold" : ""}
                   ${isToday && !isCheckIn && !isCheckOut ? "ring-1 ring-amber text-amber" : ""}
-                  ${isPast ? "text-mocha/50" : isBlocked && !phase2BlockedOk ? "text-red-300" : "text-cream-dim"}
+                  ${isPast ? "text-mocha/50" : isBlocked && !checkIn ? "text-red-300" : "text-cream-dim"}
                 `}
               >
                 {date.getDate()}
               </div>
-              {isBlocked && !isPast && !phase2BlockedOk && !isCheckIn && !isCheckOut && (
+              {isBlocked && !isPast && !checkIn && !isCheckIn && !isCheckOut && (
                 <span className="font-mono text-[0.5rem] text-red-400/80 mt-0.5">booked</span>
               )}
               {isCheckIn && (
@@ -272,7 +285,7 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
       {checkIn && !checkOut && (
         <div className="border-t border-line px-4 py-3 flex items-center justify-between gap-4">
           <p className="font-mono text-[0.65rem] text-amber">
-            // check-in {checkIn} — now tap a check-out date
+            // check-in {checkIn} — tap your last night{cutoff ? ` · latest: ${addDaysStr(cutoff, -1)}` : ""}
           </p>
           <button onClick={clear} className="text-cream-dim hover:text-cream">
             <X className="h-3.5 w-3.5" />
