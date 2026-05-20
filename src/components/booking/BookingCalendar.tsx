@@ -68,17 +68,20 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
     else setMonth(m => m + 1);
   }
 
-  const blockedDays = new Set<string>();
+  const blockedDays = new Map<string, string>(); // date → source
   for (const r of blocked) {
     const end = new Date(r.check_out);
     let cur = new Date(r.check_in);
     while (cur < end) {
-      blockedDays.add(toYMD(cur));
+      const d = toYMD(cur);
+      if (!blockedDays.has(d)) blockedDays.set(d, r.source);
       cur.setDate(cur.getDate() + 1);
     }
   }
 
   const cutoff = pendingIn ? findCutoff(pendingIn, blocked) : null;
+  const hasAirbnb = blocked.some(b => b.source === "airbnb");
+  const hasWebsite = blocked.some(b => b.source !== "airbnb");
 
   function handleClick(dayStr: string, isPast: boolean) {
     const isBlocked = blockedDays.has(dayStr);
@@ -137,6 +140,7 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
             const isToday = dayStr === todayStr;
             const isPast = dayStr < todayStr;
             const isBlocked = blockedDays.has(dayStr);
+            const blockedSrc = blockedDays.get(dayStr);
             const isCheckIn = dayStr === displayCheckIn;
             const isCheckOut = phase === "checkin" && dayStr === checkOut;
             const inRange = isInRange(dayStr);
@@ -183,7 +187,7 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
                 )}
 
                 <div className={[
-                  "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative",
+                  "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative overflow-hidden",
                   isCheckIn || isCheckOut
                     ? "bg-cream text-bg font-bold"
                     : "",
@@ -196,16 +200,21 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
                   !isCheckIn && !isCheckOut
                     ? isCheckoutOnly
                       ? "text-mocha/50 line-through group-hover:text-cream-dim group-hover:no-underline"
+                      : isBlocked && !isPast
+                      ? "text-mocha"
                       : notClickable
                       ? "text-mocha/30"
-                      : isBlocked && phase === "checkin"
-                        ? "text-mocha/30 line-through"
-                        : isHovering
-                          ? ""
-                          : "text-cream-dim hover:bg-bg-elev"
+                      : isHovering
+                        ? ""
+                        : "text-cream-dim hover:bg-bg-elev"
                     : "",
                 ].join(" ")}>
                   {date.getDate()}
+                  {isBlocked && !isCheckIn && !isCheckOut && !isCheckoutOnly && (
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
+                      <span className={`block h-px w-[140%] rotate-[-45deg] ${blockedSrc === "airbnb" ? "bg-amber/70" : "bg-red-400/60"}`} />
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -272,6 +281,27 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
             Clear dates
           </button>
         </div>
+
+        {(hasWebsite || hasAirbnb) && (
+          <div className="border-t border-line/40 px-4 py-2 flex items-center gap-5">
+            {hasWebsite && (
+              <span className="flex items-center gap-1.5">
+                <span className="relative h-5 w-5 rounded-full border border-line-bright bg-bg overflow-hidden flex items-center justify-center shrink-0">
+                  <span className="block h-px w-[150%] rotate-[-45deg] bg-red-400/60" />
+                </span>
+                <span className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha">booked · website</span>
+              </span>
+            )}
+            {hasAirbnb && (
+              <span className="flex items-center gap-1.5">
+                <span className="relative h-5 w-5 rounded-full border border-line-bright bg-bg overflow-hidden flex items-center justify-center shrink-0">
+                  <span className="block h-px w-[150%] rotate-[-45deg] bg-amber/70" />
+                </span>
+                <span className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha">booked · airbnb</span>
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
