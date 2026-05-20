@@ -113,15 +113,17 @@ export default function AdminChatClient({
               prev.find((x) => x.id === m.id) ? prev : [...prev, m],
             );
           }
-          // Bump the conversation in the sidebar
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === m.conversation_id);
-            if (idx === -1) return prev;
-            const updated = {
-              ...prev[idx],
-              last_message_at: m.created_at,
-              status: "open",
-            };
+            if (idx === -1) {
+              // Conversation not yet in list — fetch fresh list to pick it up
+              fetch("/api/admin/chat")
+                .then((r) => r.json())
+                .then((d) => { if (d.conversations) setConversations(d.conversations); })
+                .catch(() => {});
+              return prev;
+            }
+            const updated = { ...prev[idx], last_message_at: m.created_at, status: "open" };
             const next = [...prev];
             next.splice(idx, 1);
             return [updated, ...next];

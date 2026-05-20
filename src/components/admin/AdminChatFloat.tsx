@@ -47,9 +47,8 @@ export default function AdminChatFloat({ adminName }: Props) {
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
 
-  // Fetch conversations on mount to populate unread badge
-  useEffect(() => {
-    fetch("/api/admin/chat?list=1")
+  const fetchConversations = () => {
+    fetch("/api/admin/chat")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
         if (!d?.conversations) return;
@@ -57,7 +56,11 @@ export default function AdminChatFloat({ adminName }: Props) {
         setUnread(d.conversations.filter((c: ChatConversation) => c.status === "open").length);
       })
       .catch(() => {});
-  }, []);
+  };
+
+  // Fetch on mount and whenever panel opens
+  useEffect(() => { fetchConversations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) fetchConversations(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime: new messages + new conversations
   useEffect(() => {
@@ -77,7 +80,10 @@ export default function AdminChatFloat({ adminName }: Props) {
           if (m.sender_type === "customer") setUnread((u) => u + 1);
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === m.conversation_id);
-            if (idx === -1) return prev;
+            if (idx === -1) {
+              fetchConversations();
+              return prev;
+            }
             const updated = { ...prev[idx], last_message_at: m.created_at, status: "open" };
             const next = [...prev];
             next.splice(idx, 1);

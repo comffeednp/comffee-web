@@ -59,6 +59,7 @@ export async function findOrCreateConversation(
       inquiry_check_in: checkIn ?? null,
       inquiry_check_out: checkOut ?? null,
       status: "open",
+      last_message_at: new Date().toISOString(),
     })
     .select("*")
     .single();
