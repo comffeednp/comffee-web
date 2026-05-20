@@ -14,21 +14,16 @@ export const metadata: Metadata = {
 };
 
 export default async function InternetCafePage() {
-  const [cafeBranches, playBranches] = await Promise.all([
-    getPublishedBranches("cafe"),
-    getPublishedBranches("playcation"),
-  ]);
+  const cafeBranches = await getPublishedBranches("cafe");
 
-  // Use a playcation room photo for the hero — gaming aesthetic, visually
-  // distinct from the cafe interior photo the home page already uses
-  const heroSrc = playBranches[0]?.hero_image_url ?? cafeBranches[0]?.hero_image_url ?? null;
+  const heroSrc = cafeBranches[0]?.hero_image_url ?? null;
 
   return (
     <>
       {/* ============================================================
           HERO — full-bleed photo + title text
           ============================================================ */}
-      <HeroParallax src={heroSrc} alt="Comffee Internet Cafe" height="tall">
+      <HeroParallax src={heroSrc} alt="Comffee Internet Cafe" height="screen">
         <div className="max-w-4xl">
           <div className="flex items-center gap-3 mb-8 flex-wrap">
             <span className="status-chip status-chip-amber">
