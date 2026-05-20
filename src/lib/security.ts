@@ -27,40 +27,41 @@ export function getClientIp(req: Request): string {
  * Returns true if allowed, false if blocked.
  */
 export function originAllowed(req: Request): boolean {
-  const allowedHost = (() => {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-    if (!siteUrl) return null;
-    try {
-      return new URL(siteUrl).host;
-    } catch {
-      return null;
-    }
-  })();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) return true; // dev — no URL configured, be permissive
 
-  // In dev (no NEXT_PUBLIC_SITE_URL set), be permissive — local tooling and
-  // ngrok change the host frequently.
-  if (!allowedHost) return true;
+  let primaryHost: string;
+  try {
+    primaryHost = new URL(siteUrl).host;
+  } catch {
+    return true;
+  }
+
+  // Allow both www and non-www variants of the configured domain
+  const allowed = new Set([primaryHost]);
+  if (primaryHost.startsWith("www.")) {
+    allowed.add(primaryHost.slice(4));
+  } else {
+    allowed.add(`www.${primaryHost}`);
+  }
+  // Also allow Vercel preview deployment URLs (auto-set by Vercel, no protocol)
+  const vercelUrl = process.env.VERCEL_URL;
+  if (vercelUrl) allowed.add(vercelUrl);
+
+  const check = (urlStr: string) => {
+    try {
+      return allowed.has(new URL(urlStr).host);
+    } catch {
+      return false;
+    }
+  };
 
   const origin = req.headers.get("origin");
-  if (origin) {
-    try {
-      return new URL(origin).host === allowedHost;
-    } catch {
-      return false;
-    }
-  }
+  if (origin) return check(origin);
 
-  // No origin (some same-origin POSTs do this) — fall back to Referer
   const referer = req.headers.get("referer");
-  if (referer) {
-    try {
-      return new URL(referer).host === allowedHost;
-    } catch {
-      return false;
-    }
-  }
+  if (referer) return check(referer);
 
-  // No origin AND no referer is suspicious for a state-changing request — block.
   return false;
 }
 
