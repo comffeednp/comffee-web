@@ -32,7 +32,12 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  // Skip on auth callback — getUser() can clear the PKCE code_verifier cookie
+  // before the callback route handler has a chance to exchange the code.
+  if (!request.nextUrl.pathname.startsWith("/auth/callback")) {
+    await supabase.auth.getUser();
+  }
+
   return response;
 }
 
