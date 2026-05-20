@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET(request: NextRequest) {
@@ -13,16 +12,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/account/login?error=oauth_no_code`);
   }
 
-  const cookieStore = await cookies();
+  const redirectTo = `${origin}${safeNext}`;
+  const response = NextResponse.redirect(redirectTo);
+
+  // Attach cookies directly to the redirect response so the session persists.
+  // Using cookies() from next/headers with NextResponse.redirect drops Set-Cookie headers.
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll(); },
+        getAll() { return request.cookies.getAll(); },
         setAll(toSet) {
           for (const { name, value, options } of toSet) {
-            cookieStore.set(name, value, options);
+            response.cookies.set(name, value, options);
           }
         },
       },
@@ -59,5 +62,5 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return NextResponse.redirect(`${origin}${safeNext}`);
+  return response;
 }
