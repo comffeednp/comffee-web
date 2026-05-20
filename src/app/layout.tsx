@@ -44,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: ["/comffee-logo.png"],
     },
     twitter: { card: "summary_large_image", title: name, description: tagline },
-    icons: { icon: "/comffee-logo.png", apple: "/comffee-logo.png" },
+    icons: { icon: "/favicon-512.png", apple: "/favicon-512.png" },
   };
 }
 
@@ -59,8 +59,8 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#0a0807" />
-        <link rel="icon" href="/comffee-logo.png" type="image/png" />
-        <link rel="apple-touch-icon" href="/comffee-logo.png" />
+        <link rel="icon" href="/favicon-512.png" type="image/png" sizes="512x512" />
+        <link rel="apple-touch-icon" href="/favicon-512.png" />
       </head>
       <body className="min-h-full flex flex-col bg-background text-cream selection:bg-phosphor selection:text-bg">
         <TopLoadingBar />
