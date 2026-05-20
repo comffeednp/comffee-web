@@ -103,7 +103,8 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
         .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
         .eq("id", cal.id);
 
-      const branchSlug = (cal.branch as { slug: string } | null)?.slug;
+      const branchRaw = cal.branch as { slug: string } | { slug: string }[] | null;
+      const branchSlug = Array.isArray(branchRaw) ? branchRaw[0]?.slug : branchRaw?.slug;
       if (branchSlug) revalidatePath(`/branches/${branchSlug}`);
 
       results.push({ calendar_id: cal.id, upserted, cancelled });
