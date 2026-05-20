@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Send, X } from "lucide-react";
+import { ArrowLeft, MessageSquare, Send, X } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -11,6 +11,29 @@ interface Message {
   sender_type: "customer" | "admin" | "system";
   body: string;
   created_at: string;
+}
+
+interface SessionEntry {
+  key: string;
+  sessionToken: string;
+  conversationId: string;
+  branchName?: string;
+  checkIn?: string;
+  checkOut?: string;
+  updatedAt: string;
+}
+
+const SESSIONS_KEY = "comffe.chat.sessions";
+
+function loadSessions(): SessionEntry[] {
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) ?? "[]") as SessionEntry[]; }
+  catch { return []; }
+}
+
+function upsertSession(entry: SessionEntry) {
+  const rest = loadSessions().filter((s) => s.key !== entry.key);
+  rest.unshift(entry);
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(rest.slice(0, 20)));
 }
 
 function getInquiryKey(branchId?: string | null, checkIn?: string | null, checkOut?: string | null): string {
@@ -22,11 +45,18 @@ function getInquiryKey(branchId?: string | null, checkIn?: string | null, checkO
   return branchId ? `comffe.chat.v2.${branchId}` : "comffe.chat.v2.general";
 }
 
+function fmtDate(iso: string) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+}
+
 export default function ChatWidgetStub() {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"list" | "thread">("thread");
+  const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [name, setName] = useState("");
   const [needsName, setNeedsName] = useState(true);
@@ -42,6 +72,7 @@ export default function ChatWidgetStub() {
   const lastTypingSentRef = useRef<number>(0);
   const inquiryKeyRef = useRef("comffe.chat.v2.general");
   const nameRef = useRef("");
+  const activeEntryRef = useRef<SessionEntry | null>(null);
 
   useEffect(() => { nameRef.current = name; }, [name]);
 
@@ -59,47 +90,36 @@ export default function ChatWidgetStub() {
     })();
   }, []);
 
-  // Initialize / resume conversation whenever the widget opens
+  // On open: init current inquiry, register session, decide list vs thread
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
 
     setMessages([]);
-    setSessionToken(null);
-    setConversationId(null);
+    setMessagesLoading(false);
     setSeenByAdmin(false);
 
     (async () => {
-      // Read inquiry context from sessionStorage
+      // Read inquiry context
       let branchCtx: { id: string; name: string } | null = null;
       let datesCtx: { checkIn: string; checkOut: string } | null = null;
       try { branchCtx = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); } catch {}
       try { datesCtx = JSON.parse(sessionStorage.getItem("comffe.chat.dates") ?? "null"); } catch {}
 
-      setBranchLabel(branchCtx?.name ?? null);
-      if (datesCtx) {
-        const fmt = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });
-        setDatesLabel(`${fmt(datesCtx.checkIn)} – ${fmt(datesCtx.checkOut)}`);
-      } else {
-        setDatesLabel(null);
-      }
-
-      // Inquiry-specific storage key — different dates = different key = new conversation
       const inquiryKey = getInquiryKey(branchCtx?.id, datesCtx?.checkIn, datesCtx?.checkOut);
       inquiryKeyRef.current = inquiryKey;
 
-      // Look up existing session for this exact inquiry
+      // Look up stored token for this inquiry
       let storedToken: string | null = null;
-      let storedName: string | null = null;
       try {
         const stored = JSON.parse(localStorage.getItem(inquiryKey) ?? "null") as { sessionToken?: string; name?: string } | null;
         if (stored?.sessionToken) {
           storedToken = stored.sessionToken;
-          if (stored.name && !nameRef.current) { storedName = stored.name; setName(stored.name); setNeedsName(false); }
+          if (stored.name && !nameRef.current) { setName(stored.name); setNeedsName(false); }
         }
       } catch {}
 
-      // Get Google auth for name (if not already known) and avatar
+      // Get Google user info
       let authName: string | null = null;
       let avatarUrl: string | null = null;
       try {
@@ -108,14 +128,15 @@ export default function ChatWidgetStub() {
         if (user) {
           authName = (user.user_metadata?.full_name ?? user.user_metadata?.name ?? null) as string | null;
           avatarUrl = (user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null) as string | null;
-          if (authName && !nameRef.current && !storedName) { setName(authName); setNeedsName(false); }
+          if (authName && !nameRef.current) { setName(authName); setNeedsName(false); }
         }
       } catch {}
 
       if (cancelled) return;
 
-      const customerName = (storedName ?? authName ?? nameRef.current) || undefined;
+      const customerName = (storedToken ? undefined : (nameRef.current || authName || undefined));
 
+      // Start/resume conversation for this inquiry
       const startRes = await fetch("/api/chat/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,20 +153,72 @@ export default function ChatWidgetStub() {
       const startData = await startRes.json();
       if (cancelled || !startRes.ok) return;
 
-      setSessionToken(startData.sessionToken);
-      setConversationId(startData.conversationId);
-      localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: startData.sessionToken, name: customerName }));
+      const token = startData.sessionToken as string;
+      const convId = startData.conversationId as string;
 
-      const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(startData.sessionToken)}`);
+      // Persist this session
+      localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: token, name: nameRef.current || undefined }));
+      const entry: SessionEntry = {
+        key: inquiryKey,
+        sessionToken: token,
+        conversationId: convId,
+        branchName: branchCtx?.name ?? undefined,
+        checkIn: datesCtx?.checkIn ?? undefined,
+        checkOut: datesCtx?.checkOut ?? undefined,
+        updatedAt: new Date().toISOString(),
+      };
+      upsertSession(entry);
+      activeEntryRef.current = entry;
+
+      // Always subscribe to current inquiry's conversation for Realtime
+      setSessionToken(token);
+      setConversationId(convId);
+
+      const allSessions = loadSessions();
+      setSessions(allSessions);
+      if (cancelled) return;
+
+      // Multiple sessions → show list so customer can pick
+      if (allSessions.length > 1) {
+        setView("list");
+        return;
+      }
+
+      // First/only session → go straight to thread
+      setBranchLabel(branchCtx?.name ?? null);
+      setDatesLabel(datesCtx ? `${fmtDate(datesCtx.checkIn)} – ${fmtDate(datesCtx.checkOut)}` : null);
+      setView("thread");
+      setMessagesLoading(true);
+      const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(token)}`);
       const msgData = await msgRes.json();
       if (cancelled) return;
       if (msgRes.ok && Array.isArray(msgData.messages)) setMessages(msgData.messages);
+      setMessagesLoading(false);
     })();
 
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Subscribe to Realtime for new messages + typing/seen broadcasts
+  // Open a session from the list
+  const openSession = async (entry: SessionEntry) => {
+    activeEntryRef.current = entry;
+    inquiryKeyRef.current = entry.key;
+    setSessionToken(entry.sessionToken);
+    setConversationId(entry.conversationId);
+    setBranchLabel(entry.branchName ?? null);
+    setDatesLabel(entry.checkIn && entry.checkOut ? `${fmtDate(entry.checkIn)} – ${fmtDate(entry.checkOut)}` : null);
+    setMessages([]);
+    setMessagesLoading(true);
+    setSeenByAdmin(false);
+    setView("thread");
+
+    const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(entry.sessionToken)}`);
+    const msgData = await msgRes.json();
+    if (msgRes.ok && Array.isArray(msgData.messages)) setMessages(msgData.messages);
+    setMessagesLoading(false);
+  };
+
+  // Realtime: messages + typing + seen for active conversation
   useEffect(() => {
     if (!conversationId) return;
     let supabase;
@@ -158,8 +231,8 @@ export default function ChatWidgetStub() {
         { event: "INSERT", schema: "public", table: "chat_messages", filter: `conversation_id=eq.${conversationId}` },
         (payload: { new: Message }) => {
           const m = payload.new;
-          setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
-          if (!open && m.sender_type === "admin") setUnread((u) => u + 1);
+          if (view === "thread") setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
+          if ((!open || view === "list") && m.sender_type === "admin") setUnread((u) => u + 1);
         },
       )
       .on("broadcast", { event: "typing" }, (payload: { payload?: { from?: string } }) => {
@@ -179,14 +252,14 @@ export default function ChatWidgetStub() {
       broadcastChannelRef.current = null;
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-  }, [conversationId, open]);
+  }, [conversationId, open, view]);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (open && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, open]);
+    if (open && view === "thread" && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, open, view]);
 
-  // Clear unread on open
   useEffect(() => {
     if (open) setUnread(0);
   }, [open]);
@@ -214,6 +287,14 @@ export default function ChatWidgetStub() {
         const data = await res.json();
         setMessages((prev) => [...prev, data.message]);
         setDraft("");
+        const updatedEntry = activeEntryRef.current
+          ? { ...activeEntryRef.current, updatedAt: new Date().toISOString() }
+          : null;
+        if (updatedEntry) {
+          activeEntryRef.current = updatedEntry;
+          upsertSession(updatedEntry);
+          setSessions(loadSessions());
+        }
         if (needsName && name.trim()) {
           setNeedsName(false);
           localStorage.setItem(inquiryKeyRef.current, JSON.stringify({ sessionToken, name }));
@@ -231,11 +312,7 @@ export default function ChatWidgetStub() {
         aria-label="Open chat"
         className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-amber/50 bg-bg-card glow-amber hover:scale-105 transition-transform"
       >
-        {open ? (
-          <X className="h-5 w-5 text-amber" />
-        ) : (
-          <MessageSquare className="h-5 w-5 text-amber" />
-        )}
+        {open ? <X className="h-5 w-5 text-amber" /> : <MessageSquare className="h-5 w-5 text-amber" />}
         <AnimatePresence>
           {!open && unread > 0 && (
             <motion.span
@@ -259,94 +336,158 @@ export default function ChatWidgetStub() {
             transition={{ type: "spring", duration: 0.3 }}
             className="fixed bottom-24 right-5 z-50 w-[22rem] max-w-[calc(100vw-2.5rem)] h-[28rem] border border-line-bright bg-bg-card rounded-xl shadow-2xl overflow-hidden flex flex-col"
           >
-            <div className="px-4 py-3 border-b border-line bg-bg-soft flex items-start gap-2">
-              <span className="h-2 w-2 rounded-full bg-phosphor animate-pulse shadow-[0_0_8px_var(--color-phosphor)] mt-1 shrink-0" />
-              <div>
-                <span className="font-mono text-xs uppercase tracking-widest text-cream">
-                  {branchLabel ? `comffee // ${branchLabel}` : "comffee // live chat"}
-                </span>
-                {datesLabel && (
-                  <p className="font-mono text-[0.6rem] text-amber mt-0.5">{datesLabel}</p>
-                )}
-              </div>
-            </div>
-
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.length === 0 && (
-                <div className="text-sm text-cream-dim py-4">
-                  <div className="flex gap-3">
-                    <span className="font-mono text-[0.65rem] uppercase text-phosphor mt-1">›</span>
-                    <p className="leading-relaxed">
-                      {branchLabel
-                        ? `Ask us anything about ${branchLabel}! We get a notification immediately.`
-                        : "Hi! Drop your question and we'll get back to you fast. The team gets a phone notification immediately."}
-                    </p>
-                  </div>
-                </div>
-              )}
-              {messages.map((m, i) => {
-                const isLastCustomer = m.sender_type === "customer" && !messages.slice(i + 1).some((x) => x.sender_type === "customer");
-                return (
-                  <div key={m.id} className={`flex flex-col ${m.sender_type === "customer" ? "items-end" : "items-start"}`}>
-                    <div
-                      className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
-                        m.sender_type === "customer"
-                          ? "bg-amber text-bg"
-                          : m.sender_type === "admin"
-                          ? "bg-bg-elev border border-line-bright text-cream"
-                          : "bg-transparent text-mocha font-mono text-[0.7rem]"
-                      }`}
-                    >
-                      {m.body}
-                    </div>
-                    {isLastCustomer && seenByAdmin && (
-                      <span className="font-mono text-[0.6rem] text-mocha mt-0.5">Seen</span>
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-line bg-bg-soft flex items-center justify-between shrink-0">
+              {view === "thread" ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {sessions.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setView("list")}
+                        className="text-cream-dim hover:text-amber shrink-0"
+                        aria-label="Back to conversations"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </button>
                     )}
+                    <div>
+                      <span className="font-mono text-xs uppercase tracking-widest text-cream">
+                        {branchLabel ? `comffee // ${branchLabel}` : "comffee // live chat"}
+                      </span>
+                      {datesLabel && (
+                        <p className="font-mono text-[0.6rem] text-amber mt-0.5">{datesLabel}</p>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-              {adminTyping && (
-                <div className="flex items-center gap-2 text-mocha">
-                  <div className="flex gap-1 px-3 py-2 bg-bg-elev border border-line-bright rounded-lg">
-                    <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:0ms]" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:300ms]" />
-                  </div>
-                </div>
+                  <span className="h-2 w-2 rounded-full bg-phosphor animate-pulse shadow-[0_0_8px_var(--color-phosphor)] shrink-0" />
+                </>
+              ) : (
+                <span className="font-mono text-[0.7rem] uppercase tracking-widest text-cream-dim">
+                  // my conversations · {sessions.length}
+                </span>
               )}
             </div>
 
-            {/* Footer */}
-            <div className="border-t border-line p-3 space-y-2">
-              {needsName && (
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="your name"
-                  className="w-full bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream font-mono focus:outline-none focus:border-amber"
-                />
-              )}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  placeholder="Type a message…"
-                  className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
-                />
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={sending || !draft.trim()}
-                  className="flex h-10 w-10 items-center justify-center bg-amber text-bg rounded-md disabled:opacity-40 hover:bg-amber-hot transition"
-                  aria-label="Send"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+            {/* Body */}
+            {view === "list" ? (
+              <ul className="flex-1 overflow-y-auto divide-y divide-line">
+                {sessions.map((s) => (
+                  <li key={s.key}>
+                    <button
+                      type="button"
+                      onClick={() => openSession(s)}
+                      className="w-full text-left px-4 py-3 hover:bg-bg-elev/40 transition"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-cream text-sm font-medium truncate">
+                          {s.branchName ?? "General inquiry"}
+                        </span>
+                        {s.key === inquiryKeyRef.current && (
+                          <span className="font-mono text-[0.55rem] uppercase tracking-widest text-amber border border-amber/40 rounded px-1 shrink-0">
+                            current
+                          </span>
+                        )}
+                      </div>
+                      {s.checkIn && s.checkOut && (
+                        <p className="font-mono text-[0.6rem] text-amber mt-0.5">
+                          {fmtDate(s.checkIn)} – {fmtDate(s.checkOut)}
+                        </p>
+                      )}
+                      <p className="font-mono text-[0.6rem] text-mocha mt-0.5">
+                        {new Date(s.updatedAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <>
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {messagesLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <span className="font-mono text-[0.65rem] text-mocha animate-pulse">// loading…</span>
+                    </div>
+                  ) : (
+                    <>
+                      {messages.length === 0 && (
+                        <div className="text-sm text-cream-dim py-4">
+                          <div className="flex gap-3">
+                            <span className="font-mono text-[0.65rem] uppercase text-phosphor mt-1">›</span>
+                            <p className="leading-relaxed">
+                              {branchLabel
+                                ? `Ask us anything about ${branchLabel}! We get a notification immediately.`
+                                : "Hi! Drop your question and we'll get back to you fast. The team gets a phone notification immediately."}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {messages.map((m, i) => {
+                        const isLastCustomer = m.sender_type === "customer" && !messages.slice(i + 1).some((x) => x.sender_type === "customer");
+                        return (
+                          <div key={m.id} className={`flex flex-col ${m.sender_type === "customer" ? "items-end" : "items-start"}`}>
+                            <div
+                              className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                                m.sender_type === "customer"
+                                  ? "bg-amber text-bg"
+                                  : m.sender_type === "admin"
+                                  ? "bg-bg-elev border border-line-bright text-cream"
+                                  : "bg-transparent text-mocha font-mono text-[0.7rem]"
+                              }`}
+                            >
+                              {m.body}
+                            </div>
+                            {isLastCustomer && seenByAdmin && (
+                              <span className="font-mono text-[0.6rem] text-mocha mt-0.5">Seen</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {adminTyping && (
+                        <div className="flex items-center gap-2 text-mocha">
+                          <div className="flex gap-1 px-3 py-2 bg-bg-elev border border-line-bright rounded-lg">
+                            <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:0ms]" />
+                            <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:150ms]" />
+                            <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:300ms]" />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="border-t border-line p-3 space-y-2">
+                  {needsName && (
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="your name"
+                      className="w-full bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream font-mono focus:outline-none focus:border-amber"
+                    />
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={draft}
+                      onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
+                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                      placeholder="Type a message…"
+                      className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={sending || !draft.trim()}
+                      className="flex h-10 w-10 items-center justify-center bg-amber text-bg rounded-md disabled:opacity-40 hover:bg-amber-hot transition"
+                      aria-label="Send"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
