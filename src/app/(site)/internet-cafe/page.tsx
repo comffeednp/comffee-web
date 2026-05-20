@@ -23,7 +23,7 @@ export default async function InternetCafePage() {
       {/* ============================================================
           HERO
           ============================================================ */}
-      <HeroParallax src={featured?.hero_image_url} alt="Comffee Internet Cafe" height="screen">
+      <HeroParallax src={null} alt="Comffee Internet Cafe" height="screen">
         <div className="max-w-4xl">
           <div className="flex items-center gap-3 mb-8">
             <span className="status-chip status-chip-amber">

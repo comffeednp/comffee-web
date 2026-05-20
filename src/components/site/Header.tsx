@@ -26,20 +26,18 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
       <div className="container-edge flex items-center justify-between h-16 gap-3">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 group shrink-0" aria-label={name}>
-          <div className="hidden sm:flex items-center gap-2.5">
-            <Image
-              src="/comffee-logo-trimmed.png"
-              alt={name}
-              width={506}
-              height={642}
-              priority
-              style={{ height: 28, width: "auto", filter: "invert(1) sepia(1) saturate(3) hue-rotate(350deg) brightness(1.1)" }}
-              className="shrink-0"
-            />
-            <div className="leading-none">
-              <div className="font-display text-[1.05rem] font-bold tracking-tight text-cream">Comffee</div>
-              <div className="font-mono text-[0.58rem] uppercase tracking-[0.2em] text-mocha">Drink and Play</div>
-            </div>
+          <Image
+            src="/comffee-logo-trimmed.png"
+            alt={name}
+            width={506}
+            height={642}
+            priority
+            style={{ height: 28, width: "auto", filter: "invert(1) sepia(1) saturate(3) hue-rotate(350deg) brightness(1.1)" }}
+            className="shrink-0"
+          />
+          <div className="leading-none hidden sm:block">
+            <div className="font-display text-[1.05rem] font-bold tracking-tight text-cream">Comffee</div>
+            <div className="font-mono text-[0.58rem] uppercase tracking-[0.2em] text-mocha">Drink and Play</div>
           </div>
         </Link>
 
