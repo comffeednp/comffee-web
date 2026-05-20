@@ -30,10 +30,22 @@ export async function POST(request: Request) {
   const kycStatus = reviewAnswer === "GREEN" ? "approved" : "rejected";
 
   const supabase = getSupabaseAdmin();
+
+  // Update any reservations that used this applicant ID
   await supabase
     .from("reservations")
     .update({ kyc_status: kycStatus })
     .eq("sumsub_applicant_id", externalUserId);
+
+  // If this is a member-linked verification, persist KYC status on the member
+  // so future bookings can skip the verify step
+  if (externalUserId.startsWith("comffee-member-")) {
+    const memberId = externalUserId.slice("comffee-member-".length);
+    await supabase
+      .from("members")
+      .update({ kyc_status: kycStatus, sumsub_applicant_id: externalUserId })
+      .eq("id", memberId);
+  }
 
   return NextResponse.json({ ok: true });
 }

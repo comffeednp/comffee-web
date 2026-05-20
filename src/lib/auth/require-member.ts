@@ -10,6 +10,8 @@ export interface MemberProfile {
   member_number: string | null;
   status: "pending" | "active" | "suspended";
   joined_at: string;
+  kyc_status: string | null;
+  sumsub_applicant_id: string | null;
 }
 
 /**

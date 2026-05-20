@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getBranchBySlug } from "@/lib/branches";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getMemberOptional } from "@/lib/auth/require-member";
 import { todayString, addDays } from "@/lib/dates";
 import BookingClient from "@/components/booking/BookingClient";
 import { isSumsubConfigured } from "@/lib/sumsub";
@@ -65,6 +66,11 @@ export default async function BookPlaycationPage({
   const maxPax = nightlyRateRow?.max_pax ?? null;
   const extraPaxFee = nightlyRateRow?.extra_pax_fee_php ?? null;
 
+  // Check if the signed-in member has already completed KYC
+  const member = await getMemberOptional();
+  const kycVerified = member?.kyc_status === "approved";
+  const memberId = member?.id ?? null;
+
   return (
     <>
       <section className="border-b border-line bg-bg-soft">
@@ -103,6 +109,8 @@ export default async function BookPlaycationPage({
           }}
           initialBlocked={initialBlocked}
           kycEnabled={isSumsubConfigured()}
+          kycVerified={kycVerified}
+          memberId={memberId}
         />
       </section>
     </>

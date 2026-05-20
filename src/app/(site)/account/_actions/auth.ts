@@ -133,11 +133,11 @@ export async function googleSignInAction(formData: FormData) {
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
 
   const h = await headers();
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (h.get("x-forwarded-host")
-      ? `https://${h.get("x-forwarded-host")}`
-      : "http://localhost:3000");
+  const forwardedHost = h.get("x-forwarded-host");
+  const forwardedProto = h.get("x-forwarded-proto") ?? "https";
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
   const supabase = await getSupabaseServer();
   const { data, error } = await supabase.auth.signInWithOAuth({
