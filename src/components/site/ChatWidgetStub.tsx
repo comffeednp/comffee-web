@@ -134,23 +134,6 @@ export default function ChatWidgetStub() {
     setSeenByAdmin(false);
 
     (async () => {
-      // Read inquiry context (dates intentionally excluded from normal opens)
-      let branchCtx: { id: string; name: string } | null = null;
-      try { branchCtx = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); } catch {}
-
-      const inquiryKey = getInquiryKey(branchCtx?.id);
-      inquiryKeyRef.current = inquiryKey;
-
-      // Look up stored token for this inquiry
-      let storedToken: string | null = null;
-      try {
-        const stored = JSON.parse(localStorage.getItem(inquiryKey) ?? "null") as { sessionToken?: string; name?: string } | null;
-        if (stored?.sessionToken) {
-          storedToken = stored.sessionToken;
-          if (stored.name && !nameRef.current) { setName(stored.name); setNeedsName(false); }
-        }
-      } catch {}
-
       // Get Google user info
       let authName: string | null = null;
       let avatarUrl: string | null = null;
@@ -166,15 +149,55 @@ export default function ChatWidgetStub() {
 
       if (cancelled) return;
 
-      const customerName = (storedToken ? undefined : (nameRef.current || authName || undefined));
+      // If there are existing sessions, resume them — don't create a new one
+      const existing = loadSessions();
+      setSessions(existing);
+      if (cancelled) return;
 
-      // Start/resume conversation for this inquiry
+      if (existing.length > 1) {
+        setView("list");
+        return;
+      }
+
+      if (existing.length === 1) {
+        const s = existing[0];
+        activeEntryRef.current = s;
+        inquiryKeyRef.current = s.key;
+        setSessionToken(s.sessionToken);
+        setConversationId(s.conversationId);
+        setBranchLabel(s.branchName ?? null);
+        setDatesLabel(s.checkIn && s.checkOut ? `${fmtDate(s.checkIn)} – ${fmtDate(s.checkOut)}` : null);
+        setView("thread");
+        setMessagesLoading(true);
+        const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(s.sessionToken)}`);
+        const msgData = await msgRes.json();
+        if (cancelled) return;
+        if (msgRes.ok && Array.isArray(msgData.messages)) setMessages(msgData.messages);
+        setMessagesLoading(false);
+        return;
+      }
+
+      // No existing sessions — create a new general session
+      let branchCtx: { id: string; name: string } | null = null;
+      try { branchCtx = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); } catch {}
+      const inquiryKey = getInquiryKey(branchCtx?.id);
+      inquiryKeyRef.current = inquiryKey;
+
+      let storedToken: string | null = null;
+      try {
+        const stored = JSON.parse(localStorage.getItem(inquiryKey) ?? "null") as { sessionToken?: string; name?: string } | null;
+        if (stored?.sessionToken) {
+          storedToken = stored.sessionToken;
+          if (stored.name && !nameRef.current) { setName(stored.name); setNeedsName(false); }
+        }
+      } catch {}
+
       const startRes = await fetch("/api/chat/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionToken: storedToken ?? undefined,
-          customerName,
+          customerName: storedToken ? undefined : (nameRef.current || authName || undefined),
           branchId: branchCtx?.id ?? undefined,
           branchName: branchCtx?.name ?? undefined,
           avatarUrl: avatarUrl ?? undefined,
@@ -186,7 +209,6 @@ export default function ChatWidgetStub() {
       const token = startData.sessionToken as string;
       const convId = startData.conversationId as string;
 
-      // Persist this session
       localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: token, name: nameRef.current || undefined }));
       const entry: SessionEntry = {
         key: inquiryKey,
@@ -197,22 +219,11 @@ export default function ChatWidgetStub() {
       };
       upsertSession(entry);
       activeEntryRef.current = entry;
-
-      // Always subscribe to current inquiry's conversation for Realtime
       setSessionToken(token);
       setConversationId(convId);
-
-      const allSessions = loadSessions();
-      setSessions(allSessions);
+      setSessions(loadSessions());
       if (cancelled) return;
 
-      // Multiple sessions → show list so customer can pick
-      if (allSessions.length > 1) {
-        setView("list");
-        return;
-      }
-
-      // First/only session → go straight to thread
       setBranchLabel(branchCtx?.name ?? null);
       setDatesLabel(null);
       setView("thread");
