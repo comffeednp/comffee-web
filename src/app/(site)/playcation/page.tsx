@@ -22,7 +22,7 @@ export default async function PlaycationPage() {
       {/* ============================================================
           HERO — full-bleed photo + title text
           ============================================================ */}
-      <HeroParallax src={featured?.hero_image_url} alt="Comffee Playcation" height="tall">
+      <HeroParallax src={featured?.hero_image_url} alt="Comffee Playcation" height="screen">
         <div className="max-w-4xl">
           <div className="flex items-center gap-3 mb-8 flex-wrap">
             <span className="status-chip status-chip-amber">
