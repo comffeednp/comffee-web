@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   });
   if ("error" in guarded) return guarded.error;
 
-  const body = (guarded.json as { sessionToken?: string; customerName?: string }) ?? {};
+  const body = (guarded.json as { sessionToken?: string; customerName?: string; branchId?: string; branchName?: string }) ?? {};
   const token =
     body.sessionToken &&
     typeof body.sessionToken === "string" &&
@@ -29,9 +29,13 @@ export async function POST(request: Request) {
     typeof body.customerName === "string" && body.customerName.length <= 120
       ? body.customerName
       : undefined;
+  const branchId =
+    typeof body.branchId === "string" && body.branchId.length <= 64 ? body.branchId : undefined;
+  const branchName =
+    typeof body.branchName === "string" && body.branchName.length <= 120 ? body.branchName : undefined;
 
   try {
-    const conversation = await findOrCreateConversation(token, customerName);
+    const conversation = await findOrCreateConversation(token, customerName, branchId, branchName);
     return NextResponse.json({
       ok: true,
       sessionToken: token,

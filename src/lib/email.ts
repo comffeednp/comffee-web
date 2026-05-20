@@ -149,8 +149,11 @@ interface BookingEmailInput {
   guestName: string;
   branchName: string;
   branchSlug: string;
+  branchAddress?: string | null;
   checkIn: string;
   checkOut: string;
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
   numGuests: number;
   totalPhp: number;
   reservationId: string;
@@ -159,44 +162,76 @@ interface BookingEmailInput {
 export async function sendBookingConfirmation(input: BookingEmailInput) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+  const checkInDate = new Date(input.checkIn + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const checkOutDate = new Date(input.checkOut + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
 
   const body = `
     <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
       Booking confirmed.
     </h1>
     <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
-      Hi ${escapeHtml(input.guestName.split(" ")[0])} — your stay at <strong>${escapeHtml(input.branchName)}</strong> is locked in. We&rsquo;ll have the controllers charged and the espresso ready.
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — your stay at <strong>${escapeHtml(input.branchName)}</strong> is all set. We&rsquo;ll have the controllers charged and the espresso ready.
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
       ${receiptRow("Branch", input.branchName)}
-      ${receiptRow("Dates", formatRange(input.checkIn, input.checkOut))}
+      ${input.branchAddress ? receiptRow("Address", input.branchAddress) : ""}
+      ${receiptRow("Check-in date", checkInDate)}
+      ${input.checkInTime ? receiptRow("Check-in time", input.checkInTime) : ""}
+      ${receiptRow("Check-out date", checkOutDate)}
+      ${input.checkOutTime ? receiptRow("Check-out time", input.checkOutTime) : ""}
       ${receiptRow("Guests", String(input.numGuests))}
-      ${receiptRow("Total", formatPHP(input.totalPhp), true)}
+      ${receiptRow("Total paid", formatPHP(input.totalPhp), true)}
     </table>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // check-in instructions
+    </p>
+    <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
+      <li>Present a valid government-issued photo ID upon arrival.</li>
+      <li>The name on the ID must match the reservation name.</li>
+      <li>Only the number of guests declared at booking are allowed inside.</li>
+      ${input.checkInTime ? `<li>Earliest check-in is <strong>${escapeHtml(input.checkInTime)}</strong>. Early check-in is subject to availability — message us to ask.</li>` : ""}
+      <li>WiFi access details will be sent in a separate email on the day of your check-in.</li>
+    </ul>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // checkout instructions
+    </p>
+    <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
+      ${input.checkOutTime ? `<li>Check-out is by <strong>${escapeHtml(input.checkOutTime)}</strong>. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>` : "<li>Check-out is by 11:00 AM. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>"}
+      <li>Leave the unit in the same condition as you found it — surfaces clean, trash in bins, gaming gear back in place.</li>
+      <li>Log out of any personal accounts on the PCs and consoles before leaving.</li>
+      <li>Lock the door and return the key/access card to staff before departing.</li>
+      <li>Your ₱1,000 security deposit will be returned within 24–48 hours after a satisfactory checkout inspection.</li>
+    </ul>
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // reservation_id
     </p>
-    <p style="margin:0;color:#1a0f06;font-size:13px;font-family:'JetBrains Mono',monospace;word-break:break-all;">
+    <p style="margin:0 0 16px;color:#1a0f06;font-size:13px;font-family:'JetBrains Mono',monospace;word-break:break-all;">
       ${escapeHtml(input.reservationId)}
     </p>
 
-    <p style="margin:24px 0 0;color:#5a4a3c;font-size:14px;line-height:1.6;">
-      Save this email or use the lookup link below to retrieve your reservation any time. Reply directly if you need to change anything.
+    <p style="margin:0;color:#5a4a3c;font-size:14px;line-height:1.6;">
+      Reply to this email if you have any questions. See you soon!
     </p>
   `;
 
   return sendEmail({
     to: input.to,
-    subject: `Your Comffee Playcation booking · ${input.branchName}`,
+    subject: `Booking confirmed · ${input.branchName} · ${formatRange(input.checkIn, input.checkOut)}`,
     html: chrome({
-      preheader: `Booking confirmed — ${formatRange(input.checkIn, input.checkOut)} at ${input.branchName}`,
+      preheader: `Booking confirmed — ${formatRange(input.checkIn, input.checkOut)} at ${input.branchName}${input.checkInTime ? ` · Check-in at ${input.checkInTime}` : ""}`,
       bodyHtml: body,
       ctaLabel: "View reservation",
       ctaHref: lookupUrl,
     }),
-    text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. Total: ${formatPHP(input.totalPhp)}. Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
+    text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. ${input.checkInTime ? `Check-in: ${input.checkInTime}.` : ""} ${input.checkOutTime ? `Check-out by: ${input.checkOutTime}.` : ""} ${input.branchAddress ?? ""} Total: ${formatPHP(input.totalPhp)}. Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
   });
 }
 

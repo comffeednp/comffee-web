@@ -148,16 +148,24 @@ export async function POST(request: Request) {
           if (reservation.guest_email) {
             const { data: branch } = await supabase
               .from("branches")
-              .select("name, slug")
+              .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
               .eq("id", reservation.branch_id)
               .maybeSingle();
+            const rates = (
+              (branch as { branch_rates?: Array<{ check_in_time: string | null; check_out_time: string | null; sort_order: number }> } | null)
+                ?.branch_rates ?? []
+            ).sort((a, b) => a.sort_order - b.sort_order);
+            const rateWithTime = rates.find((r) => r.check_in_time);
             sendBookingConfirmation({
               to: reservation.guest_email,
               guestName: reservation.guest_name ?? "there",
-              branchName: branch?.name ?? "Comffee Playcation",
-              branchSlug: branch?.slug ?? "",
+              branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
+              branchSlug: (branch as { slug?: string } | null)?.slug ?? "",
+              branchAddress: (branch as { address?: string | null } | null)?.address ?? null,
               checkIn: reservation.check_in,
               checkOut: reservation.check_out,
+              checkInTime: rateWithTime?.check_in_time ?? null,
+              checkOutTime: rateWithTime?.check_out_time ?? null,
               numGuests: reservation.num_guests ?? 1,
               totalPhp: Number(reservation.total_php ?? 0),
               reservationId: reservation.id,

@@ -7,10 +7,14 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { formatDateTime } from "@/lib/utils";
 import type { ChatConversation, ChatMessage } from "@/lib/chat";
 
+interface ConversationWithBranch extends ChatConversation {
+  branch_name?: string | null;
+}
+
 interface Props {
   adminId: string;
   adminName: string;
-  initialConversations: ChatConversation[];
+  initialConversations: ConversationWithBranch[];
   initialActiveId: string | null;
 }
 
@@ -21,7 +25,7 @@ export default function AdminChatClient({
   initialActiveId,
 }: Props) {
   const [conversations, setConversations] =
-    useState<ChatConversation[]>(initialConversations);
+    useState<ConversationWithBranch[]>(initialConversations);
   const [activeId, setActiveId] = useState<string | null>(
     initialActiveId ?? initialConversations[0]?.id ?? null,
   );
@@ -215,14 +219,21 @@ export default function AdminChatClient({
                     : "hover:bg-bg-elev/40 border-l-2 border-transparent"
                 }`}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-cream font-medium truncate">
                     {c.customer_name ?? "Anonymous"}
                   </span>
-                  {c.status === "resolved" && (
+                  {c.status === "resolved" ? (
                     <Check className="h-3 w-3 text-phosphor shrink-0" />
-                  )}
+                  ) : c.status === "open" ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber shrink-0" />
+                  ) : null}
                 </div>
+                {(c as ConversationWithBranch).branch_name && (
+                  <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
+                    {(c as ConversationWithBranch).branch_name}
+                  </p>
+                )}
                 <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
                   {formatDateTime(c.last_message_at)}
                 </p>
@@ -247,6 +258,9 @@ export default function AdminChatClient({
                   {active.customer_name ?? "Anonymous"}
                 </p>
                 <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
+                  {(active as ConversationWithBranch).branch_name
+                    ? `${(active as ConversationWithBranch).branch_name} · `
+                    : ""}
                   {active.customer_email ?? active.customer_phone ?? "no contact"}
                 </p>
               </div>

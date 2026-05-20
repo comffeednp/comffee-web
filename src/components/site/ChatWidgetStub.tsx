@@ -32,6 +32,7 @@ export default function ChatWidgetStub() {
   const [needsName, setNeedsName] = useState(true);
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [branchLabel, setBranchLabel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Initialize session
@@ -59,12 +60,22 @@ export default function ChatWidgetStub() {
 
     const init = async () => {
       try {
+        // Read branch context set by branch detail pages
+        let branchCtx: { id: string; name: string } | null = null;
+        try {
+          const raw = sessionStorage.getItem("comffe.chat.branch");
+          if (raw) branchCtx = JSON.parse(raw) as { id: string; name: string };
+        } catch {}
+        if (branchCtx?.name) setBranchLabel(branchCtx.name);
+
         const startRes = await fetch("/api/chat/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sessionToken: sessionToken ?? undefined,
             customerName: name || undefined,
+            branchId: branchCtx?.id ?? undefined,
+            branchName: branchCtx?.name ?? undefined,
           }),
         });
         const startData = await startRes.json();
@@ -217,7 +228,7 @@ export default function ChatWidgetStub() {
             <div className="px-4 py-3 border-b border-line bg-bg-soft flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-phosphor animate-pulse shadow-[0_0_8px_var(--color-phosphor)]" />
               <span className="font-mono text-xs uppercase tracking-widest text-cream">
-                comffee // live chat
+                {branchLabel ? `comffee // ${branchLabel}` : "comffee // live chat"}
               </span>
             </div>
 
@@ -229,7 +240,9 @@ export default function ChatWidgetStub() {
                       ›
                     </span>
                     <p className="leading-relaxed">
-                      Hi! Drop your question and we&apos;ll get back to you fast. The team gets a phone notification immediately.
+                      {branchLabel
+                        ? `Ask us anything about ${branchLabel}! We get a notification immediately.`
+                        : "Hi! Drop your question and we'll get back to you fast. The team gets a phone notification immediately."}
                     </p>
                   </div>
                 </div>

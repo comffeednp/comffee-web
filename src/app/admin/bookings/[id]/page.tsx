@@ -112,7 +112,7 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
       </div>
 
       {/* REFUNDS */}
-      {(reservation.status === "confirmed" || refunds.length > 0) && Number(reservation.total_php ?? 0) > 0 && (
+      {(reservation.status === "confirmed" || reservation.status === "cancelled" || refunds.length > 0) && Number(reservation.total_php ?? 0) > 0 && (
         <div className="mt-10 p-6 border border-line-bright rounded-xl bg-bg-card">
           <p className="terminal-label">// refunds</p>
           <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">

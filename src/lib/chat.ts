@@ -29,6 +29,8 @@ export interface ChatConversation {
 export async function findOrCreateConversation(
   sessionToken: string,
   customerName?: string,
+  branchId?: string,
+  branchName?: string,
 ): Promise<ChatConversation> {
   const supabase = getSupabaseAdmin();
 
@@ -45,12 +47,23 @@ export async function findOrCreateConversation(
     .insert({
       customer_session_token: sessionToken,
       customer_name: customerName ?? null,
+      branch_id: branchId ?? null,
       status: "open",
     })
     .select("*")
     .single();
 
   if (error || !data) throw new Error(`conversation create failed: ${error?.message}`);
+
+  // Post a system message so admin immediately sees which branch this is about
+  if (branchName) {
+    await supabase.from("chat_messages").insert({
+      conversation_id: data.id,
+      sender_type: "system",
+      body: `Inquiry about: ${branchName}`,
+    });
+  }
+
   return data as ChatConversation;
 }
 
@@ -130,14 +143,17 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
   return (data ?? []) as ChatMessage[];
 }
 
-export async function listConversations(): Promise<ChatConversation[]> {
+export async function listConversations(): Promise<(ChatConversation & { branch_name?: string | null })[]> {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("chat_conversations")
-    .select("*")
+    .select("*, branches(name)")
     .order("last_message_at", { ascending: false })
     .limit(200);
-  return (data ?? []) as ChatConversation[];
+  return (data ?? []).map((row) => {
+    const { branches, ...rest } = row as typeof row & { branches?: { name: string } | null };
+    return { ...rest, branch_name: branches?.name ?? null };
+  }) as (ChatConversation & { branch_name?: string | null })[];
 }
 
 export async function markResolved(conversationId: string) {

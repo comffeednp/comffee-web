@@ -52,15 +52,19 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
       const text = await res.text();
       const events = parseICal(text);
 
+      // Include cancelled rows so we don't re-import UIDs that admin already cancelled
       const { data: existing } = await supabase
         .from("reservations")
-        .select("id, ical_uid")
+        .select("id, ical_uid, status")
         .eq("branch_id", cal.branch_id)
         .eq("source", "airbnb")
-        .in("status", ["pending_hold", "confirmed"]);
+        .in("status", ["pending_hold", "confirmed", "cancelled"]);
 
       const existingByUid = new Map(
-        (existing ?? []).map((r) => [r.ical_uid as string, r.id as string]),
+        (existing ?? []).map((r) => [
+          r.ical_uid as string,
+          { id: r.id as string, status: r.status as string },
+        ]),
       );
 
       let upserted = 0;
@@ -68,12 +72,14 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
 
       for (const ev of events) {
         seenUids.add(ev.uid);
-        const existingId = existingByUid.get(ev.uid);
-        if (existingId) {
+        const row = existingByUid.get(ev.uid);
+        if (row) {
+          // Admin already cancelled this — don't re-import from Airbnb
+          if (row.status === "cancelled") continue;
           const { error: upErr } = await supabase
             .from("reservations")
             .update({ check_in: ev.start, check_out: ev.end, guest_name: ev.summary })
-            .eq("id", existingId);
+            .eq("id", row.id);
           if (upErr) throw new Error(`update failed: ${upErr.message}`);
         } else {
           const { error: insErr } = await supabase.from("reservations").insert({
@@ -91,9 +97,10 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
       }
 
       let cancelled = 0;
-      for (const [uid, id] of existingByUid) {
-        if (!seenUids.has(uid)) {
-          await supabase.from("reservations").update({ status: "cancelled" }).eq("id", id);
+      for (const [uid, row] of existingByUid) {
+        // Only cancel rows that disappeared from Airbnb AND aren't already cancelled
+        if (!seenUids.has(uid) && row.status !== "cancelled") {
+          await supabase.from("reservations").update({ status: "cancelled" }).eq("id", row.id);
           cancelled++;
         }
       }

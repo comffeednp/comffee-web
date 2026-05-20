@@ -9,6 +9,7 @@ import { getMemberOptional } from "@/lib/auth/require-member";
 const navLinks = [
   { href: "/branches", label: "Branches" },
   { href: "/playcation", label: "Playcation" },
+  { href: "/internet-cafe", label: "Internet Cafe" },
   { href: "/menu", label: "Menu" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },

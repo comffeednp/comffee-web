@@ -12,6 +12,7 @@ import RateCardList from "@/components/site/RateCardList";
 import LivePCStations from "@/components/site/LivePCStations";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
+import BranchChatContext from "@/components/site/BranchChatContext";
 import {
   ArrowRight,
   Clock,
@@ -119,6 +120,7 @@ export default async function BranchDetailPage({
 
   return (
     <>
+      <BranchChatContext branchId={branch.id} branchName={branch.name} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

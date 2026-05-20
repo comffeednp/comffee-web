@@ -11,7 +11,9 @@ export interface CalendarReservation {
   guest_name: string | null;
   source: string;
   status: string;
+  branch_id?: string;
   branch_name?: string;
+  member_id?: string | null;
   member_avatar_url?: string | null;
   member_name?: string | null;
 }
