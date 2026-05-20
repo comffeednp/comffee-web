@@ -1,6 +1,5 @@
 import { getPublishedBranches } from "@/lib/branches";
 import BranchCard from "@/components/site/BranchCard";
-import BranchSplitHero from "@/components/site/BranchSplitHero";
 import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
 import type { Metadata } from "next";
@@ -28,7 +27,6 @@ export default async function BranchesPage({ searchParams }: PageProps) {
       ? branches.filter((b) => b.type === type)
       : branches;
 
-  const heroBranches = filtered.length > 0 ? filtered : branches;
   const heroSrc = branches[0]?.hero_image_url ?? null;
 
   return (
@@ -55,13 +53,6 @@ export default async function BranchesPage({ searchParams }: PageProps) {
           </div>
         </div>
       </HeroParallax>
-
-      {/* ============================================================
-          SPLIT-PANEL PHOTO SHOWCASE
-          ============================================================ */}
-      <section className="border-b border-line">
-        <BranchSplitHero branches={heroBranches} height="58svh" />
-      </section>
 
       {/* ============================================================
           BRANCH CARDS GRID

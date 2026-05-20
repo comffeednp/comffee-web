@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getPublishedBranches } from "@/lib/branches";
-import BranchSplitHero from "@/components/site/BranchSplitHero";
 import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
 import { Bed, Calendar, Coffee, Gamepad2, Wifi } from "lucide-react";
@@ -54,19 +53,6 @@ export default async function PlaycationPage() {
           </div>
         </div>
       </HeroParallax>
-
-      {/* ============================================================
-          BRANCH PICKER — expandable split panels
-          ============================================================ */}
-      <section className="border-b border-line">
-        <div className="container-edge py-8 md:py-10">
-          <p className="terminal-label mb-1">pick your stay</p>
-          <p className="font-mono text-xs text-mocha">
-            Hover to explore · click to view & book
-          </p>
-        </div>
-        <BranchSplitHero branches={playBranches} height="55vh" />
-      </section>
 
       {/* ============================================================
           WHAT'S INCLUDED
