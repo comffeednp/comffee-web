@@ -91,16 +91,18 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
 
     if (dayStr === pendingIn) { setPendingIn(null); return; }
     if (dayStr < pendingIn!) return;
-    if (isPast || isBlocked) return;
-    if (cutoff && dayStr >= cutoff) return;
+    if (isPast) return;
+    // Blocked dates after cutoff are fully disabled; blocked date == cutoff is "checkout only"
+    if (isBlocked && dayStr !== cutoff) return;
+    if (cutoff && dayStr > cutoff) return;
 
-    onChange({ checkIn: pendingIn!, checkOut: addDaysToStr(dayStr, 1) });
+    onChange({ checkIn: pendingIn!, checkOut: dayStr });
     setPendingIn(null);
   }
 
   const rangeStart = displayCheckIn;
   const rangeEnd = phase === "checkout"
-    ? (hoverDate && hoverDate > rangeStart ? addDaysToStr(hoverDate, 1) : null)
+    ? (hoverDate && hoverDate > rangeStart ? hoverDate : null)
     : checkOut;
 
   function isInRange(dayStr: string) {
@@ -139,29 +141,33 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
             const isCheckOut = phase === "checkin" && dayStr === checkOut;
             const inRange = isInRange(dayStr);
 
+            // "checkout only" = the first blocked date after pendingIn (cutoff itself)
+            const isCheckoutOnly = phase === "checkout" && isBlocked && dayStr === cutoff;
             const disabledInPhase2 =
               phase === "checkout" &&
-              (isPast || isBlocked || dayStr < pendingIn! || (!!cutoff && dayStr >= cutoff));
+              (isPast || dayStr < pendingIn! || (!!cutoff && dayStr > cutoff) ||
+               (isBlocked && dayStr !== cutoff));
             const notClickable = !isCurrentMonth || isPast || (phase === "checkin" && isBlocked) || !!disabledInPhase2;
 
             // Half-background for range pill effect on endpoints
             const rangeRight = isCheckIn && isInRange(addDaysToStr(dayStr, 1));
             const rangeLeft = isCheckOut && isInRange(addDaysToStr(dayStr, -1));
+            const isHovering = phase === "checkout" && dayStr === hoverDate && !isCheckIn;
 
             return (
               <div
                 key={dayStr + i}
                 onClick={() => !notClickable && handleClick(dayStr, isPast)}
                 onMouseEnter={() => {
-                  if (phase === "checkout" && isCurrentMonth && !isPast && !isBlocked && dayStr >= pendingIn! && !(cutoff && dayStr >= cutoff)) {
+                  if (phase === "checkout" && isCurrentMonth && !isPast && dayStr > pendingIn! && !(cutoff && dayStr > cutoff) && (!isBlocked || dayStr === cutoff)) {
                     setHoverDate(dayStr);
                   }
                 }}
                 onMouseLeave={() => setHoverDate(null)}
                 className={[
-                  "h-10 flex items-center justify-center relative select-none",
+                  "h-10 flex items-center justify-center relative select-none group",
                   !isCurrentMonth ? "opacity-0 pointer-events-none" : "",
-                  notClickable ? "cursor-not-allowed" : "cursor-pointer",
+                  notClickable && !isCheckoutOnly ? "cursor-not-allowed" : "cursor-pointer",
                   inRange ? "bg-amber/10" : "",
                 ].join(" ")}
               >
@@ -169,23 +175,32 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
                 {rangeRight && <span className="absolute inset-y-0 right-0 w-1/2 bg-amber/10 pointer-events-none" />}
                 {rangeLeft && <span className="absolute inset-y-0 left-0 w-1/2 bg-amber/10 pointer-events-none" />}
 
+                {/* "Checkout only" tooltip */}
+                {isCheckoutOnly && (
+                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg-card border border-line text-cream-dim font-mono text-[0.55rem] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                    checkout only
+                  </span>
+                )}
+
                 <div className={[
                   "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative",
                   isCheckIn || isCheckOut
                     ? "bg-cream text-bg font-bold"
                     : "",
-                  phase === "checkout" && dayStr === hoverDate && !isCheckIn
+                  isHovering
                     ? "bg-cream/15 ring-1 ring-cream/30 text-cream"
                     : "",
-                  isToday && !isCheckIn && !isCheckOut && !(phase === "checkout" && dayStr === hoverDate)
+                  isToday && !isCheckIn && !isCheckOut && !isHovering
                     ? "ring-1 ring-amber text-amber font-semibold"
                     : "",
                   !isCheckIn && !isCheckOut
-                    ? notClickable
+                    ? isCheckoutOnly
+                      ? "text-mocha/50 line-through group-hover:text-cream-dim group-hover:no-underline"
+                      : notClickable
                       ? "text-mocha/30"
                       : isBlocked && phase === "checkin"
                         ? "text-mocha/30 line-through"
-                        : phase === "checkout" && dayStr === hoverDate
+                        : isHovering
                           ? ""
                           : "text-cream-dim hover:bg-bg-elev"
                     : "",
@@ -209,8 +224,8 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
         </h3>
         <p className="font-mono text-[0.68rem] text-mocha mt-1">
           {phase === "checkin"
-            ? `checked in: ${checkIn} · checking out: ${checkOut}`
-            : `checking in ${displayCheckIn}${cutoff ? ` · latest checkout: ${cutoff}` : " · tap your last night"}`}
+            ? `check-in: ${checkIn} · check-out: ${checkOut}`
+            : `checking in ${displayCheckIn}${cutoff ? ` · latest checkout: ${cutoff}` : ""}`}
         </p>
       </div>
 
@@ -248,7 +263,7 @@ export default function BookingCalendar({ blocked, checkIn, checkOut, onChange }
           <p className="font-mono text-[0.58rem] text-mocha">
             {phase === "checkin"
               ? "// tap a date to set check-in"
-              : `// tap your last night — checkout = following morning${cutoff ? ` · latest: ${addDaysToStr(cutoff, -1)}` : ""}`}
+              : `// tap your checkout date${cutoff ? ` · latest checkout: ${cutoff}` : ""}`}
           </p>
           <button
             onClick={() => setPendingIn(null)}

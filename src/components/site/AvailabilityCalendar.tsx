@@ -116,9 +116,10 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
       setCheckOut(null);
       return;
     }
-    if (isBlocked) return;
-    if (cutoff && dayStr >= cutoff) return;
-    setCheckOut(addDaysStr(dayStr, 1));
+    // Blocked date == cutoff is allowed as checkout-only; blocked dates after cutoff are not
+    if (isBlocked && dayStr !== cutoff) return;
+    if (cutoff && dayStr > cutoff) return;
+    setCheckOut(dayStr);
   }
 
   function clear() {
@@ -127,10 +128,8 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
     setHoverDate(null);
   }
 
-  // Range end: hover preview includes the hovered night (hoverDate+1 exclusive)
-  const rangeEnd = checkIn && !checkOut
-    ? (hoverDate ? addDaysStr(hoverDate, 1) : null)
-    : checkOut;
+  // Range end: hover or confirmed checkout (direct departure-date semantics)
+  const rangeEnd = checkIn && !checkOut ? hoverDate : checkOut;
 
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
   const accommodation = nights * nightlyRate;
@@ -170,11 +169,13 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
             const isCheckOut = dayStr === checkOut;
             const inRange = isInRange(dayStr);
             const isHoverTarget = !checkOut && dayStr === hoverDate && !isCheckIn;
+            const isCheckoutOnly = !!checkIn && !checkOut && isBlocked && dayStr === cutoff;
 
             const disabled =
               isPast ||
               (!checkIn && isBlocked) ||
-              (!!checkIn && dayStr !== checkIn && dayStr > checkIn && (isBlocked || (!!cutoff && dayStr >= cutoff)));
+              (!!checkIn && dayStr !== checkIn && dayStr > checkIn &&
+               ((isBlocked && dayStr !== cutoff) || (!!cutoff && dayStr > cutoff)));
 
             // Half-pill bg for range endpoints
             const rangeRight = isCheckIn && isInRange(addDaysStr(dayStr, 1));
@@ -185,20 +186,26 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
                 key={dayStr + i}
                 onClick={() => isCurrentMonth && handleClick(dayStr, isPast, isBlocked)}
                 onMouseEnter={() => {
-                  if (checkIn && !checkOut && isCurrentMonth && !isPast && !isBlocked && dayStr > checkIn && !(cutoff && dayStr >= cutoff)) {
+                  if (checkIn && !checkOut && isCurrentMonth && !isPast && dayStr > checkIn && !(cutoff && dayStr > cutoff) && (!isBlocked || dayStr === cutoff)) {
                     setHoverDate(dayStr);
                   }
                 }}
                 onMouseLeave={() => setHoverDate(null)}
                 className={[
-                  "h-10 flex items-center justify-center relative select-none",
+                  "h-10 flex items-center justify-center relative select-none group",
                   !isCurrentMonth ? "opacity-0 pointer-events-none" : "",
-                  disabled && isCurrentMonth ? "cursor-not-allowed" : "cursor-pointer",
+                  disabled && !isCheckoutOnly && isCurrentMonth ? "cursor-not-allowed" : "cursor-pointer",
                   inRange ? "bg-amber/10" : "",
                 ].join(" ")}
               >
                 {rangeRight && <span className="absolute inset-y-0 right-0 w-1/2 bg-amber/10 pointer-events-none" />}
                 {rangeLeft && <span className="absolute inset-y-0 left-0 w-1/2 bg-amber/10 pointer-events-none" />}
+
+                {isCheckoutOnly && (
+                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg-card border border-line text-cream-dim font-mono text-[0.55rem] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                    checkout only
+                  </span>
+                )}
 
                 <div className={[
                   "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative",
@@ -206,7 +213,9 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
                   isHoverTarget ? "bg-cream/15 ring-1 ring-cream/30 text-cream" : "",
                   isToday && !isCheckIn && !isCheckOut && !isHoverTarget ? "ring-1 ring-amber text-amber font-semibold" : "",
                   !isCheckIn && !isCheckOut
-                    ? disabled
+                    ? isCheckoutOnly
+                      ? "text-mocha/50 line-through group-hover:text-cream-dim group-hover:no-underline"
+                      : disabled
                       ? "text-mocha/30"
                       : isBlocked && !checkIn
                         ? "text-mocha/30 line-through"
@@ -240,7 +249,7 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
           {!checkIn
             ? "Add your travel dates for exact pricing"
             : !checkOut
-              ? `check-in ${checkIn}${cutoff ? ` · latest night: ${addDaysStr(cutoff, -1)}` : " · tap your last night"}`
+              ? `check-in ${checkIn}${cutoff ? ` · latest checkout: ${cutoff}` : ""}`
               : `${checkIn} → ${checkOut} · ${nights} ${nights === 1 ? "night" : "nights"}`}
         </p>
       </div>
@@ -277,7 +286,7 @@ export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate 
           {!checkIn
             ? "// tap a date to set check-in"
             : !checkOut
-              ? `// tap your last night — checkout = following morning`
+              ? `// tap your checkout date${cutoff ? ` · latest checkout: ${cutoff}` : ""}`
               : `// ${checkIn} → ${checkOut}`}
         </p>
         <button
