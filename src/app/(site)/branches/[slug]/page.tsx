@@ -4,11 +4,13 @@ import type { Metadata } from "next";
 import { marked } from "marked";
 import { getAllBranchSlugs, getBranchBySlug } from "@/lib/branches";
 import { getPCStationsForBranch } from "@/lib/pc-stations";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
 import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
 import LivePCStations from "@/components/site/LivePCStations";
+import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import {
   ArrowRight,
@@ -68,6 +70,30 @@ export default async function BranchDetailPage({
   const pcSnapshot = isPlay
     ? null
     : await getPCStationsForBranch(branch.id);
+
+  // Availability data for playcation branches
+  let blockedRanges: Array<{ check_in: string; check_out: string; source: string }> = [];
+  if (isPlay) {
+    const horizon = new Date();
+    horizon.setMonth(horizon.getMonth() + 6);
+    const supabase = getSupabaseAdmin();
+    const { data: blocked } = await supabase
+      .from("reservations")
+      .select("check_in, check_out, source, status, hold_expires_at")
+      .eq("branch_id", branch.id)
+      .in("status", ["pending_hold", "confirmed"])
+      .lte("check_in", horizon.toISOString().slice(0, 10))
+      .gte("check_out", new Date().toISOString().slice(0, 10));
+    const now = Date.now();
+    blockedRanges = (blocked ?? [])
+      .filter((b) => {
+        if (b.status === "pending_hold" && b.hold_expires_at) {
+          return new Date(b.hold_expires_at).getTime() > now;
+        }
+        return true;
+      })
+      .map((b) => ({ check_in: b.check_in, check_out: b.check_out, source: b.source }));
+  }
 
   // JSON-LD for SEO
   const jsonLd = {
@@ -297,6 +323,26 @@ export default async function BranchDetailPage({
               </span>
             </div>
             <RateCardList rates={branch.rates} />
+          </div>
+        </section>
+      )}
+
+      {/* ============================================================
+          AVAILABILITY CALENDAR (playcation only)
+          ============================================================ */}
+      {isPlay && (
+        <section className="container-edge py-16 md:py-24 max-w-3xl">
+          <Reveal>
+            <p className="terminal-label">availability</p>
+            <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">
+              When&apos;s it free?
+            </h2>
+            <p className="mt-3 text-cream-dim max-w-xl">
+              Live availability — updated in real time with website and Airbnb bookings.
+            </p>
+          </Reveal>
+          <div className="mt-8">
+            <AvailabilityCalendar blocked={blockedRanges} />
           </div>
         </section>
       )}

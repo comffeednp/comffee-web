@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
       phone: null,
       member_number: memberNumber,
       status: "active",
+      avatar_url: user.user_metadata.avatar_url ?? user.user_metadata.picture ?? null,
     });
     if (insertErr) {
       console.error("[auth/callback] members insert failed:", insertErr.message);

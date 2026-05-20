@@ -79,6 +79,7 @@ export interface CreateHoldInput {
   balancePhp?: number;
   balanceDueDate?: string;
   sumsubApplicantId?: string;
+  memberId?: string;
 }
 
 export interface CreatedHold {
@@ -115,6 +116,7 @@ export async function createHold(input: CreateHoldInput): Promise<CreatedHold> {
       balance_php: input.balancePhp ?? 0,
       balance_due_date: input.balanceDueDate ?? null,
       sumsub_applicant_id: input.sumsubApplicantId ?? null,
+      member_id: input.memberId ?? null,
       hold_expires_at: expiresAt,
     })
     .select("id, hold_expires_at")

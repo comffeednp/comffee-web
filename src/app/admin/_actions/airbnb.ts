@@ -35,17 +35,12 @@ export async function deleteAirbnbCalendarAction(formData: FormData) {
 
 export async function syncNowAction(formData: FormData) {
   await requireAdmin();
-  const id = String(formData.get("id") ?? "");
-  // Trigger the cron endpoint with the secret if set
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const secret = process.env.CRON_SECRET ?? "";
-  try {
-    await fetch(`${base}/api/cron/sync-airbnb${secret ? `?secret=${secret}` : ""}`, {
-      cache: "no-store",
-    });
-  } catch (e) {
-    console.error("manual sync failed", e);
-  }
+  const id = String(formData.get("id") ?? "") || undefined;
+  const { runAirbnbSync } = await import("@/lib/airbnb-sync");
+  const result = await runAirbnbSync(id);
   revalidatePath("/admin/airbnb-calendars");
-  redirect(`/admin/airbnb-calendars?ok=synced${id ? `_${id.slice(0, 6)}` : ""}`);
+  if (!result.ok) {
+    redirect(`/admin/airbnb-calendars?error=${encodeURIComponent(result.error ?? "sync_failed")}`);
+  }
+  redirect(`/admin/airbnb-calendars?ok=synced`);
 }

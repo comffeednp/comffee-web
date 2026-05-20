@@ -13,6 +13,7 @@ const navLinks = [
   { href: "/admin/chat", label: "Chat" },
   { href: "/admin/branches", label: "Branches" },
   { href: "/admin/bookings", label: "Bookings" },
+  { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/pc-reservations", label: "PC Reservations" },
   { href: "/admin/topups", label: "Top-ups" },

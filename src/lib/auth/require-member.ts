@@ -12,6 +12,7 @@ export interface MemberProfile {
   joined_at: string;
   kyc_status: string | null;
   sumsub_applicant_id: string | null;
+  avatar_url: string | null;
 }
 
 /**
