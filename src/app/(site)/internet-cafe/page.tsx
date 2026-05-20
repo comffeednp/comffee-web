@@ -17,13 +17,15 @@ export const metadata: Metadata = {
 export default async function InternetCafePage() {
   const cafeBranches = await getPublishedBranches("cafe");
   const featured = cafeBranches[0];
+  // Use the second branch's photo for the hero so it differs from the branch detail pages
+  const heroSrc = (cafeBranches[1] ?? cafeBranches[0])?.hero_image_url ?? null;
 
   return (
     <>
       {/* ============================================================
           HERO
           ============================================================ */}
-      <HeroParallax src={null} alt="Comffee Internet Cafe" height="screen">
+      <HeroParallax src={heroSrc} alt="Comffee Internet Cafe" height="screen">
         <div className="max-w-4xl">
           <div className="flex items-center gap-3 mb-8">
             <span className="status-chip status-chip-amber">
