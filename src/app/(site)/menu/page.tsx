@@ -28,7 +28,30 @@ export default async function MenuPage() {
         </div>
       </section>
 
-      <section className="container-edge py-20 md:py-28">
+      {/* Menu board photos */}
+      <section className="container-edge py-20 md:py-24">
+        <Reveal>
+          <p className="terminal-label">menu_boards</p>
+          <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">
+            The boards.
+          </h2>
+        </Reveal>
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/drink-menu.png", alt: "Drinks menu" },
+            { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/barista-faves.jpg", alt: "Barista Faves" },
+            { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/food-menu.png", alt: "Food menu" },
+          ].map((m, i) => (
+            <Reveal key={m.alt} delay={i * 0.06}>
+              <div className="overflow-hidden rounded-xl border border-line-bright bg-bg-card">
+                <img src={m.src} alt={m.alt} className="w-full h-auto object-contain" />
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      <section className="container-edge pb-20 md:pb-28">
         {menu.length === 0 && (
           <p className="text-cream-dim font-mono">// menu loading… check back soon</p>
         )}

@@ -20,6 +20,7 @@ import {
   Network,
   Piano,
   Plug,
+  Printer,
   Router,
   Snowflake,
   Sparkles,
@@ -57,6 +58,8 @@ const map: Record<string, LucideIcon> = {
   tv: Tv,
   plug: Plug,
   parking: Car,
+  printer: Printer,
+  printing: Printer,
   sofa: Armchair,
   // updated
   shower: Droplets,   // was Waves; Waves is now pool

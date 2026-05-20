@@ -16,6 +16,7 @@ import BranchChatContext from "@/components/site/BranchChatContext";
 import {
   ArrowRight,
   Clock,
+  Coffee,
   Mail,
   MapPin,
   Phone,
@@ -325,6 +326,39 @@ export default async function BranchDetailPage({
               </span>
             </div>
             <RateCardList rates={branch.rates} />
+          </div>
+        </section>
+      )}
+
+      {/* ============================================================
+          MENU BOARDS (cafe only)
+          ============================================================ */}
+      {!isPlay && (
+        <section className="container-edge py-24 md:py-32">
+          <Reveal>
+            <p className="terminal-label">our_menu</p>
+            <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">
+              What&apos;s on the menu.
+            </h2>
+          </Reveal>
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/drink-menu.png", alt: "Drinks menu" },
+              { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/barista-faves.jpg", alt: "Barista Faves" },
+              { src: "https://uioeefxnugnqhvthaxjf.supabase.co/storage/v1/object/public/branch-photos/menu/food-menu.png", alt: "Food menu" },
+            ].map((m, i) => (
+              <Reveal key={m.alt} delay={i * 0.06}>
+                <div className="overflow-hidden rounded-xl border border-line-bright bg-bg-card">
+                  <img src={m.src} alt={m.alt} className="w-full h-auto object-contain" />
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          <div className="mt-8">
+            <Link href="/menu" className="key-cap">
+              <Coffee className="h-4 w-4" />
+              Full menu
+            </Link>
           </div>
         </section>
       )}
