@@ -100,6 +100,9 @@ export default async function ConfirmedPage({
           </div>
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-4">
+            <Link href="/account" className="key-cap key-cap-primary">
+              My bookings
+            </Link>
             <Link href={`/branches/${branch.slug}`} className="key-cap">
               View branch
             </Link>

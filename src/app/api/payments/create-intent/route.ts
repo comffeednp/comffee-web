@@ -33,6 +33,7 @@ const schema = z.object({
   promoCode: z.string().max(40).optional().or(z.literal("")),
   paymentType: z.enum(["full", "partial"]).default("full"),
   sumsubApplicantId: z.string().max(120).optional().or(z.literal("")),
+  memberId: z.string().uuid().optional().nullable(),
 });
 
 export async function POST(request: Request) {
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
       balancePhp,
       balanceDueDate,
       sumsubApplicantId: v.sumsubApplicantId || undefined,
+      memberId: v.memberId || undefined,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "hold_failed";
@@ -176,12 +178,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.startsWith("https://")
+      ? process.env.NEXT_PUBLIC_SITE_URL
+      : "https://comffee.org";
     const link = await createPaymentLink({
       amountPhp: total,
       description: v.paymentType === "partial"
         ? `Comffee Playcation · ${branch.name} · 30% reservation fee + ₱${SECURITY_DEPOSIT_PHP.toLocaleString()} deposit (balance ₱${balancePhp.toLocaleString()} due ${balanceDueDate})`
         : `Comffee Playcation · ${branch.name} · ${nights} night${nights === 1 ? "" : "s"} + ₱${SECURITY_DEPOSIT_PHP.toLocaleString()} refundable deposit`,
       remarks: `reservation:${hold.id}`,
+      redirectUrl: `${siteUrl}/playcation/${branch.slug}/confirmed/${hold.id}`,
     });
     await attachPaymentIntent(hold.id, link.id);
     return NextResponse.json({

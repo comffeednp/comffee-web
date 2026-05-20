@@ -2,8 +2,9 @@ import Link from "next/link";
 import { requireMember } from "@/lib/auth/require-member";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { cancelMyReservationAction } from "./_actions/reservations";
-import { Calendar, Cpu, Plus, Trash2 } from "lucide-react";
-import { formatDateTime } from "@/lib/utils";
+import { Calendar, Cpu, Gamepad2, Plus, Trash2 } from "lucide-react";
+import { formatDateTime, formatPHP } from "@/lib/utils";
+import { formatRange, nightsBetween } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,16 @@ interface InternetReservation {
   branch: { name: string; slug: string } | null;
 }
 
+interface PlaycationBooking {
+  id: string;
+  check_in: string;
+  check_out: string;
+  status: string;
+  total_php: number | null;
+  num_guests: number | null;
+  branch: { name: string; slug: string } | null;
+}
+
 interface Props {
   searchParams: Promise<{ ok?: string }>;
 }
@@ -30,6 +41,16 @@ export default async function AccountPage({ searchParams }: Props) {
   const { ok } = await searchParams;
 
   const admin = getSupabaseAdmin();
+
+  const { data: playcationData } = await admin
+    .from("reservations")
+    .select("id, check_in, check_out, status, total_php, num_guests, branch:branches(name, slug)")
+    .eq("member_id", member.id)
+    .in("status", ["pending_hold", "confirmed", "cancelled"])
+    .order("check_in", { ascending: false })
+    .limit(20);
+  const playcationBookings = (playcationData ?? []) as unknown as PlaycationBooking[];
+
   const { data } = await admin
     .from("internet_reservations")
     .select("*, branch:branches(name, slug)")
@@ -52,6 +73,51 @@ export default async function AccountPage({ searchParams }: Props) {
 
       {ok && (
         <p className="mt-4 font-mono text-xs text-phosphor">// {ok.replaceAll("_", " ")}</p>
+      )}
+
+      {/* Playcation bookings */}
+      {playcationBookings.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-3 mb-5">
+            <Gamepad2 className="h-5 w-5 text-amber" />
+            <h2 className="font-display text-2xl font-bold text-cream">Playcation stays</h2>
+          </div>
+          <ul className="space-y-3">
+            {playcationBookings.map((r) => {
+              const nights = nightsBetween(r.check_in, r.check_out);
+              return (
+                <li key={r.id} className="p-5 border border-line-bright bg-bg-card rounded-xl">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="font-display font-semibold text-cream">
+                          {r.branch?.name ?? "Comffee Playcation"}
+                        </span>
+                        <StatusChip status={r.status} />
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-cream-dim font-mono">
+                        <Calendar className="h-3 w-3" />
+                        {formatRange(r.check_in, r.check_out)} · {nights} night{nights !== 1 ? "s" : ""}
+                        {r.num_guests && ` · ${r.num_guests} guest${r.num_guests !== 1 ? "s" : ""}`}
+                      </div>
+                      <p className="mt-1 font-mono text-xs text-amber">
+                        {r.total_php != null ? formatPHP(r.total_php) : "—"}
+                      </p>
+                    </div>
+                    {r.branch?.slug && (
+                      <Link
+                        href={`/playcation/${r.branch.slug}/confirmed/${r.id}`}
+                        className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline shrink-0"
+                      >
+                        View receipt →
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <div className="mt-10 flex items-end justify-between gap-6">

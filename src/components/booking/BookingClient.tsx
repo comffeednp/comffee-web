@@ -180,6 +180,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
             promoCode: promoApplied?.code ?? "",
             paymentType,
             sumsubApplicantId: sumsubApplicantId ?? "",
+            memberId: memberId ?? null,
           }),
         });
         const data = await res.json();

@@ -27,6 +27,7 @@ export interface CreatePaymentLinkInput {
   amountPhp: number;       // pesos (we convert to centavos internally)
   description: string;
   remarks?: string;
+  redirectUrl?: string;    // where to send the customer after payment
 }
 
 export interface PaymentLink {
@@ -52,6 +53,7 @@ export async function createPaymentLink(
           amount: Math.round(input.amountPhp * 100),
           description: input.description,
           remarks: input.remarks ?? "",
+          ...(input.redirectUrl && { redirect_url: input.redirectUrl }),
         },
       },
     }),
