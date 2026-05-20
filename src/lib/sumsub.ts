@@ -44,7 +44,7 @@ export async function generateAccessToken(userId: string, levelName: string): Pr
 
 // Sumsub sends X-Payload-Digest: sha256=<hex>
 export function verifyWebhookSignature(rawBody: string, digestHeader: string): boolean {
-  const secretKey = process.env.SUMSUB_SECRET_KEY;
+  const secretKey = process.env.SUMSUB_WEBHOOK_SECRET ?? process.env.SUMSUB_SECRET_KEY;
   if (!secretKey) return false;
   const expected = crypto.createHmac("sha256", secretKey).update(rawBody).digest("hex");
   const received = digestHeader.replace(/^sha256=/, "");
