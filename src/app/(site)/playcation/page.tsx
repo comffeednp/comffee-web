@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getPublishedBranches } from "@/lib/branches";
 import BranchSplitHero from "@/components/site/BranchSplitHero";
+import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
 import { Bed, Calendar, Coffee, Gamepad2, Wifi } from "lucide-react";
 
@@ -15,16 +16,16 @@ export const metadata: Metadata = {
 
 export default async function PlaycationPage() {
   const playBranches = await getPublishedBranches("playcation");
+  const featured = playBranches[0];
 
   return (
     <>
       {/* ============================================================
-          HERO — title bar + split-panel branches
+          HERO — full-bleed photo + title text
           ============================================================ */}
-      <section className="bg-bg border-b border-line">
-        {/* Title */}
-        <div className="container-edge pt-14 pb-8 md:pt-20 md:pb-10">
-          <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <HeroParallax src={featured?.hero_image_url} alt="Comffee Playcation" height="tall">
+        <div className="max-w-4xl">
+          <div className="flex items-center gap-3 mb-8 flex-wrap">
             <span className="status-chip status-chip-amber">
               <Gamepad2 className="h-3 w-3" />
               Playcation
@@ -35,14 +36,14 @@ export default async function PlaycationPage() {
               </span>
             )}
           </div>
-          <h1 className="font-display text-[clamp(2.5rem,7vw,5.5rem)] leading-[0.9] font-bold tracking-tight text-cream">
+          <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-cream">
             Comffee Playcation
           </h1>
-          <p className="mt-5 max-w-xl text-base md:text-lg text-cream-dim leading-relaxed">
+          <p className="mt-8 max-w-xl text-base md:text-lg text-cream-dim leading-relaxed">
             Short stays in private rooms with the gaming setup already wired in.
             PlayStation, fiber internet, and barista-grade coffee included.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-10 flex flex-wrap gap-4">
             <Link href="#stays" className="key-cap key-cap-primary">
               See available stays
             </Link>
@@ -52,9 +53,19 @@ export default async function PlaycationPage() {
             </Link>
           </div>
         </div>
+      </HeroParallax>
 
-        {/* Branch panels */}
-        <BranchSplitHero branches={playBranches} height="62svh" />
+      {/* ============================================================
+          BRANCH PICKER — expandable split panels
+          ============================================================ */}
+      <section className="border-b border-line">
+        <div className="container-edge py-8 md:py-10">
+          <p className="terminal-label mb-1">pick your stay</p>
+          <p className="font-mono text-xs text-mocha">
+            Hover to explore · click to view & book
+          </p>
+        </div>
+        <BranchSplitHero branches={playBranches} height="55vh" />
       </section>
 
       {/* ============================================================
@@ -72,26 +83,10 @@ export default async function PlaycationPage() {
 
           <div className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              {
-                icon: Gamepad2,
-                title: "PlayStation + premium controllers",
-                body: "Latest console, two DualSenses, big-screen TV.",
-              },
-              {
-                icon: Wifi,
-                title: "Fiber internet",
-                body: "Wired ethernet to the gaming corner. No lag.",
-              },
-              {
-                icon: Coffee,
-                title: "Coffee included",
-                body: "Espresso machine, fresh beans, full bar.",
-              },
-              {
-                icon: Bed,
-                title: "Real bed, real shower",
-                body: "It's still a place to sleep. Just better.",
-              },
+              { icon: Gamepad2, title: "PlayStation + premium controllers", body: "Latest console, two DualSenses, big-screen TV." },
+              { icon: Wifi, title: "Fiber internet", body: "Wired ethernet to the gaming corner. No lag." },
+              { icon: Coffee, title: "Coffee included", body: "Espresso machine, fresh beans, full bar." },
+              { icon: Bed, title: "Real bed, real shower", body: "It's still a place to sleep. Just better." },
             ].map((it, i) => {
               const Icon = it.icon;
               return (
@@ -109,7 +104,7 @@ export default async function PlaycationPage() {
       </section>
 
       {/* ============================================================
-          AVAILABLE STAYS
+          AVAILABLE STAYS — cards
           ============================================================ */}
       <section id="stays" className="container-edge py-24 md:py-32">
         <Reveal>
@@ -130,18 +125,13 @@ export default async function PlaycationPage() {
           )}
           {playBranches.map((b, i) => (
             <Reveal key={b.id} delay={i * 0.05}>
-              {/* Inline card so we don't import BranchCard twice */}
               <Link
                 href={`/playcation/${b.slug}`}
                 className="group block relative overflow-hidden rounded-xl border border-line-bright bg-bg-card hover:border-amber/60 hover:-translate-y-0.5 transition-all"
               >
                 <div className="relative aspect-[16/10] overflow-hidden">
                   {b.hero_image_url ? (
-                    <img
-                      src={b.hero_image_url}
-                      alt={b.name}
-                      className="w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-105"
-                    />
+                    <img src={b.hero_image_url} alt={b.name} className="w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-105" />
                   ) : (
                     <div className="absolute inset-0 bg-bg-soft bg-grid" />
                   )}
@@ -151,9 +141,7 @@ export default async function PlaycationPage() {
                 <div className="p-5">
                   <h3 className="font-display text-2xl font-bold text-cream group-hover:text-amber transition-colors">{b.name}</h3>
                   {b.tagline && <p className="mt-1.5 text-sm text-cream-dim line-clamp-2">{b.tagline}</p>}
-                  <p className="mt-4 font-mono text-[0.62rem] uppercase tracking-widest text-amber flex items-center gap-1">
-                    View & book →
-                  </p>
+                  <p className="mt-4 font-mono text-[0.62rem] uppercase tracking-widest text-amber">View & book →</p>
                 </div>
               </Link>
             </Reveal>
@@ -175,14 +163,12 @@ export default async function PlaycationPage() {
               Live availability synced with our Airbnb calendars. Pay via GCash, Maya, or card.
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-              {playBranches[0] && (
-                <Link href={`/playcation/${playBranches[0].slug}`} className="key-cap key-cap-primary">
+              {featured && (
+                <Link href={`/playcation/${featured.slug}`} className="key-cap key-cap-primary">
                   Start booking
                 </Link>
               )}
-              <Link href="#stays" className="key-cap">
-                See all stays
-              </Link>
+              <Link href="#stays" className="key-cap">See all stays</Link>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getPublishedBranches } from "@/lib/branches";
 import BranchSplitHero from "@/components/site/BranchSplitHero";
+import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
 import { Cpu, Wifi, Coffee, Clock, Monitor } from "lucide-react";
 
@@ -14,17 +15,23 @@ export const metadata: Metadata = {
 };
 
 export default async function InternetCafePage() {
-  const cafeBranches = await getPublishedBranches("cafe");
+  const [cafeBranches, playBranches] = await Promise.all([
+    getPublishedBranches("cafe"),
+    getPublishedBranches("playcation"),
+  ]);
+
+  // Use a playcation room photo for the hero — gaming aesthetic, visually
+  // distinct from the cafe interior photo the home page already uses
+  const heroSrc = playBranches[0]?.hero_image_url ?? cafeBranches[0]?.hero_image_url ?? null;
 
   return (
     <>
       {/* ============================================================
-          HERO — title bar + split-panel branches
+          HERO — full-bleed photo + title text
           ============================================================ */}
-      <section className="bg-bg border-b border-line">
-        {/* Title */}
-        <div className="container-edge pt-14 pb-8 md:pt-20 md:pb-10">
-          <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <HeroParallax src={heroSrc} alt="Comffee Internet Cafe" height="tall">
+        <div className="max-w-4xl">
+          <div className="flex items-center gap-3 mb-8 flex-wrap">
             <span className="status-chip status-chip-amber">
               <Cpu className="h-3 w-3" />
               Internet Cafe
@@ -35,14 +42,14 @@ export default async function InternetCafePage() {
               </span>
             )}
           </div>
-          <h1 className="font-display text-[clamp(2.5rem,7vw,5.5rem)] leading-[0.9] font-bold tracking-tight text-cream">
+          <h1 className="font-display text-[clamp(2.75rem,8vw,6rem)] leading-[0.9] font-bold tracking-tight text-cream">
             Comffee Internet Cafe
           </h1>
-          <p className="mt-5 max-w-xl text-base md:text-lg text-cream-dim leading-relaxed">
+          <p className="mt-8 max-w-xl text-base md:text-lg text-cream-dim leading-relaxed">
             High-spec gaming PCs, fiber internet, and barista-grade coffee.
             Pay by the hour or grab a package — walk-in or reserve a station online.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-10 flex flex-wrap gap-4">
             <Link href="#locations" className="key-cap key-cap-primary">
               Find a location
             </Link>
@@ -52,9 +59,19 @@ export default async function InternetCafePage() {
             </Link>
           </div>
         </div>
+      </HeroParallax>
 
-        {/* Branch panels */}
-        <BranchSplitHero branches={cafeBranches} height="62svh" />
+      {/* ============================================================
+          BRANCH PICKER — expandable split panels
+          ============================================================ */}
+      <section className="border-b border-line">
+        <div className="container-edge py-8 md:py-10">
+          <p className="terminal-label mb-1">pick your location</p>
+          <p className="font-mono text-xs text-mocha">
+            Hover to explore · click to view availability
+          </p>
+        </div>
+        <BranchSplitHero branches={cafeBranches} height="55vh" />
       </section>
 
       {/* ============================================================
@@ -72,26 +89,10 @@ export default async function InternetCafePage() {
 
           <div className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              {
-                icon: Monitor,
-                title: "High-spec gaming PCs",
-                body: "Regular and VIP tiers. All machines maintained and ready.",
-              },
-              {
-                icon: Wifi,
-                title: "Fiber internet",
-                body: "Low-latency wired connection at every station. No throttling.",
-              },
-              {
-                icon: Coffee,
-                title: "Coffee & drinks",
-                body: "Espresso bar on-site. Order from your seat.",
-              },
-              {
-                icon: Clock,
-                title: "Hourly & packages",
-                body: "Pay as you go, or grab a value pack. No surprises.",
-              },
+              { icon: Monitor, title: "High-spec gaming PCs", body: "Regular and VIP tiers. All machines maintained and ready." },
+              { icon: Wifi, title: "Fiber internet", body: "Low-latency wired connection at every station. No throttling." },
+              { icon: Coffee, title: "Coffee & drinks", body: "Espresso bar on-site. Order from your seat." },
+              { icon: Clock, title: "Hourly & packages", body: "Pay as you go, or grab a value pack. No surprises." },
             ].map((it, i) => {
               const Icon = it.icon;
               return (
@@ -109,7 +110,7 @@ export default async function InternetCafePage() {
       </section>
 
       {/* ============================================================
-          LOCATIONS
+          LOCATIONS — cards
           ============================================================ */}
       <section id="locations" className="container-edge py-24 md:py-32">
         <Reveal>
@@ -136,11 +137,7 @@ export default async function InternetCafePage() {
               >
                 <div className="relative aspect-[16/10] overflow-hidden">
                   {b.hero_image_url ? (
-                    <img
-                      src={b.hero_image_url}
-                      alt={b.name}
-                      className="w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-105"
-                    />
+                    <img src={b.hero_image_url} alt={b.name} className="w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-105" />
                   ) : (
                     <div className="absolute inset-0 bg-bg-soft bg-grid" />
                   )}
@@ -150,9 +147,7 @@ export default async function InternetCafePage() {
                 <div className="p-5">
                   <h3 className="font-display text-2xl font-bold text-cream group-hover:text-amber transition-colors">{b.name}</h3>
                   {b.tagline && <p className="mt-1.5 text-sm text-cream-dim line-clamp-2">{b.tagline}</p>}
-                  <p className="mt-4 font-mono text-[0.62rem] uppercase tracking-widest text-amber">
-                    Check availability →
-                  </p>
+                  <p className="mt-4 font-mono text-[0.62rem] uppercase tracking-widest text-amber">Check availability →</p>
                 </div>
               </Link>
             </Reveal>
@@ -180,9 +175,7 @@ export default async function InternetCafePage() {
                   Reserve a station
                 </Link>
               )}
-              <Link href="#locations" className="key-cap">
-                See all locations
-              </Link>
+              <Link href="#locations" className="key-cap">See all locations</Link>
             </div>
           </div>
         </div>

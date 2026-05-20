@@ -1,6 +1,7 @@
 import { getPublishedBranches } from "@/lib/branches";
 import BranchCard from "@/components/site/BranchCard";
 import BranchSplitHero from "@/components/site/BranchSplitHero";
+import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
 import type { Metadata } from "next";
 
@@ -27,16 +28,16 @@ export default async function BranchesPage({ searchParams }: PageProps) {
       ? branches.filter((b) => b.type === type)
       : branches;
 
-  // Hero panels: show filtered branches, or all if no filter
   const heroBranches = filtered.length > 0 ? filtered : branches;
+  const heroSrc = branches[0]?.hero_image_url ?? null;
 
   return (
     <>
       {/* ============================================================
-          HERO — title + split panels of all (or filtered) branches
+          HERO — full-bleed photo + title + filter chips
           ============================================================ */}
-      <section className="bg-bg border-b border-line">
-        <div className="container-edge pt-14 pb-8 md:pt-20 md:pb-10">
+      <HeroParallax src={heroSrc} alt="Comffee Branches" height="medium">
+        <div className="max-w-4xl">
           <p className="terminal-label">/branches</p>
           <h1 className="mt-4 font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[0.9] tracking-tight text-cream max-w-4xl">
             Every Comffee location.
@@ -53,8 +54,12 @@ export default async function BranchesPage({ searchParams }: PageProps) {
             <FilterChip href="/branches?type=playcation" active={type === "playcation"}>Playcation</FilterChip>
           </div>
         </div>
+      </HeroParallax>
 
-        {/* Split-panel photo showcase — shows all visible branches */}
+      {/* ============================================================
+          SPLIT-PANEL PHOTO SHOWCASE
+          ============================================================ */}
+      <section className="border-b border-line">
         <BranchSplitHero branches={heroBranches} height="58svh" />
       </section>
 
