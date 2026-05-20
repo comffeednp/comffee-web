@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, BellOff, Check, Send } from "lucide-react";
+import { Bell, BellOff, Check, Loader2, Send } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
 import type { ChatConversation, ChatMessage } from "@/lib/chat";
 
@@ -30,10 +31,44 @@ export default function AdminChatClient({
     initialActiveId ?? initialConversations[0]?.id ?? null,
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [customerTyping, setCustomerTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
+
+  // Broadcast read + subscribe to customer typing when active conversation changes
+  useEffect(() => {
+    if (!activeId) return;
+    let supabase;
+    try { supabase = getSupabaseBrowser(); } catch { return; }
+
+    const channel = supabase
+      .channel(`chat:${activeId}`)
+      .on("broadcast", { event: "typing" }, (payload: { payload?: { from?: string } }) => {
+        if (payload.payload?.from === "customer") {
+          setCustomerTyping(true);
+          if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+          typingTimerRef.current = setTimeout(() => setCustomerTyping(false), 3000);
+        }
+      })
+      .subscribe(() => {
+        channel.send({ type: "broadcast", event: "read", payload: { by: "admin" } });
+      });
+
+    broadcastChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      broadcastChannelRef.current = null;
+      setCustomerTyping(false);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, [activeId]);
 
   // Load messages whenever active conversation changes
   useEffect(() => {
@@ -42,12 +77,15 @@ export default function AdminChatClient({
       return;
     }
     let cancelled = false;
+    setMessages([]);
+    setMessagesLoading(true);
     (async () => {
       const res = await fetch(`/api/admin/chat?conversationId=${activeId}`);
-      if (!res.ok) return;
+      if (!res.ok) { if (!cancelled) setMessagesLoading(false); return; }
       const data = await res.json();
       if (cancelled) return;
       setMessages(data.messages ?? []);
+      setMessagesLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -118,6 +156,13 @@ export default function AdminChatClient({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const sendTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 1500) return;
+    lastTypingSentRef.current = now;
+    broadcastChannelRef.current?.send({ type: "broadcast", event: "typing", payload: { from: "admin" } });
+  }, []);
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
@@ -253,16 +298,30 @@ export default function AdminChatClient({
         {active ? (
           <>
             <div className="px-5 py-3 border-b border-line bg-bg-soft flex items-center justify-between">
-              <div>
-                <p className="font-display text-base font-semibold text-cream">
-                  {active.customer_name ?? "Anonymous"}
-                </p>
-                <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
-                  {(active as ConversationWithBranch).branch_name
-                    ? `${(active as ConversationWithBranch).branch_name} · `
-                    : ""}
-                  {active.customer_email ?? active.customer_phone ?? "no contact"}
-                </p>
+              <div className="flex items-center gap-3 min-w-0">
+                {active.customer_avatar_url ? (
+                  <img src={active.customer_avatar_url} alt="" className="h-9 w-9 rounded-full shrink-0 object-cover" />
+                ) : (
+                  <div className="h-9 w-9 rounded-full shrink-0 bg-bg-elev border border-line-bright flex items-center justify-center">
+                    <span className="font-mono text-sm text-mocha">
+                      {(active.customer_name ?? "?")[0].toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="font-display text-base font-semibold text-cream">
+                    {active.customer_name ?? "Anonymous"}
+                  </p>
+                  <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
+                    {(active as ConversationWithBranch).branch_name
+                      ? `${(active as ConversationWithBranch).branch_name} · `
+                      : ""}
+                    {active.inquiry_check_in && active.inquiry_check_out
+                      ? `${new Date(active.inquiry_check_in + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${new Date(active.inquiry_check_out + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })} · `
+                      : ""}
+                    {active.customer_email ?? active.customer_phone ?? "no contact"}
+                  </p>
+                </div>
               </div>
               {active.status !== "resolved" && (
                 <button
@@ -277,32 +336,51 @@ export default function AdminChatClient({
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3">
-              {messages.map((m) => (
-                <motion.div
-                  key={m.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${
-                    m.sender_type === "admin" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[75%] px-3 py-2 rounded-lg text-sm ${
-                      m.sender_type === "admin"
-                        ? "bg-amber text-bg"
-                        : m.sender_type === "customer"
-                        ? "bg-bg-elev border border-line-bright text-cream"
-                        : "bg-transparent text-mocha font-mono text-xs"
-                    }`}
-                  >
-                    {m.body}
-                  </div>
-                </motion.div>
-              ))}
-              {messages.length === 0 && (
-                <p className="font-mono text-xs text-mocha text-center py-8">
-                  // no messages yet
-                </p>
+              {messagesLoading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
+                  <Loader2 className="h-5 w-5 text-amber animate-spin" />
+                  <p className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">// loading messages</p>
+                </div>
+              ) : (
+                <>
+                  {messages.map((m) => (
+                    <motion.div
+                      key={m.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${
+                        m.sender_type === "admin" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[75%] px-3 py-2 rounded-lg text-sm ${
+                          m.sender_type === "admin"
+                            ? "bg-amber text-bg"
+                            : m.sender_type === "customer"
+                            ? "bg-bg-elev border border-line-bright text-cream"
+                            : "bg-transparent text-mocha font-mono text-xs"
+                        }`}
+                      >
+                        {m.body}
+                      </div>
+                    </motion.div>
+                  ))}
+                  {messages.length === 0 && (
+                    <p className="font-mono text-xs text-mocha text-center py-8">
+                      // no messages yet
+                    </p>
+                  )}
+                  {customerTyping && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1 px-3 py-2 bg-bg-elev border border-line-bright rounded-lg">
+                        <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:0ms]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:150ms]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-mocha animate-bounce [animation-delay:300ms]" />
+                      </div>
+                      <span className="font-mono text-[0.65rem] text-mocha">typing</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -310,7 +388,7 @@ export default function AdminChatClient({
               <input
                 type="text"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder={`Reply as ${adminName}…`}
                 className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"

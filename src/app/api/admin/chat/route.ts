@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listMessages, postAdminMessage } from "@/lib/chat";
+import { listConversations, listMessages, postAdminMessage } from "@/lib/chat";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -26,9 +26,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const conversationId = url.searchParams.get("conversationId");
+
   if (!conversationId) {
-    return NextResponse.json({ error: "missing_id" }, { status: 400 });
+    const conversations = await listConversations();
+    return NextResponse.json({ ok: true, conversations });
   }
+
   const messages = await listMessages(conversationId);
   return NextResponse.json({ ok: true, messages });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -94,6 +94,13 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
   const [promoApplied, setPromoApplied] = useState<AppliedPromo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoChecking, setPromoChecking] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("comffe.chat.dates", JSON.stringify({ checkIn: state.checkIn, checkOut: state.checkOut }));
+    } catch {}
+    return () => { try { sessionStorage.removeItem("comffe.chat.dates"); } catch {} };
+  }, [state.checkIn, state.checkOut]);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
   const extraPax =
@@ -533,6 +540,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                   <p>10.5 <strong>Comffee-Initiated Cancellation — Full Refund Guaranteed.</strong> If Comffee cancels a confirmed reservation for any reason not caused by Guest violation of these Terms — including but not limited to overbooking, double booking, scheduling conflicts, administrative errors, force majeure events (natural disasters, government-mandated closures, utility failures), or property issues beyond Comffee's control — the Guest is entitled to a full refund of all amounts paid, including the security deposit. The refund will be initiated automatically to the original payment method and typically settles within 5–10 business days depending on the payment provider. Comffee is not responsible for delays caused by the Guest's bank or e-wallet provider once the refund has been issued.</p>
                   <p>10.6 <strong>No Refund for Violations.</strong> Eviction resulting from violation of these Terms (unauthorized guests, noise complaints, smoking, pets, damage, or any prohibited activity) does not entitle the Guest to any refund of accommodation fees or security deposit.</p>
                   <p>10.7 By completing the booking, the Guest expressly acknowledges and agrees to this non-refundable payment policy as required under Republic Act No. 7394 (Consumer Act of the Philippines). Comffee's cancellation policy has been clearly disclosed prior to payment in accordance with applicable Philippine consumer protection law.</p>
+                  <p>10.8 <strong>Refund Method for QR Ph Payments.</strong> If payment was made via QR Ph (InstaPay / GCash QR), PayMongo's payment gateway does not support automatic API refunds for this payment type. In cases where a refund is due under these Terms, Comffee will manually issue the refund via GCash or InstaPay to the mobile number provided at the time of booking within 5–7 business days of the refund being approved. Guest agrees to ensure the mobile number on the reservation is active and capable of receiving GCash transfers. Comffee is not liable for delays caused by an incorrect or inactive mobile number provided by the Guest.</p>
 
                   <Section3Head>11. PROHIBITED ACTIVITIES</Section3Head>
                   <p>The following are strictly prohibited and will result in immediate eviction without refund and potential legal action: subletting the unit; using the unit for commercial filming, adult content, or illegal activities; accessing neighboring units; tampering with locks or security systems; conducting any business activity without written consent from Comffee.</p>

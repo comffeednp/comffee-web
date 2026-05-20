@@ -4,6 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { LogOut } from "lucide-react";
 import { signOutAction } from "./_actions/auth";
 import NavScroller from "./NavScroller";
+import AdminChatFloat from "@/components/admin/AdminChatFloat";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,10 @@ export default async function AdminLayout({
       </header>
 
       <main className="flex-1 relative z-0 isolate">{children}</main>
+
+      {admin && (
+        <AdminChatFloat adminId={admin.id} adminName={admin.full_name} />
+      )}
     </div>
   );
 }

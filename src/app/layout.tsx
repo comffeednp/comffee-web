@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { getSiteSettings } from "@/lib/settings";
+import TopLoadingBar from "@/components/site/TopLoadingBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -62,6 +63,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/comffee-logo.png" />
       </head>
       <body className="min-h-full flex flex-col bg-background text-cream selection:bg-phosphor selection:text-bg">
+        <TopLoadingBar />
         <a href="#main-content" className="skip-link">Skip to content</a>
         {children}
       </body>

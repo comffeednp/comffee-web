@@ -408,3 +408,50 @@ export async function sendOrderConfirmation(input: OrderEmailInput) {
     text: `Order at ${input.branchName} for ${formatPHP(input.totalPhp)}. Pickup ${pickupTime}. Order ID: ${input.orderId}. View: ${lookupUrl}`,
   });
 }
+
+/* ---------------- new chat inquiry notification ---------------- */
+
+export async function sendNewChatInquiry({
+  customerName,
+  branchName,
+  checkIn,
+  checkOut,
+  adminChatUrl,
+}: {
+  customerName?: string | null;
+  branchName?: string | null;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  adminChatUrl: string;
+}) {
+  const to = process.env.ADMIN_NOTIFICATION_EMAIL;
+  if (!to) return;
+
+  const who = customerName ?? "Anonymous";
+  const context = [
+    branchName ? `Branch: ${branchName}` : null,
+    checkIn && checkOut ? `Dates: ${checkIn} – ${checkOut}` : null,
+  ].filter(Boolean).join(" · ");
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      New chat inquiry
+    </h1>
+    <p style="margin:0 0 16px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      <strong>${escapeHtml(who)}</strong> just started a chat${context ? ` — ${escapeHtml(context)}` : ""}.
+    </p>
+    <p style="margin:0;color:#8a7a68;font-size:13px;">Reply quickly to convert the inquiry into a booking.</p>
+  `;
+
+  return sendEmail({
+    to,
+    subject: `New chat from ${who}${branchName ? ` · ${branchName}` : ""}`,
+    html: chrome({
+      preheader: `${who} is asking${branchName ? ` about ${branchName}` : ""}${checkIn ? ` · ${checkIn}` : ""}`,
+      bodyHtml: body,
+      ctaLabel: "Open inbox",
+      ctaHref: adminChatUrl,
+    }),
+    text: `New chat from ${who}. ${context} Open: ${adminChatUrl}`,
+  });
+}

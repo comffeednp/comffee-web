@@ -10,6 +10,7 @@ interface Props {
   reservationId?: string;
   totalPhp: number;
   alreadyRefunded?: number;
+  guestPhone?: string | null;
 }
 
 export default function RefundButton({
@@ -17,6 +18,7 @@ export default function RefundButton({
   reservationId,
   totalPhp,
   alreadyRefunded = 0,
+  guestPhone,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -46,7 +48,11 @@ export default function RefundButton({
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.detail ?? data.error ?? "refund failed");
+        if (data.detail === "QRPH_MANUAL_REQUIRED") {
+          setError(`qrph_manual`);
+        } else {
+          setError(data.detail ?? data.error ?? "refund failed");
+        }
         setLoading(false);
         return;
       }
@@ -120,9 +126,17 @@ export default function RefundButton({
               </label>
             </div>
 
-            {error && (
+            {error && error === "qrph_manual" ? (
+              <div className="mt-4 p-3 border border-amber/40 rounded-md bg-amber/5">
+                <p className="font-mono text-xs text-amber">// QR Ph payment — API refund not supported</p>
+                <p className="mt-1 text-sm text-cream-dim">
+                  Send <strong className="text-cream">{formatPHP(amount)}</strong> manually via GCash
+                  {guestPhone ? <> to <strong className="text-amber font-mono">{guestPhone}</strong></> : " to the guest's number"}.
+                </p>
+              </div>
+            ) : error ? (
               <p className="mt-4 font-mono text-xs text-red-400">// {error}</p>
-            )}
+            ) : null}
 
             <div className="mt-6 flex items-center justify-end gap-3">
               <button

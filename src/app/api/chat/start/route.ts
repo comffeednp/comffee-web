@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   });
   if ("error" in guarded) return guarded.error;
 
-  const body = (guarded.json as { sessionToken?: string; customerName?: string; branchId?: string; branchName?: string }) ?? {};
+  const body = (guarded.json as { sessionToken?: string; customerName?: string; branchId?: string; branchName?: string; checkIn?: string; checkOut?: string; avatarUrl?: string }) ?? {};
   const token =
     body.sessionToken &&
     typeof body.sessionToken === "string" &&
@@ -33,9 +33,13 @@ export async function POST(request: Request) {
     typeof body.branchId === "string" && body.branchId.length <= 64 ? body.branchId : undefined;
   const branchName =
     typeof body.branchName === "string" && body.branchName.length <= 120 ? body.branchName : undefined;
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+  const checkIn = typeof body.checkIn === "string" && isoDate.test(body.checkIn) ? body.checkIn : undefined;
+  const checkOut = typeof body.checkOut === "string" && isoDate.test(body.checkOut) ? body.checkOut : undefined;
+  const avatarUrl = typeof body.avatarUrl === "string" && body.avatarUrl.startsWith("https://") && body.avatarUrl.length <= 512 ? body.avatarUrl : undefined;
 
   try {
-    const conversation = await findOrCreateConversation(token, customerName, branchId, branchName);
+    const conversation = await findOrCreateConversation(token, customerName, branchId, branchName, checkIn, checkOut, avatarUrl);
     return NextResponse.json({
       ok: true,
       sessionToken: token,

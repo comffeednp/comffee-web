@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { sendNewChatInquiry } from "@/lib/email";
 import crypto from "node:crypto";
 
 export interface ChatMessage {
@@ -18,7 +19,10 @@ export interface ChatConversation {
   customer_name: string | null;
   customer_phone: string | null;
   customer_email: string | null;
+  customer_avatar_url: string | null;
   branch_id: string | null;
+  inquiry_check_in: string | null;
+  inquiry_check_out: string | null;
   status: string;
   assigned_admin_id: string | null;
   last_message_at: string;
@@ -31,6 +35,9 @@ export async function findOrCreateConversation(
   customerName?: string,
   branchId?: string,
   branchName?: string,
+  checkIn?: string,
+  checkOut?: string,
+  avatarUrl?: string,
 ): Promise<ChatConversation> {
   const supabase = getSupabaseAdmin();
 
@@ -47,7 +54,10 @@ export async function findOrCreateConversation(
     .insert({
       customer_session_token: sessionToken,
       customer_name: customerName ?? null,
+      customer_avatar_url: avatarUrl ?? null,
       branch_id: branchId ?? null,
+      inquiry_check_in: checkIn ?? null,
+      inquiry_check_out: checkOut ?? null,
       status: "open",
     })
     .select("*")
@@ -55,14 +65,29 @@ export async function findOrCreateConversation(
 
   if (error || !data) throw new Error(`conversation create failed: ${error?.message}`);
 
-  // Post a system message so admin immediately sees which branch this is about
-  if (branchName) {
+  // Post a system message so admin immediately sees context
+  const contextParts: string[] = [];
+  if (branchName) contextParts.push(`Inquiry about: ${branchName}`);
+  if (checkIn && checkOut) {
+    const fmt = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+    contextParts.push(`Dates: ${fmt(checkIn)} – ${fmt(checkOut)}`);
+  }
+  if (contextParts.length > 0) {
     await supabase.from("chat_messages").insert({
       conversation_id: data.id,
       sender_type: "system",
-      body: `Inquiry about: ${branchName}`,
+      body: contextParts.join(" · "),
     });
   }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  sendNewChatInquiry({
+    customerName,
+    branchName,
+    checkIn,
+    checkOut,
+    adminChatUrl: `${siteUrl}/admin/chat`,
+  }).catch(() => {});
 
   return data as ChatConversation;
 }

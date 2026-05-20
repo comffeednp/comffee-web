@@ -124,6 +124,7 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
               reservationId={reservation.id}
               totalPhp={Number(reservation.total_php ?? 0)}
               alreadyRefunded={alreadyRefunded}
+              guestPhone={reservation.guest_phone ?? null}
             />
           </div>
           {refunds.length > 0 && (

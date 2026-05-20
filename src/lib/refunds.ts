@@ -122,6 +122,10 @@ export async function issueRefund(input: IssueRefundInput): Promise<RefundResult
       .from("refunds")
       .update({ status: "failed" })
       .eq("id", refund.id);
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("source type qrph")) {
+      throw new Error("QRPH_MANUAL_REQUIRED");
+    }
     throw e;
   }
 }
