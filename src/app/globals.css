@@ -94,6 +94,10 @@ body {
   font-feature-settings: "ss01", "cv11";
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
 ::selection {
   background: var(--color-phosphor);
   color: var(--color-bg);
