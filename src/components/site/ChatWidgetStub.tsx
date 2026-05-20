@@ -62,6 +62,7 @@ export default function ChatWidgetStub() {
   const [needsName, setNeedsName] = useState(true);
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
   const [branchLabel, setBranchLabel] = useState<string | null>(null);
   const [datesLabel, setDatesLabel] = useState<string | null>(null);
   const [adminTyping, setAdminTyping] = useState(false);
@@ -73,6 +74,10 @@ export default function ChatWidgetStub() {
   const inquiryKeyRef = useRef("comffe.chat.v2.general");
   const nameRef = useRef("");
   const activeEntryRef = useRef<SessionEntry | null>(null);
+  const viewRef = useRef(view);
+  const openRef = useRef(open);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { openRef.current = open; }, [open]);
 
   useEffect(() => { nameRef.current = name; }, [name]);
 
@@ -210,6 +215,7 @@ export default function ChatWidgetStub() {
     setMessages([]);
     setMessagesLoading(true);
     setSeenByAdmin(false);
+    setUnreadConvIds((s) => { const n = new Set(s); n.delete(entry.conversationId); return n; });
     setView("thread");
 
     const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(entry.sessionToken)}`);
@@ -231,10 +237,24 @@ export default function ChatWidgetStub() {
         { event: "INSERT", schema: "public", table: "chat_messages", filter: `conversation_id=eq.${conversationId}` },
         (payload: { new: Message }) => {
           const m = payload.new;
-          if (view === "thread") setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
-          if ((!open || view === "list") && m.sender_type === "admin") setUnread((u) => u + 1);
+          if (viewRef.current === "thread") {
+            setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
+          } else if (m.sender_type === "admin") {
+            setUnread((u) => u + 1);
+            setUnreadConvIds((s) => new Set([...s, conversationId]));
+          }
         },
       )
+      .on("broadcast", { event: "message" }, (payload: { payload?: { message?: Message } }) => {
+        const m = payload.payload?.message;
+        if (!m) return;
+        if (openRef.current && viewRef.current === "thread") {
+          setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
+        } else {
+          setUnread((u) => u + 1);
+          setUnreadConvIds((s) => new Set([...s, conversationId]));
+        }
+      })
       .on("broadcast", { event: "typing" }, (payload: { payload?: { from?: string } }) => {
         if (payload.payload?.from === "admin") {
           setAdminTyping(true);
@@ -252,7 +272,7 @@ export default function ChatWidgetStub() {
       broadcastChannelRef.current = null;
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-  }, [conversationId, open, view]);
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (open && view === "thread" && scrollRef.current) {
@@ -377,17 +397,26 @@ export default function ChatWidgetStub() {
                     <button
                       type="button"
                       onClick={() => openSession(s)}
-                      className="w-full text-left px-4 py-3 hover:bg-bg-elev/40 transition"
+                      className={`w-full text-left px-4 py-3 transition ${
+                        unreadConvIds.has(s.conversationId)
+                          ? "bg-amber/5 hover:bg-amber/10"
+                          : "hover:bg-bg-elev/40"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-cream text-sm font-medium truncate">
+                        <span className={`text-sm truncate ${unreadConvIds.has(s.conversationId) ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                           {s.branchName ?? "General inquiry"}
                         </span>
-                        {s.key === inquiryKeyRef.current && (
-                          <span className="font-mono text-[0.55rem] uppercase tracking-widest text-amber border border-amber/40 rounded px-1 shrink-0">
-                            current
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {unreadConvIds.has(s.conversationId) && (
+                            <span className="h-2 w-2 rounded-full bg-amber animate-pulse" />
+                          )}
+                          {s.key === inquiryKeyRef.current && (
+                            <span className="font-mono text-[0.55rem] uppercase tracking-widest text-amber border border-amber/40 rounded px-1">
+                              current
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {s.checkIn && s.checkOut && (
                         <p className="font-mono text-[0.6rem] text-amber mt-0.5">

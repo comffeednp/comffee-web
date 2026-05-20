@@ -36,10 +36,17 @@ export default function AdminChatClient({
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [customerTyping, setCustomerTyping] = useState(false);
+  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+  const activeIdRef = useRef(activeId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
+
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => {
+    if (activeId) setUnreadIds((s) => { const n = new Set(s); n.delete(activeId); return n; });
+  }, [activeId]);
 
   // Broadcast read + subscribe to customer typing when active conversation changes
   useEffect(() => {
@@ -108,10 +115,12 @@ export default function AdminChatClient({
         { event: "INSERT", schema: "public", table: "chat_messages" },
         (payload: { new: ChatMessage }) => {
           const m = payload.new;
-          if (m.conversation_id === activeId) {
+          if (m.conversation_id === activeIdRef.current) {
             setMessages((prev) =>
               prev.find((x) => x.id === m.id) ? prev : [...prev, m],
             );
+          } else if (m.sender_type === "customer") {
+            setUnreadIds((s) => new Set([...s, m.conversation_id]));
           }
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === m.conversation_id);
@@ -150,7 +159,7 @@ export default function AdminChatClient({
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(convChannel);
     };
-  }, [activeId]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll
   useEffect(() => {
@@ -176,7 +185,20 @@ export default function AdminChatClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId: activeId, body: text }),
       });
-      if (res.ok) setDraft("");
+      if (res.ok) {
+        const data = await res.json() as { message?: ChatMessage };
+        setDraft("");
+        if (data.message) {
+          setMessages((prev) =>
+            prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]
+          );
+          broadcastChannelRef.current?.send({
+            type: "broadcast",
+            event: "message",
+            payload: { message: data.message },
+          });
+        }
+      }
     } finally {
       setSending(false);
     }
@@ -263,17 +285,21 @@ export default function AdminChatClient({
                 className={`w-full text-left px-4 py-3 transition ${
                   c.id === activeId
                     ? "bg-bg-elev border-l-2 border-amber"
+                    : unreadIds.has(c.id)
+                    ? "bg-amber/5 border-l-2 border-amber hover:bg-amber/10"
                     : "hover:bg-bg-elev/40 border-l-2 border-transparent"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-cream font-medium truncate">
+                  <span className={`truncate ${unreadIds.has(c.id) ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                     {c.customer_name ?? "Anonymous"}
                   </span>
                   {c.status === "resolved" ? (
                     <Check className="h-3 w-3 text-phosphor shrink-0" />
+                  ) : unreadIds.has(c.id) ? (
+                    <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
                   ) : c.status === "open" ? (
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber shrink-0" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber/40 shrink-0" />
                   ) : null}
                 </div>
                 {(c as ConversationWithBranch).branch_name && (
