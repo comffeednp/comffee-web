@@ -7,11 +7,14 @@ import {
   Activity,
   AlertTriangle,
   Cpu,
+  LayoutGrid,
+  Map,
   Power,
   RefreshCw,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { PCStation } from "@/lib/pc-stations";
+import PCFloorMap from "./PCFloorMap";
 
 interface Props {
   branchId: string;
@@ -34,6 +37,7 @@ export default function LivePCStations({
   const [stations, setStations] = useState<PCStation[]>(initialStations);
   const [syncedAt, setSyncedAt] = useState<string | null>(initialSyncedAt);
   const [tick, setTick] = useState(0);
+  const [view, setView] = useState<"grid" | "map">("grid");
 
   // Subscribe to Realtime for this branch's pc_stations
   useEffect(() => {
@@ -161,23 +165,48 @@ export default function LivePCStations({
               </>
             )}
           </div>
-          <span className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha hidden sm:inline">
-            updates every ~10 seconds
-          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setView("grid")}
+              title="Grid view"
+              className={`p-1.5 rounded border transition ${
+                view === "grid"
+                  ? "border-cream text-cream bg-bg-soft"
+                  : "border-line-bright text-mocha hover:text-cream-dim"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setView("map")}
+              title="Floor map"
+              className={`p-1.5 rounded border transition ${
+                view === "map"
+                  ? "border-cream text-cream bg-bg-soft"
+                  : "border-line-bright text-mocha hover:text-cream-dim"
+              }`}
+            >
+              <Map className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Grid of stations */}
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          <AnimatePresence mode="popLayout">
-            {stations.map((station) => (
-              <StationCard
-                key={station.id}
-                station={station}
-                branchSlug={branchSlug}
-              />
-            ))}
-          </AnimatePresence>
-        </div>
+        {/* Grid / Floor map */}
+        {view === "map" ? (
+          <PCFloorMap stations={stations} branchSlug={branchSlug} />
+        ) : (
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            <AnimatePresence mode="popLayout">
+              {stations.map((station) => (
+                <StationCard
+                  key={station.id}
+                  station={station}
+                  branchSlug={branchSlug}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
     </section>
   );

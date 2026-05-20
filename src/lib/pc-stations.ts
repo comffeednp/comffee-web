@@ -11,6 +11,7 @@ export interface PCStation {
   current_session_amount_php: number | null;
   last_synced_at: string;
   sort_order: number;
+  pc_tier: string | null;
 }
 
 export interface PCStationsSnapshot {
