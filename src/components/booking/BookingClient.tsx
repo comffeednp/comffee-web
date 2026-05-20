@@ -34,6 +34,8 @@ interface Props {
   kycEnabled: boolean;
   kycVerified?: boolean;
   memberId?: string | null;
+  initialCheckIn?: string;
+  initialCheckOut?: string;
 }
 
 type Step = "dates" | "guest" | "terms" | "verify" | "review" | "loading" | "error";
@@ -57,12 +59,12 @@ interface AppliedPromo {
 const SECURITY_DEPOSIT_PHP = 1000;
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
-export default function BookingClient({ branch, initialBlocked, kycEnabled, kycVerified = false, memberId }: Props) {
+export default function BookingClient({ branch, initialBlocked, kycEnabled, kycVerified = false, memberId, initialCheckIn, initialCheckOut }: Props) {
   const router = useRouter();
   const tomorrow = addDays(todayString(), 1);
   const [state, setState] = useState<BookingState>({
-    checkIn: tomorrow,
-    checkOut: addDays(tomorrow, 2),
+    checkIn: initialCheckIn ?? tomorrow,
+    checkOut: initialCheckOut ?? addDays(tomorrow, 2),
     numGuests: 2,
     guestName: "",
     guestEmail: "",

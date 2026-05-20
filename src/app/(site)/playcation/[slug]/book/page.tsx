@@ -26,10 +26,13 @@ export async function generateMetadata({
 
 export default async function BookPlaycationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ checkIn?: string; checkOut?: string }>;
 }) {
   const { slug } = await params;
+  const { checkIn: qCheckIn, checkOut: qCheckOut } = await searchParams;
   const branch = await getBranchBySlug(slug);
   if (!branch || branch.type !== "playcation") notFound();
 
@@ -111,6 +114,8 @@ export default async function BookPlaycationPage({
           kycEnabled={isSumsubConfigured()}
           kycVerified={kycVerified}
           memberId={memberId}
+          initialCheckIn={qCheckIn}
+          initialCheckOut={qCheckOut}
         />
       </section>
     </>

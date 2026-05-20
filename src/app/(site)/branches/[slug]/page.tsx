@@ -342,7 +342,13 @@ export default async function BranchDetailPage({
             </p>
           </Reveal>
           <div className="mt-8">
-            <AvailabilityCalendar blocked={blockedRanges} />
+            <AvailabilityCalendar
+              blocked={blockedRanges}
+              branchSlug={branch.slug}
+              nightlyRate={Number(
+                (branch.rates.find(r => (r as {unit?:string}).unit === "night") ?? branch.rates[0])?.price_php ?? 0
+              )}
+            />
           </div>
         </section>
       )}

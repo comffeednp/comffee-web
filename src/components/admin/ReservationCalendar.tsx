@@ -80,6 +80,7 @@ export default function ReservationCalendar({ reservations, showBranch = false }
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+  const [selected, setSelected] = useState<CalendarReservation | null>(null);
 
   function prevMonth() {
     if (month === 0) { setYear((y) => y - 1); setMonth(11); }
@@ -194,7 +195,8 @@ export default function ReservationCalendar({ reservations, showBranch = false }
                       ]
                         .filter(Boolean)
                         .join(" · ")}
-                      className={`flex items-center gap-1 px-1 py-0.5 rounded border text-[0.58rem] font-mono truncate ${style.pill} ${isPending ? "opacity-50" : ""}`}
+                      onClick={() => setSelected(r)}
+                      className={`flex items-center gap-1 px-1 py-0.5 rounded border text-[0.58rem] font-mono truncate cursor-pointer hover:brightness-125 transition ${style.pill} ${isPending ? "opacity-50" : ""}`}
                     >
                       {r.source === "website" ? (
                         <Avatar url={r.member_avatar_url} name={r.member_name ?? r.guest_name} />
@@ -233,6 +235,40 @@ export default function ReservationCalendar({ reservations, showBranch = false }
           <span className="font-mono text-[0.6rem] text-cream-dim">pending hold</span>
         </div>
       </div>
+
+      {/* Detail panel */}
+      {selected && (
+        <div className="border-t border-line bg-bg px-4 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                {selected.source === "website" && (
+                  <Avatar url={selected.member_avatar_url} name={selected.member_name ?? selected.guest_name} />
+                )}
+                <span className="font-display font-bold text-cream">
+                  {selected.member_name ?? selected.guest_name ?? "Guest"}
+                </span>
+                <span className={`text-[0.65rem] font-mono px-2 py-0.5 rounded border ${SOURCE_STYLE[selected.source]?.pill ?? SOURCE_STYLE.manual.pill}`}>
+                  {selected.source}
+                </span>
+                <span className="font-mono text-[0.65rem] text-mocha">{selected.status}</span>
+              </div>
+              <div className="font-mono text-xs text-cream-dim">
+                {selected.check_in} → {selected.check_out}
+                {showBranch && selected.branch_name && (
+                  <span className="ml-2 text-mocha">· {selected.branch_name}</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setSelected(null)}
+              className="text-cream-dim hover:text-cream shrink-0 text-xs font-mono"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
