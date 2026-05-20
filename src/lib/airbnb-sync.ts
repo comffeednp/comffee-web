@@ -3,6 +3,7 @@
  * and directly from admin server actions (to avoid HTTP round-trips + auth issues).
  */
 
+import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { parseICal } from "@/lib/ical";
 
@@ -22,7 +23,7 @@ export interface SyncResult {
 export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
   const supabase = getSupabaseAdmin();
 
-  let q = supabase.from("airbnb_calendars").select("id, branch_id, ical_url, label");
+  let q = supabase.from("airbnb_calendars").select("id, branch_id, ical_url, label, branch:branches(slug)");
   if (calendarId) q = q.eq("id", calendarId) as typeof q;
 
   const { data: calendars, error: calErr } = await q;
@@ -101,6 +102,9 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
         .from("airbnb_calendars")
         .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
         .eq("id", cal.id);
+
+      const branchSlug = (cal.branch as { slug: string } | null)?.slug;
+      if (branchSlug) revalidatePath(`/branches/${branchSlug}`);
 
       results.push({ calendar_id: cal.id, upserted, cancelled });
     } catch (e) {

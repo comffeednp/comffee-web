@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   attachPaymentIntent,
@@ -139,6 +140,9 @@ export async function POST(request: Request) {
       reservationId: hold.id,
     });
   }
+
+  // Purge the branch page cache so availability calendar updates immediately
+  revalidatePath(`/branches/${branch.slug}`);
 
   // Dev mode — no PayMongo configured. Simulate instant confirm + email.
   if (!isPaymongoConfigured()) {

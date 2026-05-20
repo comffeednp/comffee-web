@@ -23,7 +23,7 @@ import {
   Gamepad2,
 } from "lucide-react";
 
-export const revalidate = 300;
+export const revalidate = 60;
 
 export async function generateStaticParams() {
   const slugs = await getAllBranchSlugs();

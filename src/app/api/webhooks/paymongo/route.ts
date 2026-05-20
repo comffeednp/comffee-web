@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   cancelReservation,
@@ -138,6 +139,11 @@ export async function POST(request: Request) {
               .update({ paymongo_payment_id: actualPaymentId })
               .eq("id", reservation.id);
           }
+          // Purge branch page cache so availability calendar updates immediately
+          {
+            const { data: b } = await supabase.from("branches").select("slug").eq("id", reservation.branch_id).maybeSingle();
+            if (b?.slug) revalidatePath(`/branches/${b.slug}`);
+          }
           // Fire confirmation email (best effort)
           if (reservation.guest_email) {
             const { data: branch } = await supabase
@@ -160,9 +166,12 @@ export async function POST(request: Request) {
           break;
         }
         case "link.payment.failed":
-        case "payment.failed":
+        case "payment.failed": {
           await cancelReservation(reservation.id, `paymongo: ${eventType}`);
+          const { data: b } = await supabase.from("branches").select("slug").eq("id", reservation.branch_id).maybeSingle();
+          if (b?.slug) revalidatePath(`/branches/${b.slug}`);
           break;
+        }
       }
       return NextResponse.json({ ok: true, kind: "reservation" });
     }
