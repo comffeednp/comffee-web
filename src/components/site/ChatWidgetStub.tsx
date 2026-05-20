@@ -51,7 +51,7 @@ function fmtDate(iso: string) {
 
 export default function ChatWidgetStub() {
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"list" | "thread">("thread");
+  const [view, setView] = useState<"list" | "thread" | "inquiry">("thread");
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -74,8 +74,14 @@ export default function ChatWidgetStub() {
   const inquiryKeyRef = useRef("comffe.chat.v2.general");
   const nameRef = useRef("");
   const activeEntryRef = useRef<SessionEntry | null>(null);
+  const [inquiryCheckIn, setInquiryCheckIn] = useState("");
+  const [inquiryCheckOut, setInquiryCheckOut] = useState("");
+  const [inquiryGuests, setInquiryGuests] = useState(2);
+  const [inquiryMsg, setInquiryMsg] = useState("");
+  const [inquirySending, setInquirySending] = useState(false);
   const viewRef = useRef(view);
   const openRef = useRef(open);
+  const skipInitRef = useRef(false);
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { openRef.current = open; }, [open]);
 
@@ -95,9 +101,32 @@ export default function ChatWidgetStub() {
     })();
   }, []);
 
+  // Listen for "Message host" button → open in inquiry view
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ inquiry?: boolean }>).detail;
+      if (!detail?.inquiry) return;
+      let ci = "", co = "";
+      let guests = 2;
+      try { const d = JSON.parse(sessionStorage.getItem("comffe.chat.dates") ?? "null"); if (d) { ci = d.checkIn ?? ""; co = d.checkOut ?? ""; } } catch {}
+      try { guests = parseInt(sessionStorage.getItem("comffe.chat.guests") ?? "2") || 2; } catch {}
+      setInquiryCheckIn(ci);
+      setInquiryCheckOut(co);
+      setInquiryGuests(guests);
+      setInquiryMsg("");
+      setMessages([]);
+      skipInitRef.current = true;
+      setView("inquiry");
+      setOpen(true);
+    };
+    window.addEventListener("comffe:open-chat", handler);
+    return () => window.removeEventListener("comffe:open-chat", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // On open: init current inquiry, register session, decide list vs thread
   useEffect(() => {
     if (!open) return;
+    if (skipInitRef.current) { skipInitRef.current = false; return; }
     let cancelled = false;
 
     setMessages([]);
@@ -105,13 +134,11 @@ export default function ChatWidgetStub() {
     setSeenByAdmin(false);
 
     (async () => {
-      // Read inquiry context
+      // Read inquiry context (dates intentionally excluded from normal opens)
       let branchCtx: { id: string; name: string } | null = null;
-      let datesCtx: { checkIn: string; checkOut: string } | null = null;
       try { branchCtx = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); } catch {}
-      try { datesCtx = JSON.parse(sessionStorage.getItem("comffe.chat.dates") ?? "null"); } catch {}
 
-      const inquiryKey = getInquiryKey(branchCtx?.id, datesCtx?.checkIn, datesCtx?.checkOut);
+      const inquiryKey = getInquiryKey(branchCtx?.id);
       inquiryKeyRef.current = inquiryKey;
 
       // Look up stored token for this inquiry
@@ -150,8 +177,6 @@ export default function ChatWidgetStub() {
           customerName,
           branchId: branchCtx?.id ?? undefined,
           branchName: branchCtx?.name ?? undefined,
-          checkIn: datesCtx?.checkIn ?? undefined,
-          checkOut: datesCtx?.checkOut ?? undefined,
           avatarUrl: avatarUrl ?? undefined,
         }),
       });
@@ -168,8 +193,6 @@ export default function ChatWidgetStub() {
         sessionToken: token,
         conversationId: convId,
         branchName: branchCtx?.name ?? undefined,
-        checkIn: datesCtx?.checkIn ?? undefined,
-        checkOut: datesCtx?.checkOut ?? undefined,
         updatedAt: new Date().toISOString(),
       };
       upsertSession(entry);
@@ -191,7 +214,7 @@ export default function ChatWidgetStub() {
 
       // First/only session → go straight to thread
       setBranchLabel(branchCtx?.name ?? null);
-      setDatesLabel(datesCtx ? `${fmtDate(datesCtx.checkIn)} – ${fmtDate(datesCtx.checkOut)}` : null);
+      setDatesLabel(null);
       setView("thread");
       setMessagesLoading(true);
       const msgRes = await fetch(`/api/chat/messages?sessionToken=${encodeURIComponent(token)}`);
@@ -291,6 +314,96 @@ export default function ChatWidgetStub() {
     broadcastChannelRef.current?.send({ type: "broadcast", event: "typing", payload: { from: "customer" } });
   };
 
+  const handleInquirySubmit = async () => {
+    const text = inquiryMsg.trim();
+    if (!text || inquirySending) return;
+    setInquirySending(true);
+    try {
+      // Update sessionStorage with form values
+      try {
+        sessionStorage.setItem("comffe.chat.dates", JSON.stringify({ checkIn: inquiryCheckIn, checkOut: inquiryCheckOut }));
+        sessionStorage.setItem("comffe.chat.guests", String(inquiryGuests));
+      } catch {}
+
+      let branchCtx: { id: string; name: string } | null = null;
+      try { branchCtx = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); } catch {}
+
+      const inquiryKey = getInquiryKey(branchCtx?.id, inquiryCheckIn || undefined, inquiryCheckOut || undefined);
+
+      let storedToken: string | null = null;
+      try {
+        const stored = JSON.parse(localStorage.getItem(inquiryKey) ?? "null") as { sessionToken?: string } | null;
+        if (stored?.sessionToken) storedToken = stored.sessionToken;
+      } catch {}
+
+      let authName: string | null = null;
+      let avatarUrl: string | null = null;
+      try {
+        const supabase = getSupabaseBrowser();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          authName = (user.user_metadata?.full_name ?? user.user_metadata?.name ?? null) as string | null;
+          avatarUrl = (user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null) as string | null;
+          if (authName && !nameRef.current) { setName(authName); setNeedsName(false); }
+        }
+      } catch {}
+
+      const startRes = await fetch("/api/chat/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionToken: storedToken ?? undefined,
+          customerName: nameRef.current || authName || undefined,
+          branchId: branchCtx?.id ?? undefined,
+          branchName: branchCtx?.name ?? undefined,
+          checkIn: inquiryCheckIn || undefined,
+          checkOut: inquiryCheckOut || undefined,
+          avatarUrl: avatarUrl ?? undefined,
+        }),
+      });
+      if (!startRes.ok) return;
+      const startData = await startRes.json();
+      const token = startData.sessionToken as string;
+      const convId = startData.conversationId as string;
+
+      localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: token, name: nameRef.current || undefined }));
+      const entry: SessionEntry = {
+        key: inquiryKey,
+        sessionToken: token,
+        conversationId: convId,
+        branchName: branchCtx?.name ?? undefined,
+        checkIn: inquiryCheckIn || undefined,
+        checkOut: inquiryCheckOut || undefined,
+        updatedAt: new Date().toISOString(),
+      };
+      upsertSession(entry);
+      activeEntryRef.current = entry;
+      inquiryKeyRef.current = inquiryKey;
+      setSessionToken(token);
+      setConversationId(convId);
+      setBranchLabel(branchCtx?.name ?? null);
+      setDatesLabel(inquiryCheckIn && inquiryCheckOut ? `${fmtDate(inquiryCheckIn)} – ${fmtDate(inquiryCheckOut)}` : null);
+      setSessions(loadSessions());
+
+      const msgRes = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken: token, body: text, customerName: nameRef.current || authName || undefined }),
+      });
+      if (msgRes.ok) {
+        const data = await msgRes.json() as { message?: Message };
+        setMessages(data.message ? [data.message] : []);
+        if (needsName && nameRef.current) {
+          setNeedsName(false);
+          localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: token, name: nameRef.current }));
+        }
+      }
+      setView("thread");
+    } finally {
+      setInquirySending(false);
+    }
+  };
+
   const handleSend = async () => {
     const text = draft.trim();
     if (!text || !sessionToken || sending) return;
@@ -358,7 +471,17 @@ export default function ChatWidgetStub() {
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-line bg-bg-soft flex items-center justify-between shrink-0">
-              {view === "thread" ? (
+              {view === "inquiry" ? (
+                <>
+                  <div className="min-w-0">
+                    <span className="font-mono text-xs uppercase tracking-widest text-cream">
+                      {(() => { try { const b = JSON.parse(sessionStorage.getItem("comffe.chat.branch") ?? "null"); return b?.name ? `comffee // ${b.name}` : "comffee // message host"; } catch { return "comffee // message host"; } })()}
+                    </span>
+                    <p className="font-mono text-[0.6rem] text-mocha mt-0.5">tell us about your stay</p>
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-phosphor animate-pulse shadow-[0_0_8px_var(--color-phosphor)] shrink-0" />
+                </>
+              ) : view === "thread" ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0">
                     {sessions.length > 1 && (
@@ -390,7 +513,86 @@ export default function ChatWidgetStub() {
             </div>
 
             {/* Body */}
-            {view === "list" ? (
+            {view === "inquiry" ? (
+              <>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div>
+                    <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha mb-2">// your stay</p>
+                    <div className="border border-line-bright rounded-xl p-4 space-y-3 bg-bg">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha">check-in</label>
+                          <input
+                            type="date"
+                            value={inquiryCheckIn}
+                            onChange={(e) => setInquiryCheckIn(e.target.value)}
+                            className="w-full bg-bg-soft border border-line rounded-md px-2 py-1.5 text-xs text-cream font-mono focus:outline-none focus:border-amber"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha">check-out</label>
+                          <input
+                            type="date"
+                            value={inquiryCheckOut}
+                            onChange={(e) => setInquiryCheckOut(e.target.value)}
+                            className="w-full bg-bg-soft border border-line rounded-md px-2 py-1.5 text-xs text-cream font-mono focus:outline-none focus:border-amber"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha">guests</label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setInquiryGuests((g) => Math.max(1, g - 1))}
+                            className="h-7 w-7 rounded-full border border-line-bright flex items-center justify-center text-cream-dim hover:border-amber hover:text-amber transition text-base leading-none"
+                          >−</button>
+                          <span className="font-mono text-sm text-cream w-5 text-center">{inquiryGuests}</span>
+                          <button
+                            type="button"
+                            onClick={() => setInquiryGuests((g) => g + 1)}
+                            className="h-7 w-7 rounded-full border border-line-bright flex items-center justify-center text-cream-dim hover:border-amber hover:text-amber transition text-base leading-none"
+                          >+</button>
+                          <span className="font-mono text-[0.6rem] text-mocha">{inquiryGuests === 1 ? "guest" : "guests"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">// message</p>
+                    <textarea
+                      value={inquiryMsg}
+                      onChange={(e) => setInquiryMsg(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleInquirySubmit(); } }}
+                      placeholder="Ask about the stay, amenities, or anything…"
+                      rows={3}
+                      className="w-full bg-bg border border-line-bright rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber resize-none"
+                      autoFocus
+                    />
+                  </div>
+                  {needsName && (
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your name"
+                      className="w-full bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream font-mono focus:outline-none focus:border-amber"
+                    />
+                  )}
+                </div>
+                <div className="border-t border-line p-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleInquirySubmit}
+                    disabled={inquirySending || !inquiryMsg.trim()}
+                    className="w-full flex items-center justify-center gap-2 bg-amber text-bg rounded-md py-2.5 font-mono text-xs uppercase tracking-widest disabled:opacity-40 hover:bg-amber/90 transition"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    {inquirySending ? "Sending…" : "Send message"}
+                  </button>
+                </div>
+              </>
+            ) : view === "list" ? (
               <ul className="flex-1 overflow-y-auto divide-y divide-line">
                 {sessions.map((s) => (
                   <li key={s.key}>

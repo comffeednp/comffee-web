@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
   ChevronRight,
+  MessageSquare,
   Power,
   ShieldCheck,
   Users,
@@ -263,6 +264,24 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                       setState(s => ({ ...s, checkIn, checkOut }))
                     }
                   />
+                </div>
+
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem("comffe.chat.branch", JSON.stringify({ id: branch.id, name: branch.name }));
+                        sessionStorage.setItem("comffe.chat.dates", JSON.stringify({ checkIn: state.checkIn, checkOut: state.checkOut }));
+                        sessionStorage.setItem("comffe.chat.guests", String(state.numGuests));
+                      } catch {}
+                      window.dispatchEvent(new CustomEvent("comffe:open-chat", { detail: { inquiry: true } }));
+                    }}
+                    className="inline-flex items-center gap-1.5 font-mono text-[0.65rem] uppercase tracking-widest text-cream-dim hover:text-amber transition"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Message host
+                  </button>
                 </div>
 
                 <Field label={`number of guests${branch.maxGuests ? ` — max ${branch.maxGuests}` : ""}`}>
