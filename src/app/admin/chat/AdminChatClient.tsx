@@ -63,6 +63,19 @@ export default function AdminChatClient({
           typingTimerRef.current = setTimeout(() => setCustomerTyping(false), 3000);
         }
       })
+      .on("broadcast", { event: "message" }, (payload: { payload?: { message?: ChatMessage } }) => {
+        const m = payload.payload?.message;
+        if (!m || m.sender_type !== "customer") return;
+        setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === m.conversation_id);
+          if (idx === -1) return prev;
+          const updated = { ...prev[idx], last_message_at: m.created_at };
+          const next = [...prev];
+          next.splice(idx, 1);
+          return [updated, ...next];
+        });
+      })
       .subscribe(() => {
         channel.send({ type: "broadcast", event: "read", payload: { by: "admin" } });
       });
@@ -305,6 +318,13 @@ export default function AdminChatClient({
                 {(c as ConversationWithBranch).branch_name && (
                   <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
                     {(c as ConversationWithBranch).branch_name}
+                  </p>
+                )}
+                {c.inquiry_check_in && c.inquiry_check_out && (
+                  <p className="font-mono text-[0.6rem] text-amber/70 mt-0.5">
+                    {new Date(c.inquiry_check_in + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
+                    {" – "}
+                    {new Date(c.inquiry_check_out + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
                   </p>
                 )}
                 <p className="font-mono text-[0.65rem] text-mocha mt-0.5">

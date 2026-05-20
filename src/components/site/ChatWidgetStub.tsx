@@ -392,7 +392,14 @@ export default function ChatWidgetStub() {
       });
       if (msgRes.ok) {
         const data = await msgRes.json() as { message?: Message };
-        setMessages(data.message ? [data.message] : []);
+        if (data.message) {
+          setMessages([data.message]);
+          broadcastChannelRef.current?.send({
+            type: "broadcast",
+            event: "message",
+            payload: { message: data.message },
+          });
+        }
         if (needsName && nameRef.current) {
           setNeedsName(false);
           localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken: token, name: nameRef.current }));
@@ -417,8 +424,15 @@ export default function ChatWidgetStub() {
         body: JSON.stringify({ sessionToken, body: text, customerName: name || undefined }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setMessages((prev) => [...prev, data.message]);
+        const data = await res.json() as { message?: Message };
+        if (data.message) {
+          setMessages((prev) => prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]);
+          broadcastChannelRef.current?.send({
+            type: "broadcast",
+            event: "message",
+            payload: { message: data.message },
+          });
+        }
         setDraft("");
         const updatedEntry = activeEntryRef.current
           ? { ...activeEntryRef.current, updatedAt: new Date().toISOString() }
