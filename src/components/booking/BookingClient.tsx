@@ -43,7 +43,7 @@ interface Props {
   initialCheckOut?: string;
 }
 
-type Step = "dates" | "guest" | "terms" | "verify" | "review" | "loading" | "error";
+type Step = "dates" | "guest" | "terms" | "verify" | "review" | "loading" | "paying" | "error";
 
 interface BookingState {
   checkIn: string;
@@ -80,6 +80,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   });
   const [step, setStep] = useState<Step>("dates");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const [paymentType, setPaymentType] = useState<"full" | "partial">("full");
@@ -107,6 +108,22 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
     obs.observe(summaryRef.current);
     return () => obs.disconnect();
   }, []);
+
+  // Poll reservation status when waiting for PayMongo payment confirmation
+  useEffect(() => {
+    if (step !== "paying" || !pendingReservationId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payments/status?id=${pendingReservationId}`);
+        const data = await res.json() as { status?: string };
+        if (data.status === "confirmed") {
+          clearInterval(interval);
+          router.push(`/playcation/${branch.slug}/confirmed/${pendingReservationId}`);
+        }
+      } catch {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [step, pendingReservationId, branch.slug, router]);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
   const extraPax =
@@ -212,7 +229,9 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
           return;
         }
         if (data.checkoutUrl) {
-          window.location.href = data.checkoutUrl;
+          window.open(data.checkoutUrl, "_blank", "noopener");
+          setPendingReservationId(data.reservationId);
+          setStep("paying");
           return;
         }
         if (data.simulated && data.reservationId) {
@@ -904,6 +923,41 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
                     transition={{ duration: 3, ease: "easeInOut" }}
                   />
                 </div>
+              </motion.div>
+            )}
+
+            {/* ----- PAYING ----- */}
+            {step === "paying" && (
+              <motion.div
+                key="paying"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="py-20 text-center space-y-6"
+              >
+                <div className="flex justify-center">
+                  <div className="relative">
+                    <div className="h-20 w-20 rounded-full border-4 border-line-bright border-t-amber animate-spin" />
+                    <Power className="absolute inset-0 m-auto h-7 w-7 text-amber" />
+                  </div>
+                </div>
+                <div>
+                  <p className="font-mono text-sm text-phosphor">// WAITING FOR PAYMENT...</p>
+                  <p className="mt-2 font-mono text-xs text-cream-dim max-w-xs mx-auto">
+                    Complete your payment in the tab that just opened. This page will automatically redirect once confirmed.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingReservationId) {
+                      router.push(`/playcation/${branch.slug}/confirmed/${pendingReservationId}`);
+                    }
+                  }}
+                  className="key-cap font-mono text-xs"
+                >
+                  I&apos;ve already paid → view booking
+                </button>
               </motion.div>
             )}
 

@@ -26,10 +26,11 @@ interface Captured {
   billing: File | null;
 }
 
-function CameraCapture({ label, hint, onCapture }: {
+function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
   label: string;
   hint: string;
   onCapture: (file: File) => void;
+  facingMode?: "user" | "environment";
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,7 +48,7 @@ function CameraCapture({ label, hint, onCapture }: {
     setCameraError(null);
     setMode("camera");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch {
@@ -244,6 +245,7 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
             label="// step_1 · selfie"
             hint="Take a clear photo of your face. Make sure it's well lit and your eyes are visible."
             onCapture={(f) => update("selfie", f)}
+            facingMode="user"
           />
           <button
             type="button"
