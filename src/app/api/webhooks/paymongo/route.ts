@@ -148,7 +148,7 @@ export async function POST(request: Request) {
           if (reservation.guest_email) {
             const { data: branch } = await supabase
               .from("branches")
-              .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
+              .select("name, slug, address, checkin_photo_url, checkout_photo_url, branch_rates (check_in_time, check_out_time, sort_order)")
               .eq("id", reservation.branch_id)
               .maybeSingle();
             const rates = (
@@ -169,6 +169,8 @@ export async function POST(request: Request) {
               numGuests: reservation.num_guests ?? 1,
               totalPhp: Number(reservation.total_php ?? 0),
               reservationId: reservation.id,
+              checkinPhotoUrl: (branch as { checkin_photo_url?: string | null } | null)?.checkin_photo_url ?? null,
+              checkoutPhotoUrl: (branch as { checkout_photo_url?: string | null } | null)?.checkout_photo_url ?? null,
             }).catch((e) => console.error("[email] booking failed", e));
           }
           break;

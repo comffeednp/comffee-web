@@ -13,6 +13,7 @@ import {
   deleteRateAction,
   addPhotosAction,
   deletePhotoAction,
+  updateBranchInstructionPhotosAction,
 } from "../../_actions/branches";
 import BranchCoreFields from "@/components/admin/BranchCoreFields";
 import ImageUpload from "@/components/admin/ImageUpload";
@@ -221,6 +222,36 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
           <PCTierEditor branchId={branch.id} stations={pcStations} />
         </Section>
       )}
+
+      {/* GUEST INSTRUCTIONS */}
+      <Section id="instructions" title="Guest instructions" subtitle="sent as email attachments">
+        <p className="mb-6 text-sm text-cream-dim">
+          Upload one photo per type. These are attached to the booking confirmation email so guests have everything they need — address, door code, WiFi, room details, check-in/out steps, etc.
+        </p>
+        <form action={updateBranchInstructionPhotosAction} className="space-y-8">
+          <input type="hidden" name="id" value={branch.id} />
+          <div>
+            <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-3">// check-in instructions photo</p>
+            <ImageUpload
+              name="checkin_photo_url"
+              defaultValue={branch.checkin_photo_url as string | null}
+              folder={`branches/${branch.slug}/instructions`}
+            />
+          </div>
+          <div>
+            <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-3">// check-out instructions photo</p>
+            <ImageUpload
+              name="checkout_photo_url"
+              defaultValue={branch.checkout_photo_url as string | null}
+              folder={`branches/${branch.slug}/instructions`}
+            />
+          </div>
+          <button type="submit" className="key-cap key-cap-primary">
+            <Save className="h-4 w-4" />
+            Save instruction photos
+          </button>
+        </form>
+      </Section>
 
       {/* SAVE */}
       <div className="mt-16 pt-10 border-t border-line flex items-center gap-3">

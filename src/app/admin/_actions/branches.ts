@@ -268,3 +268,15 @@ export async function deletePhotoAction(formData: FormData) {
   revalidatePath(`/admin/branches/${branch_id}`);
   revalidatePath("/branches");
 }
+
+export async function updateBranchInstructionPhotosAction(formData: FormData) {
+  await requireAdmin();
+  const supabase = await getSupabaseServer();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await supabase.from("branches").update({
+    checkin_photo_url: nullable(formData.get("checkin_photo_url")),
+    checkout_photo_url: nullable(formData.get("checkout_photo_url")),
+  }).eq("id", id);
+  revalidatePath(`/admin/branches/${id}`);
+}

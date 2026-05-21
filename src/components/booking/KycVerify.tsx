@@ -244,9 +244,10 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_1 · selfie"
             hint="Take a clear photo of your face. Make sure it's well lit and your eyes are visible."
-            onCapture={(f) => update("selfie", f)}
+            onCapture={(f) => { update("selfie", f); setError(null); }}
             facingMode="user"
           />
+          {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
           <button
             type="button"
             disabled={!canAdvanceSelfie}
@@ -263,8 +264,9 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_2 · government id"
             hint="Take a photo or upload your Philippine government-issued ID — PhilSys, UMID, Driver's License, or Passport."
-            onCapture={(f) => update("id", f)}
+            onCapture={(f) => { update("id", f); setError(null); }}
           />
+          {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
           <div className="flex gap-3">
             <button type="button" onClick={() => setSubStep("selfie")} className="key-cap font-mono text-xs">← back</button>
             <button
@@ -284,7 +286,7 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_3 · proof of billing"
             hint="Take a photo or upload a utility bill (Meralco, Maynilad, Converge, PLDT, Globe) showing your name and address. Must be within the last 3 months."
-            onCapture={(f) => update("billing", f)}
+            onCapture={(f) => { update("billing", f); setError(null); }}
           />
           {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
           <div className="flex gap-3">

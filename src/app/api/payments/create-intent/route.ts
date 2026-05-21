@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, slug, name, type, security_deposit_php")
+    .select("id, slug, name, type, security_deposit_php, checkin_photo_url, checkout_photo_url")
     .eq("id", v.branchId)
     .maybeSingle();
   if (!branch || branch.type !== "playcation") {
@@ -176,6 +176,8 @@ export async function POST(request: Request) {
         numGuests: v.numGuests,
         totalPhp: total,
         reservationId: hold.id,
+        checkinPhotoUrl: (branch as { checkin_photo_url?: string | null }).checkin_photo_url ?? null,
+        checkoutPhotoUrl: (branch as { checkout_photo_url?: string | null }).checkout_photo_url ?? null,
       }).catch((e) => console.error("[email] booking failed", e));
     }
     return NextResponse.json({

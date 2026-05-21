@@ -31,6 +31,28 @@ export interface ChatConversation {
   created_at: string;
 }
 
+async function broadcastToConversation(conversationId: string, message: ChatMessage): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  try {
+    await fetch(`${url}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`,
+        "apikey": key,
+      },
+      body: JSON.stringify({
+        messages: [{ topic: `realtime:chat:${conversationId}`, event: "message", payload: { message } }],
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // best effort
+  }
+}
+
 /** Customer-facing — find or create a conversation by their session token. */
 export async function findOrCreateConversation(
   sessionToken: string,
@@ -152,6 +174,8 @@ export async function postCustomerMessage(
     }).catch(() => {});
   }
 
+  broadcastToConversation(conversation.id, message as ChatMessage).catch(() => {});
+
   return {
     conversation,
     message: message as ChatMessage,
@@ -185,6 +209,8 @@ export async function postAdminMessage(
       last_message_sender_type: "admin",
     })
     .eq("id", conversationId);
+
+  broadcastToConversation(conversationId, message as ChatMessage).catch(() => {});
 
   return message as ChatMessage;
 }

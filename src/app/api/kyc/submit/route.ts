@@ -36,9 +36,14 @@ const UTILITY_KEYWORDS = [
   "VECO", "DAVAO LIGHT",
 ];
 
-async function extractText(buffer: Buffer, contentType: string): Promise<string | null> {
-  if (!VISION_API_KEY) return null;
-  if (contentType.includes("pdf")) return null; // PDFs: fail open, admin reviews manually
+interface TextResult {
+  configured: boolean;
+  text: string | null; // null = pdf or API error (fail open); "" = no text detected
+}
+
+async function extractText(buffer: Buffer, contentType: string): Promise<TextResult> {
+  if (!VISION_API_KEY) return { configured: false, text: null };
+  if (contentType.includes("pdf")) return { configured: true, text: null }; // admin reviews manually
 
   const body = {
     requests: [{
@@ -53,37 +58,70 @@ async function extractText(buffer: Buffer, contentType: string): Promise<string 
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { configured: true, text: null };
     const data = await res.json() as {
       responses?: Array<{ textAnnotations?: Array<{ description: string }> }>;
     };
-    return data.responses?.[0]?.textAnnotations?.[0]?.description ?? null;
+    const description = data.responses?.[0]?.textAnnotations?.[0]?.description;
+    return { configured: true, text: description ?? "" };
   } catch {
-    return null; // fail open on any error
+    return { configured: true, text: null };
+  }
+}
+
+async function verifySelfie(buffer: Buffer): Promise<string | null> {
+  if (!VISION_API_KEY) return null;
+  const body = {
+    requests: [{
+      image: { content: buffer.toString("base64") },
+      features: [{ type: "FACE_DETECTION", maxResults: 5 }],
+    }],
+  };
+  try {
+    const res = await fetch(`${VISION_URL}?key=${VISION_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      responses?: Array<{ faceAnnotations?: Array<unknown> }>;
+    };
+    const faces = data.responses?.[0]?.faceAnnotations ?? [];
+    if (faces.length === 0) {
+      return "No face detected. Take a clear selfie with your face well lit and fully visible.";
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
 async function verifyId(buffer: Buffer, contentType: string): Promise<string | null> {
-  const text = await extractText(buffer, contentType);
-  if (text === null) return null;
+  const { configured, text } = await extractText(buffer, contentType);
+  if (!configured || text === null) return null; // fail open when not configured or API error
+
   const upper = text.toUpperCase();
   if (PH_ID_KEYWORDS.some((kw) => upper.includes(kw))) return null;
-  // Only reject when OCR found substantial text with no ID keywords
-  if (text.trim().length > 30) {
-    return "Upload a clear photo of a Philippine government-issued ID (PhilSys, UMID, Driver's License, Passport, etc.).";
+
+  if (text.trim().length < 20) {
+    return "Could not read your ID — make sure it is well lit, in focus, and the full text is clearly visible.";
   }
-  return null;
+  return "Upload a clear photo of a Philippine government-issued ID (PhilSys, UMID, Driver's License, Passport, etc.).";
 }
 
 async function verifyBilling(buffer: Buffer, contentType: string): Promise<string | null> {
-  const text = await extractText(buffer, contentType);
-  if (text === null) return null;
+  const { configured, text } = await extractText(buffer, contentType);
+  if (!configured || text === null) return null;
+
   const upper = text.toUpperCase();
   if (UTILITY_KEYWORDS.some((kw) => upper.includes(kw))) return null;
-  if (text.trim().length > 30) {
-    return "Must be a billing statement from Meralco, Maynilad, Converge, PLDT, Globe, or similar utility provider.";
+
+  if (text.trim().length < 20) {
+    return "Could not read your billing statement — make sure it is well lit, in focus, and the text is clearly visible.";
   }
-  return null;
+  return "Must be a billing statement from Meralco, Maynilad, Converge, PLDT, Globe, or similar utility provider.";
 }
 
 export async function POST(request: Request) {
@@ -114,12 +152,15 @@ export async function POST(request: Request) {
     toBuffer(billingDoc),
   ]);
 
-  // OCR validation — skipped when GOOGLE_VISION_API_KEY is not set (dev)
-  const [idError, billingError] = await Promise.all([
+  const [selfieError, idError, billingError] = await Promise.all([
+    verifySelfie(selfieBuffer),
     verifyId(idBuffer, idDoc.type || "image/jpeg"),
     verifyBilling(billingBuffer, billingDoc.type || "image/jpeg"),
   ]);
 
+  if (selfieError) {
+    return NextResponse.json({ error: selfieError, failedStep: "selfie" }, { status: 422 });
+  }
   if (idError) {
     return NextResponse.json({ error: idError, failedStep: "id" }, { status: 422 });
   }

@@ -26,6 +26,7 @@ interface SendEmailInput {
   html: string;
   text?: string;
   replyTo?: string;
+  attachments?: Array<{ filename: string; path: string }>;
 }
 
 async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; id?: string; error?: string }> {
@@ -49,6 +50,7 @@ async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; id?: str
         html: input.html,
         text: input.text,
         reply_to: input.replyTo,
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       }),
     });
     if (!res.ok) {
@@ -157,6 +159,8 @@ interface BookingEmailInput {
   numGuests: number;
   totalPhp: number;
   reservationId: string;
+  checkinPhotoUrl?: string | null;
+  checkoutPhotoUrl?: string | null;
 }
 
 export async function sendBookingConfirmation(input: BookingEmailInput) {
@@ -191,24 +195,28 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // check-in instructions
     </p>
-    <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
+    ${input.checkinPhotoUrl
+      ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">Check-in details, door access, WiFi, and room information are in the <strong>attached photo</strong>. Please save it before your arrival.</p>`
+      : `<ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
       <li>Present a valid government-issued photo ID upon arrival.</li>
       <li>The name on the ID must match the reservation name.</li>
       <li>Only the number of guests declared at booking are allowed inside.</li>
       ${input.checkInTime ? `<li>Earliest check-in is <strong>${escapeHtml(input.checkInTime)}</strong>. Early check-in is subject to availability — message us to ask.</li>` : ""}
       <li>WiFi access details will be sent in a separate email on the day of your check-in.</li>
-    </ul>
+    </ul>`}
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // checkout instructions
     </p>
-    <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
+    ${input.checkoutPhotoUrl
+      ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">Check-out steps and house rules are in the <strong>attached photo</strong>. Please review it before your departure.</p>`
+      : `<ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
       ${input.checkOutTime ? `<li>Check-out is by <strong>${escapeHtml(input.checkOutTime)}</strong>. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>` : "<li>Check-out is by 11:00 AM. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>"}
       <li>Leave the unit in the same condition as you found it — surfaces clean, trash in bins, gaming gear back in place.</li>
       <li>Log out of any personal accounts on the PCs and consoles before leaving.</li>
       <li>Lock the door and return the key/access card to staff before departing.</li>
       <li>Your ₱1,000 security deposit will be returned within 24–48 hours after a satisfactory checkout inspection.</li>
-    </ul>
+    </ul>`}
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // reservation_id
@@ -222,6 +230,10 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     </p>
   `;
 
+  const attachments: Array<{ filename: string; path: string }> = [];
+  if (input.checkinPhotoUrl) attachments.push({ filename: "checkin-instructions.jpg", path: input.checkinPhotoUrl });
+  if (input.checkoutPhotoUrl) attachments.push({ filename: "checkout-instructions.jpg", path: input.checkoutPhotoUrl });
+
   return sendEmail({
     to: input.to,
     subject: `Booking confirmed · ${input.branchName} · ${formatRange(input.checkIn, input.checkOut)}`,
@@ -232,6 +244,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
       ctaHref: lookupUrl,
     }),
     text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. ${input.checkInTime ? `Check-in: ${input.checkInTime}.` : ""} ${input.checkOutTime ? `Check-out by: ${input.checkOutTime}.` : ""} ${input.branchAddress ?? ""} Total: ${formatPHP(input.totalPhp)}. Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
+    ...(attachments.length ? { attachments } : {}),
   });
 }
 
@@ -488,12 +501,12 @@ export async function sendCancellationEmail({
 
   const refundNote = refundIssued
     ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
-        A refund of <strong>${formatPHP(totalPhp)}</strong> has been initiated and will be returned to your original payment method within 5–10 business days, depending on your bank.
+        A refund of <strong>${formatPHP(totalPhp)}</strong> has been initiated by Comffee and will be returned to your original payment method within 10 calendar days.
       </p>
       <p style="margin:0 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
         <strong>Paid via QR Ph / GCash?</strong> Automatic API refunds are not available for QR Ph payments.
-        Please message us in chat with your GCash number or bank account details so we can process the manual transfer.
-        <a href="${escapeHtml(chatUrl)}" style="color:#c98a2a;">Open chat →</a>
+        Comffee will manually issue the refund via GCash or InstaPay to the mobile number on your reservation within 10 calendar days.
+        <a href="${escapeHtml(chatUrl)}" style="color:#c98a2a;">Message us if you have questions →</a>
       </p>`
     : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
         No charge was collected for this booking, so no refund is required.

@@ -126,6 +126,22 @@ export default function AdminChatFloat({ adminName }: Props) {
 
     const channel = supabase
       .channel(`chat:${activeId}`)
+      .on("broadcast", { event: "message" }, (payload: { payload?: { message?: ChatMessage } }) => {
+        const m = payload.payload?.message;
+        if (!m) return;
+        setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === m.conversation_id);
+          if (idx === -1) return prev;
+          const updated = { ...prev[idx], last_message_at: m.created_at, last_message_body: m.body, last_message_sender_type: m.sender_type };
+          const next = [...prev];
+          next.splice(idx, 1);
+          return [updated, ...next];
+        });
+        if (m.sender_type === "customer" && m.conversation_id !== activeId) {
+          setUnreadConvs((prev) => new Map(prev).set(m.conversation_id, m.body));
+        }
+      })
       .on("broadcast", { event: "typing" }, (payload: { payload?: { from?: string } }) => {
         if (payload.payload?.from === "customer") {
           setCustomerTyping(true);

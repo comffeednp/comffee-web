@@ -26,6 +26,8 @@ export interface Branch {
   max_guests: number | null;
   booking_cutoff_time: string | null;
   security_deposit_php: number | null;
+  checkin_photo_url: string | null;
+  checkout_photo_url: string | null;
   is_published: boolean;
   sort_order: number;
   created_at: string;
