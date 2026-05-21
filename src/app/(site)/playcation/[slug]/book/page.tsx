@@ -89,6 +89,8 @@ export default async function BookPlaycationPage({
   // Require sign-in — redirects to /account/login?next=... if not authenticated
   const member = await requireMember(`/playcation/${slug}/book`);
   const memberId = member.id;
+  const memberName = member.full_name;
+  const memberEmail = member.email ?? "";
 
   return (
     <>
@@ -129,6 +131,8 @@ export default async function BookPlaycationPage({
           }}
           initialBlocked={initialBlocked}
           memberId={memberId}
+          memberName={memberName}
+          memberEmail={memberEmail}
           initialCheckIn={defaultCheckIn}
           initialCheckOut={defaultCheckOut}
         />

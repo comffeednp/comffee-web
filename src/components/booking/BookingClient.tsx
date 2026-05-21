@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
+  ChevronDown,
   ChevronRight,
   MessageSquare,
   Power,
@@ -36,6 +37,8 @@ interface Props {
   branch: Branch;
   initialBlocked: Array<{ check_in: string; check_out: string; source: string }>;
   memberId?: string | null;
+  memberName?: string;
+  memberEmail?: string;
   initialCheckIn?: string;
   initialCheckOut?: string;
 }
@@ -60,16 +63,18 @@ interface AppliedPromo {
 
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
-export default function BookingClient({ branch, initialBlocked, memberId, initialCheckIn, initialCheckOut }: Props) {
+export default function BookingClient({ branch, initialBlocked, memberId, memberName, memberEmail, initialCheckIn, initialCheckOut }: Props) {
   const SECURITY_DEPOSIT_PHP = branch.securityDepositPhp;
   const router = useRouter();
   const tomorrow = addDays(todayString(), 1);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const [showScrollHint, setShowScrollHint] = useState(true);
   const [state, setState] = useState<BookingState>({
     checkIn: initialCheckIn ?? tomorrow,
     checkOut: initialCheckOut ?? addDays(tomorrow, 2),
     numGuests: 2,
-    guestName: "",
-    guestEmail: "",
+    guestName: memberName ?? "",
+    guestEmail: memberEmail ?? "",
     guestPhone: "",
     termsAccepted: false,
   });
@@ -92,6 +97,16 @@ export default function BookingClient({ branch, initialBlocked, memberId, initia
     } catch {}
     return () => { try { sessionStorage.removeItem("comffe.chat.dates"); } catch {} };
   }, [state.checkIn, state.checkOut]);
+
+  useEffect(() => {
+    if (!summaryRef.current) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setShowScrollHint(false); },
+      { threshold: 0.1 },
+    );
+    obs.observe(summaryRef.current);
+    return () => obs.disconnect();
+  }, []);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
   const extraPax =
@@ -214,12 +229,12 @@ export default function BookingClient({ branch, initialBlocked, memberId, initia
   };
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[2fr_1fr]">
+    <div className="grid gap-10 lg:grid-cols-[2fr_1fr] min-w-0 overflow-x-hidden">
       {/* ============================================================
           LEFT — booking flow
           ============================================================ */}
       <div className="border border-line-bright bg-bg-card rounded-2xl overflow-hidden">
-        <div className="border-b border-line bg-bg-soft px-6 py-4 flex items-center gap-2 font-mono text-[0.7rem] uppercase tracking-[0.18em]">
+        <div className="border-b border-line bg-bg-soft px-3 sm:px-6 py-4 flex items-center gap-1 sm:gap-2 font-mono text-[0.7rem] uppercase tracking-tight sm:tracking-[0.12em] overflow-hidden">
           <StepDot active={["dates","guest","terms","verify","review","loading"].includes(step)} done={["guest","terms","verify","review","loading"].includes(step)} label="01 dates" />
           <ChevronRight className="h-3 w-3 text-mocha" />
           <StepDot active={["guest","terms","verify","review","loading"].includes(step)} done={["terms","verify","review","loading"].includes(step)} label="02 guest" />
@@ -384,10 +399,26 @@ export default function BookingClient({ branch, initialBlocked, memberId, initia
                   </button>
                 </div>
 
+                {showScrollHint && (
+                  <div className="mt-4 flex justify-center lg:hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        summaryRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        setShowScrollHint(false);
+                      }}
+                      className="flex items-center gap-1.5 font-mono text-[0.65rem] uppercase tracking-widest text-mocha hover:text-cream-dim transition animate-bounce"
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                      See price breakdown
+                    </button>
+                  </div>
+                )}
+
                 {/* Mobile sticky total — visible only on small screens */}
                 <div className="fixed bottom-0 inset-x-0 z-40 lg:hidden pointer-events-none">
                   <div className="mx-3 mb-3 pointer-events-auto">
-                    <div className="bg-bg-card/95 backdrop-blur-md border border-line-bright rounded-xl px-4 py-3 flex items-center justify-between shadow-xl shadow-black/40 pr-20">
+                    <div className="bg-bg-card/95 backdrop-blur-md border border-line-bright rounded-xl px-4 py-3 flex items-center justify-between shadow-xl shadow-black/40 pr-28">
                       {hasOverlap ? (
                         <span className="font-mono text-xs text-red-400">// date conflict</span>
                       ) : nights < 1 ? (
@@ -904,7 +935,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, initia
       {/* ============================================================
           RIGHT — sticky summary
           ============================================================ */}
-      <aside className="lg:sticky lg:top-24 self-start">
+      <aside ref={summaryRef} className="lg:sticky lg:top-24 self-start">
         <div className="border border-line-bright bg-bg-card rounded-2xl overflow-hidden">
           {branch.hero_image_url && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1027,14 +1058,15 @@ function StepDot({
   done: boolean;
   label: string;
 }) {
+  const [num, ...rest] = label.split(" ");
   return (
     <span
-      className={`flex items-center gap-1.5 ${
+      className={`flex items-center gap-1 sm:gap-1.5 ${
         done ? "text-phosphor" : active ? "text-amber" : "text-mocha"
       }`}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${
+        className={`h-1.5 w-1.5 rounded-full shrink-0 ${
           done
             ? "bg-phosphor shadow-[0_0_6px_var(--color-phosphor)]"
             : active
@@ -1042,7 +1074,8 @@ function StepDot({
             : "bg-mocha"
         }`}
       />
-      {label}
+      <span className="tabular-nums">{num}</span>
+      <span className="hidden sm:inline">{rest.join(" ")}</span>
     </span>
   );
 }
