@@ -61,7 +61,7 @@ export async function cancelMyPlaycationAction(formData: FormData) {
   await admin.from("reservations").update({ status: "cancelled" }).eq("id", id);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-  const branch = reservation.branch as { name: string } | null;
+  const branch = reservation.branch as unknown as { name: string } | null;
   if (member.email) {
     sendCancellationEmail({
       guestEmail: member.email,
