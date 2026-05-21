@@ -194,13 +194,13 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
     try {
       const res = await fetch("/api/kyc/submit", { method: "POST", body: form });
       const data = await res.json() as {
-        ok?: boolean; error?: string;
+        ok?: boolean; error?: string; failedStep?: SubStep;
         selfieUrl?: string; idUrl?: string; billingUrl?: string;
         ipAddress?: string | null; latitude?: number | null; longitude?: number | null;
       };
       if (!res.ok || !data.ok) {
         setError(data.error ?? "Upload failed. Please try again.");
-        setSubStep("billing");
+        setSubStep(data.failedStep ?? "billing");
         return;
       }
       onComplete({
