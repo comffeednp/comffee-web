@@ -47,6 +47,7 @@ export async function cancelBookingAction(formData: FormData) {
   let okParam = "cancelled";
   const totalPhp = Number(reservation?.total_php ?? 0);
   let refundIssued = false;
+  let isQrphCancel = false;
   if (reservation?.paymongo_payment_id && totalPhp > 0) {
     const { data: priorRefunds } = await supabase
       .from("refunds")
@@ -65,8 +66,9 @@ export async function cancelBookingAction(formData: FormData) {
         });
         okParam = "cancelled_refund_issued";
         refundIssued = true;
-      } catch {
-        okParam = "cancelled_refund_failed";
+      } catch (e) {
+        isQrphCancel = e instanceof Error && e.message === "QRPH_MANUAL_REQUIRED";
+        okParam = isQrphCancel ? "cancelled_refund_qrph" : "cancelled_refund_failed";
       }
     }
   }
@@ -91,6 +93,36 @@ export async function cancelBookingAction(formData: FormData) {
       reservationId: id,
       chatUrl: `${siteUrl}`,
     }).catch(() => {});
+  }
+
+  // If QR Ph refund can't be processed automatically, post a chat message asking for bank details
+  if (isQrphCancel) {
+    const { data: resRow } = await supabase
+      .from("reservations")
+      .select("member_id")
+      .eq("id", id)
+      .maybeSingle();
+    const memberId = (resRow as { member_id?: string | null } | null)?.member_id;
+    if (memberId) {
+      const { data: conv } = await supabase
+        .from("chat_conversations")
+        .select("id")
+        .eq("member_id", memberId)
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (conv) {
+        await supabase.from("chat_messages").insert({
+          conversation_id: conv.id,
+          sender_type: "system",
+          body: `Your booking has been cancelled. Since you paid via QR Ph / GCash, we can't refund automatically. Please reply with your GCash number or bank details (bank name, account number, account name) and we'll process the ₱${totalPhp.toLocaleString("en-PH")} transfer manually.`,
+        });
+        await supabase
+          .from("chat_conversations")
+          .update({ last_message_at: new Date().toISOString(), status: "open" })
+          .eq("id", conv.id);
+      }
+    }
   }
 
   redirect(`/admin/bookings/${id}?ok=${okParam}`);

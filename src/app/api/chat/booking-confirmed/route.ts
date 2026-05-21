@@ -24,15 +24,19 @@ export async function POST(request: Request) {
 
   if (!conversation) return NextResponse.json({ ok: true }); // no conversation yet — silently ok
 
-  // Build the confirmation message
+  // Build the confirmation message + grab member_id for linking
   let confirmText = "✓ Booking confirmed!";
+  let memberId: string | null = null;
   if (reservationId) {
     const { data: res } = await supabase
       .from("reservations")
-      .select("check_in, check_out")
+      .select("check_in, check_out, member_id")
       .eq("id", reservationId)
       .maybeSingle();
-    if (res) confirmText += ` ${formatRange(res.check_in, res.check_out)}`;
+    if (res) {
+      confirmText += ` ${formatRange(res.check_in, res.check_out)}`;
+      memberId = (res as { member_id?: string | null }).member_id ?? null;
+    }
   }
 
   await supabase.from("chat_messages").insert({
@@ -43,7 +47,10 @@ export async function POST(request: Request) {
 
   await supabase
     .from("chat_conversations")
-    .update({ last_message_at: new Date().toISOString() })
+    .update({
+      last_message_at: new Date().toISOString(),
+      ...(memberId ? { member_id: memberId } : {}),
+    })
     .eq("id", conversation.id);
 
   return NextResponse.json({ ok: true });
