@@ -30,11 +30,11 @@ export default function GlobalError({
         </p>
       )}
       <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-        <button type="button" onClick={reset} className="key-cap key-cap-primary">
+        <button type="button" onClick={reset} className="key-cap key-cap-primary" title="Reload and try again">
           <RotateCw className="h-4 w-4" />
           Try again
         </button>
-        <Link href="/" className="key-cap">
+        <Link href="/" className="key-cap" title="Go to the home page">
           Return home
         </Link>
       </div>

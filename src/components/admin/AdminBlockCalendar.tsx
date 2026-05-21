@@ -294,6 +294,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 setBlockStart(null);
                 closePanel();
               }}
+              title={`View calendar for ${b.name}`}
               className={`font-mono text-xs px-3 py-1.5 rounded-md border transition ${
                 branchId === b.id
                   ? "border-amber text-amber bg-amber/10"
@@ -356,6 +357,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
           {blockStart && (
             <button
               onClick={() => setBlockStart(null)}
+              title="Cancel the current date selection"
               className="ml-auto font-mono text-[0.65rem] text-cream-dim underline underline-offset-2 hover:text-cream transition"
             >
               Cancel selection
@@ -393,13 +395,14 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                   </p>
                 </div>
               </div>
-              <button onClick={closePanel} className="text-cream-dim hover:text-cream text-xs font-mono shrink-0">✕</button>
+              <button onClick={closePanel} title="Close booking detail" className="text-cream-dim hover:text-cream text-xs font-mono shrink-0">✕</button>
             </div>
 
             {/* Actions */}
             <div className="mt-3 flex gap-2 flex-wrap">
               <Link
                 href={`/admin/bookings/${panelRes.id}`}
+                title="View full booking details"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 border border-line rounded-md text-cream-dim hover:text-cream hover:border-cream-dim transition"
               >
                 <ExternalLink className="h-3 w-3" />
@@ -408,6 +411,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
               {panelRes.source === "website" && (
                 <Link
                   href="/admin/chat"
+                  title="Message this guest in chat"
                   className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 border border-amber/40 bg-amber/10 rounded-md text-amber hover:bg-amber/20 transition"
                 >
                   <MessageSquare className="h-3 w-3" />
@@ -434,6 +438,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 <button
                   onClick={closePanel}
                   disabled={isPending}
+                  title="Cancel and close this dialog"
                   className="font-mono text-xs text-cream-dim hover:text-cream px-3 py-1.5 border border-line rounded-md transition disabled:opacity-40"
                 >
                   Cancel
@@ -441,6 +446,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 <button
                   onClick={submitBlock}
                   disabled={isPending}
+                  title="Confirm and block these dates"
                   className="font-mono text-xs bg-cream text-bg px-3 py-1.5 rounded-md hover:bg-cream/90 transition flex items-center gap-1.5 disabled:opacity-40"
                 >
                   {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -467,6 +473,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 <button
                   onClick={closePanel}
                   disabled={isPending}
+                  title="Cancel and close this dialog"
                   className="font-mono text-xs text-cream-dim hover:text-cream px-3 py-1.5 border border-line rounded-md transition disabled:opacity-40"
                 >
                   Cancel
@@ -474,6 +481,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 <button
                   onClick={submitUnblock}
                   disabled={isPending}
+                  title="Confirm and remove this date block"
                   className="font-mono text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-md hover:bg-rose-500/30 transition flex items-center gap-1.5 disabled:opacity-40"
                 >
                   {isPending && <Loader2 className="h-3 w-3 animate-spin" />}

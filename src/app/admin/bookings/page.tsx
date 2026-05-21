@@ -160,7 +160,7 @@ export default async function AdminBookingsPage({ searchParams }: Props) {
           <input type="date" name="check_in" required className="admin-input" />
           <input type="date" name="check_out" required className="admin-input" />
           <input name="notes" placeholder="Reason / notes" className="admin-input" />
-          <button type="submit" className="key-cap !py-2 !px-3">
+          <button type="submit" title="Block these dates for the selected branch" className="key-cap !py-2 !px-3">
             <Plus className="h-4 w-4" />
             Block
           </button>

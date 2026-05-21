@@ -29,6 +29,7 @@ export default async function NewReservationPage({ searchParams }: Props) {
     <section className="container-edge py-12 max-w-2xl">
       <Link
         href="/account"
+        title="Back to your account"
         className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
       >
         <ArrowLeft className="h-3 w-3" />
@@ -104,7 +105,7 @@ export default async function NewReservationPage({ searchParams }: Props) {
           />
         </Field>
 
-        <button type="submit" className="key-cap key-cap-primary">
+        <button type="submit" title="Submit station reservation request" className="key-cap key-cap-primary">
           <Power className="h-4 w-4" />
           Submit request
         </button>

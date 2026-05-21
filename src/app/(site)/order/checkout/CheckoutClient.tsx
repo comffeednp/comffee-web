@@ -62,7 +62,7 @@ export default function CheckoutClient({
         <p className="mt-6 font-mono text-sm text-mocha uppercase tracking-widest">
           // your cart is empty
         </p>
-        <Link href="/menu" className="key-cap mt-8 inline-flex">
+        <Link href="/menu" title="Browse the menu" className="key-cap mt-8 inline-flex">
           <Coffee className="h-4 w-4" />
           Browse menu
         </Link>
@@ -171,6 +171,7 @@ export default function CheckoutClient({
                       key={b.id}
                       type="button"
                       onClick={() => setBranchId(b.id)}
+                      title={`Pick up at ${b.name}`}
                       className={`text-left p-4 rounded-lg border transition ${
                         branchId === b.id
                           ? "border-amber/60 bg-amber/5 glow-amber"
@@ -259,6 +260,7 @@ export default function CheckoutClient({
               <button
                 type="button"
                 onClick={handleSubmit}
+                title="Place order and proceed to payment"
                 className="key-cap key-cap-primary w-full justify-center"
               >
                 <Power className="h-4 w-4" />

@@ -297,6 +297,7 @@ export default function AdminChatClient({
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
+                  title={`Open conversation with ${c.customer_name ?? "Anonymous"}`}
                   className={`w-full text-left px-4 py-3 transition ${
                     c.id === activeId
                       ? "bg-bg-elev border-l-2 border-amber"
@@ -381,6 +382,7 @@ export default function AdminChatClient({
                 <button
                   type="button"
                   onClick={markResolved}
+                  title="Mark this conversation as resolved"
                   className="flex items-center gap-1.5 border border-phosphor/40 rounded-md px-3 py-1.5 text-[0.7rem] font-mono uppercase tracking-widest text-phosphor hover:bg-phosphor/10"
                 >
                   <Check className="h-3 w-3" />
@@ -451,6 +453,7 @@ export default function AdminChatClient({
                 type="button"
                 onClick={handleSend}
                 disabled={sending || !draft.trim()}
+                title="Send reply"
                 className="flex h-10 px-4 items-center gap-2 bg-amber text-bg rounded-md disabled:opacity-40 font-mono text-xs uppercase tracking-widest"
               >
                 <Send className="h-3.5 w-3.5" />

@@ -64,11 +64,11 @@ export default async function HomePage() {
           </p>
 
           <div className="mt-10 flex flex-wrap items-center gap-4">
-            <Link href="/branches" className="key-cap key-cap-primary">
+            <Link href="/branches" title="Browse our cafe branches" className="key-cap key-cap-primary">
               <Cpu className="h-4 w-4" />
               Browse branches
             </Link>
-            <Link href="/playcation" className="key-cap">
+            <Link href="/playcation" title="Book a Playcation stay" className="key-cap">
               <Gamepad2 className="h-4 w-4" />
               Book Playcation
             </Link>
@@ -192,7 +192,7 @@ export default async function HomePage() {
               ))}
             </div>
             <div className="mt-10 flex justify-center">
-              <Link href="/menu" className="key-cap">
+              <Link href="/menu" title="See the full menu" className="key-cap">
                 <Coffee className="h-4 w-4" />
                 See full menu
               </Link>
@@ -271,10 +271,10 @@ export default async function HomePage() {
               Pick a branch, pick a date, book it. We&apos;ll keep the espresso machine warm.
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-              <Link href="/playcation" className="key-cap key-cap-primary">
+              <Link href="/playcation" title="Book a Playcation stay" className="key-cap key-cap-primary">
                 Book a Playcation
               </Link>
-              <Link href="/branches" className="key-cap">
+              <Link href="/branches" title="Browse our cafe branches" className="key-cap">
                 Browse cafes
               </Link>
             </div>

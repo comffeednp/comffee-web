@@ -34,6 +34,7 @@ export default async function SignupPage({ searchParams }: Props) {
           <form action={googleSignInAction} className="mt-8">
             <button
               type="submit"
+              title="Sign up with your Google account"
               className="w-full flex items-center justify-center gap-3 border border-line-bright rounded-lg px-4 py-3 font-mono text-sm text-cream hover:border-amber/50 hover:bg-bg-soft transition"
             >
               <GoogleIcon />
@@ -84,7 +85,7 @@ export default async function SignupPage({ searchParams }: Props) {
               <p className="font-mono text-xs text-red-400">// {error.replaceAll("_", " ")}</p>
             )}
 
-            <button type="submit" className="key-cap key-cap-primary w-full justify-center">
+            <button type="submit" title="Create your Comffee member account" className="key-cap key-cap-primary w-full justify-center">
               <Power className="h-4 w-4" />
               Create account
             </button>
@@ -92,7 +93,7 @@ export default async function SignupPage({ searchParams }: Props) {
 
           <p className="mt-8 text-center text-sm text-cream-dim">
             Already a member?{" "}
-            <Link href="/account/login" className="text-amber hover:underline">
+            <Link href="/account/login" title="Sign in to your existing account" className="text-amber hover:underline">
               Sign in
             </Link>
           </p>

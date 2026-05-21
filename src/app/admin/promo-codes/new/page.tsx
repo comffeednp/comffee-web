@@ -15,6 +15,7 @@ export default async function NewPromoCodePage({ searchParams }: Props) {
     <section className="container-edge py-12 max-w-3xl">
       <Link
         href="/admin/promo-codes"
+        title="Back to all promo codes"
         className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
       >
         <ArrowLeft className="h-3 w-3" />
@@ -32,7 +33,7 @@ export default async function NewPromoCodePage({ searchParams }: Props) {
 
       <form action={createPromoCodeAction} className="mt-10 space-y-8">
         <PromoCodeFields />
-        <button type="submit" className="key-cap key-cap-primary">
+        <button type="submit" title="Create this promo code" className="key-cap key-cap-primary">
           <Save className="h-4 w-4" />
           Create
         </button>

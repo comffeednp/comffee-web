@@ -139,6 +139,7 @@ export default function ImageUpload({
         <button
           type="button"
           onClick={handlePick}
+          title={previews.length > 0 ? "Add more photos" : "Upload photos"}
           className="w-full flex items-center justify-center gap-3 px-4 py-6 border border-dashed border-line-bright rounded-lg bg-bg-card hover:border-amber/60 transition"
         >
           {uploading > 0 ? (
@@ -190,6 +191,7 @@ export default function ImageUpload({
                 type="button"
                 onClick={handlePick}
                 disabled={uploading > 0}
+                title="Replace this image"
                 className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline"
               >
                 {uploading > 0 ? "uploading…" : "replace"}
@@ -198,6 +200,7 @@ export default function ImageUpload({
               <button
                 type="button"
                 onClick={() => { setUrl(""); setError(null); }}
+                title="Remove this image"
                 className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha hover:text-red-400"
               >
                 remove
@@ -211,6 +214,7 @@ export default function ImageUpload({
             type="button"
             onClick={handlePick}
             disabled={uploading > 0}
+            title="Upload an image"
             className="w-full flex items-center justify-center gap-3 px-4 py-6 border border-dashed border-line-bright rounded-lg bg-bg-card hover:border-amber/60 transition disabled:opacity-50"
           >
             {uploading > 0 ? (

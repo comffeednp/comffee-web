@@ -14,6 +14,7 @@ export default function RateCardList({ rates }: { rates: BranchRate[] }) {
           key={rate.id}
           type="button"
           onClick={() => setSelectedId(rate.id)}
+          title={`View ${rate.label} rate`}
           className="text-left w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber rounded-xl"
         >
           <RateCard rate={rate} highlight={selectedId === rate.id} />

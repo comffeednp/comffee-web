@@ -131,6 +131,7 @@ export default function LookupClient({ initialId }: Props) {
         <button
           type="submit"
           disabled={loading || !id.trim() || !contact.trim()}
+          title="Look up your booking or order"
           className="key-cap key-cap-primary w-full justify-center disabled:opacity-40"
         >
           {loading ? (

@@ -19,6 +19,7 @@ export default async function AccountLayout({
           <div className="container-edge h-12 flex items-center justify-between">
             <Link
               href="/account"
+              title="Go to my account"
               className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream hover:text-amber"
             >
               <User className="h-3.5 w-3.5 text-amber" />
@@ -30,6 +31,7 @@ export default async function AccountLayout({
             <form action={memberSignOutAction}>
               <button
                 type="submit"
+                title="Sign out of your account"
                 className="flex items-center gap-1.5 font-mono text-[0.65rem] uppercase tracking-widest text-cream-dim hover:text-amber"
               >
                 <LogOut className="h-3 w-3" />

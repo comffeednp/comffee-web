@@ -264,6 +264,7 @@ export default function ReservationCalendar({ reservations, showBranch = false }
             </div>
             <button
               onClick={() => setSelected(null)}
+              title="Close detail panel"
               className="text-cream-dim hover:text-cream shrink-0 text-xs font-mono"
             >
               ✕

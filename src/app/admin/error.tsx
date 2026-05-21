@@ -33,11 +33,11 @@ export default function AdminError({
           </p>
         )}
         <div className="mt-6 flex gap-3">
-          <button type="button" onClick={reset} className="key-cap !py-2 !px-4">
+          <button type="button" onClick={reset} className="key-cap !py-2 !px-4" title="Retry loading this page">
             <RotateCw className="h-3.5 w-3.5" />
             Retry
           </button>
-          <Link href="/admin/dashboard" className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber self-center">
+          <Link href="/admin/dashboard" title="Go back to admin dashboard" className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber self-center">
             ← back to dashboard
           </Link>
         </div>

@@ -106,6 +106,7 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
             <button
               type="button"
               onClick={startCamera}
+              title="Open camera to take a photo"
               className="flex items-center gap-2 key-cap"
             >
               <Camera className="h-3.5 w-3.5" />
@@ -125,11 +126,11 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
           <video ref={videoRef} autoPlay playsInline className="w-full max-h-64 object-cover" />
           <canvas ref={canvasRef} className="hidden" />
           <div className="p-3 flex gap-3">
-            <button type="button" onClick={snap} className="key-cap key-cap-primary flex-1">
+            <button type="button" onClick={snap} title="Take this photo" className="key-cap key-cap-primary flex-1">
               <Camera className="h-3.5 w-3.5" />
               Capture
             </button>
-            <button type="button" onClick={() => { stopCamera(); setMode("choose"); }} className="key-cap">
+            <button type="button" onClick={() => { stopCamera(); setMode("choose"); }} title="Cancel and go back" className="key-cap">
               Cancel
             </button>
           </div>
@@ -143,7 +144,7 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
             <span className="flex items-center gap-1.5 font-mono text-xs text-phosphor">
               <Check className="h-3.5 w-3.5" /> Captured
             </span>
-            <button type="button" onClick={retake} className="flex items-center gap-1.5 font-mono text-xs text-cream-dim hover:text-amber transition">
+            <button type="button" onClick={retake} title="Retake this photo" className="flex items-center gap-1.5 font-mono text-xs text-cream-dim hover:text-amber transition">
               <RefreshCw className="h-3 w-3" /> Retake
             </button>
           </div>
@@ -252,6 +253,7 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
             type="button"
             disabled={!canAdvanceSelfie}
             onClick={() => setSubStep("id")}
+            title="Continue to ID document step"
             className="key-cap key-cap-primary disabled:opacity-40"
           >
             Next → ID document
@@ -268,11 +270,12 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           />
           {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
           <div className="flex gap-3">
-            <button type="button" onClick={() => setSubStep("selfie")} className="key-cap font-mono text-xs">← back</button>
+            <button type="button" onClick={() => setSubStep("selfie")} title="Go back to selfie step" className="key-cap font-mono text-xs">← back</button>
             <button
               type="button"
               disabled={!canAdvanceId}
               onClick={() => setSubStep("billing")}
+              title="Continue to proof of billing step"
               className="key-cap key-cap-primary disabled:opacity-40"
             >
               Next → Proof of billing
@@ -290,11 +293,12 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           />
           {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
           <div className="flex gap-3">
-            <button type="button" onClick={() => setSubStep("id")} className="key-cap font-mono text-xs">← back</button>
+            <button type="button" onClick={() => setSubStep("id")} title="Go back to ID document step" className="key-cap font-mono text-xs">← back</button>
             <button
               type="button"
               disabled={!canAdvanceBilling}
               onClick={handleSubmit}
+              title="Submit all documents for verification"
               className="key-cap key-cap-primary disabled:opacity-40"
             >
               Submit verification

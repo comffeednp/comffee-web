@@ -183,6 +183,7 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
                   <button
                     type="button"
                     onMouseDown={() => handleSelect(s)}
+                    title={`Select: ${main}`}
                     className="w-full text-left px-4 py-3 hover:bg-bg-soft transition flex flex-col gap-0.5 border-b border-line last:border-0"
                   >
                     <span className="text-sm text-cream font-medium truncate">{main}</span>
@@ -208,6 +209,7 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
           <button
             type="button"
             onClick={() => { setLat(null); setLng(null); markerRef.current?.remove(); markerRef.current = null; }}
+            title="Clear selected location"
             className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha hover:text-red-400 ml-auto"
           >
             clear

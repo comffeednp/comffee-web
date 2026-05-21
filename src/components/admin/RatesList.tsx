@@ -65,6 +65,7 @@ export default function RatesList({ rates, branchId, isPlaycation, updateAction,
               <button
                 type="button"
                 onClick={() => setOpenId(openId === r.id ? null : r.id)}
+                title={openId === r.id ? "Close edit form" : "Edit this rate"}
                 className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline px-2 py-1"
               >
                 {openId === r.id ? "Close" : "Edit"}
@@ -140,7 +141,7 @@ export default function RatesList({ rates, branchId, isPlaycation, updateAction,
               {saveError && openId === r.id && (
                 <p className="font-mono text-xs text-red-400">// error: {saveError}</p>
               )}
-              <button type="submit" disabled={isPending} className="key-cap key-cap-primary !py-1.5 !px-4 text-xs disabled:opacity-50">
+              <button type="submit" disabled={isPending} title="Save rate changes" className="key-cap key-cap-primary !py-1.5 !px-4 text-xs disabled:opacity-50">
                 {isPending ? "Saving…" : "Save"}
               </button>
             </form>

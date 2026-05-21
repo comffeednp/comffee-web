@@ -204,6 +204,7 @@ export default function ReservePCClient({
                         type="button"
                         onClick={() => !occupied && setStationName(s.name)}
                         disabled={occupied}
+                        title={s.isOccupied ? `${s.name} is currently in use` : `Select station ${s.name}`}
                         className={`aspect-square flex flex-col items-center justify-center rounded-lg border transition relative ${
                           occupied
                             ? "border-line bg-bg opacity-40 cursor-not-allowed"
@@ -286,6 +287,7 @@ export default function ReservePCClient({
                           type="button"
                           onClick={() => available && setRateId(r.id)}
                           disabled={!available}
+                          title={available ? `Select rate: ${r.label}` : `${r.label} — not available now`}
                           className={`relative text-left p-4 rounded-xl border transition ${
                             !available
                               ? "border-line bg-bg opacity-50 cursor-not-allowed"
@@ -348,6 +350,7 @@ export default function ReservePCClient({
                         <button
                           type="button"
                           onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                          title="Decrease hours"
                           className="px-3 py-2 text-cream-dim hover:text-amber"
                         >
                           <Minus className="h-3 w-3" />
@@ -358,6 +361,7 @@ export default function ReservePCClient({
                         <button
                           type="button"
                           onClick={() => setQuantity((q) => Math.min(12, q + 1))}
+                          title="Increase hours"
                           className="px-3 py-2 text-cream-dim hover:text-amber"
                         >
                           <Plus className="h-3 w-3" />
@@ -429,6 +433,7 @@ export default function ReservePCClient({
                 type="button"
                 onClick={handleSubmit}
                 disabled={!canSubmit}
+                title="Submit PC station reservation"
                 className="key-cap key-cap-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Power className="h-4 w-4" />
@@ -490,6 +495,7 @@ export default function ReservePCClient({
                 <button
                   type="button"
                   onClick={() => router.push(`/branches/${branch.slug}`)}
+                  title={`Back to ${branch.name}`}
                   className="key-cap"
                 >
                   Back to branch
@@ -514,6 +520,7 @@ export default function ReservePCClient({
                   setStep("pick");
                   setErrorMsg(null);
                 }}
+                title="Try again"
                 className="mt-6 key-cap"
               >
                 Try again
@@ -591,6 +598,7 @@ function ModeTab({
     <button
       type="button"
       onClick={onClick}
+      title={`Select ${title} mode`}
       className={`p-4 rounded-xl border transition text-left ${
         active
           ? "border-amber bg-amber/10 glow-amber"

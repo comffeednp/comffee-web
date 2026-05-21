@@ -21,6 +21,7 @@ export default async function ProfilePage({ searchParams }: Props) {
     <section className="container-edge py-12 max-w-2xl">
       <Link
         href="/account"
+        title="Back to your account"
         className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
       >
         <ArrowLeft className="h-3 w-3" />
@@ -83,7 +84,7 @@ export default async function ProfilePage({ searchParams }: Props) {
           />
         </Field>
 
-        <button type="submit" className="key-cap key-cap-primary">
+        <button type="submit" title="Save profile changes" className="key-cap key-cap-primary">
           <Save className="h-4 w-4" />
           Save profile
         </button>
@@ -127,7 +128,7 @@ export default async function ProfilePage({ searchParams }: Props) {
             autoComplete="new-password"
           />
         </Field>
-        <button type="submit" className="key-cap">
+        <button type="submit" title="Update your password" className="key-cap">
           <Lock className="h-4 w-4" />
           Update password
         </button>
@@ -152,6 +153,7 @@ export default async function ProfilePage({ searchParams }: Props) {
         />
         <button
           type="submit"
+          title="Permanently delete your account — this cannot be undone"
           className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
         >
           <Trash2 className="h-3.5 w-3.5" />

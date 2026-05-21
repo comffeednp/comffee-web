@@ -128,7 +128,7 @@ export default async function AirbnbCalendarsPage({ searchParams }: Props) {
             className="admin-input"
           />
           <input name="label" placeholder="Label (optional)" className="admin-input" />
-          <button type="submit" className="key-cap !py-2 !px-3">
+          <button type="submit" title="Add this Airbnb calendar feed" className="key-cap !py-2 !px-3">
             <Plus className="h-4 w-4" />
             Add
           </button>
@@ -164,6 +164,7 @@ export default async function AirbnbCalendarsPage({ searchParams }: Props) {
                   href={url}
                   target="_blank"
                   rel="noreferrer"
+                  title={`Open iCal feed for ${b.name}`}
                   className="flex items-center gap-1.5 border border-line-bright rounded-md px-3 py-1.5 text-[0.7rem] font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber/60"
                 >
                   Open

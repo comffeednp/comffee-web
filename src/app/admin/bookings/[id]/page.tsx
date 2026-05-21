@@ -90,7 +90,7 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
         {reservation.status !== "confirmed" && reservation.status !== "cancelled" && (
           <form action={manualConfirmAction}>
             <input type="hidden" name="id" value={reservation.id} />
-            <button type="submit" className="key-cap key-cap-phosphor">
+            <button type="submit" title="Manually confirm this booking" className="key-cap key-cap-phosphor">
               <Check className="h-4 w-4" />
               Manually confirm
             </button>
@@ -102,6 +102,7 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
             <input type="hidden" name="reason" value="cancelled by admin" />
             <button
               type="submit"
+              title="Cancel this booking"
               className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
             >
               <X className="h-3.5 w-3.5" />

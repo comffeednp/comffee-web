@@ -65,7 +65,7 @@ export default async function EditPromoCodePage({ params, searchParams }: Props)
 
       <form action={updatePromoCodeAction} className="mt-10 space-y-8">
         <PromoCodeFields promo={promo} />
-        <button type="submit" className="key-cap key-cap-primary">
+        <button type="submit" title="Save promo code changes" className="key-cap key-cap-primary">
           <Save className="h-4 w-4" />
           Save changes
         </button>
@@ -108,6 +108,7 @@ export default async function EditPromoCodePage({ params, searchParams }: Props)
           <input type="hidden" name="id" value={promo.id} />
           <button
             type="submit"
+            title="Permanently delete this promo code"
             className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
           >
             <Trash2 className="h-3.5 w-3.5" />

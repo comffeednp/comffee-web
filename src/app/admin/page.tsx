@@ -71,7 +71,7 @@ export default async function AdminLoginPage({ searchParams }: PageProps) {
               <p className="font-mono text-xs text-red-400">// {error.replaceAll("_", " ")}</p>
             )}
 
-            <button type="submit" className="key-cap key-cap-primary w-full justify-center">
+            <button type="submit" title="Sign in to admin panel" className="key-cap key-cap-primary w-full justify-center">
               <Power className="h-4 w-4" />
               Sign in
             </button>

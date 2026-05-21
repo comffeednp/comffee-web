@@ -61,6 +61,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
     <section className="container-edge py-12 max-w-3xl">
       <Link
         href="/admin/orders"
+        title="Back to all orders"
         className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
       >
         <ArrowLeft className="h-3 w-3" />
@@ -135,6 +136,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
               <button
                 type="submit"
                 disabled={order.status === s.value}
+                title={`Set status to ${s.label}`}
                 className={`font-mono text-[0.7rem] uppercase tracking-widest px-3 py-2 rounded-md border transition ${
                   order.status === s.value
                     ? "bg-amber text-bg border-amber cursor-default"
@@ -203,7 +205,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
         {order.payment_status !== "paid" && (
           <form action={manualMarkPaidAction}>
             <input type="hidden" name="id" value={order.id} />
-            <button type="submit" className="key-cap key-cap-phosphor">
+            <button type="submit" title="Manually mark this order as paid" className="key-cap key-cap-phosphor">
               Mark as paid (manual)
             </button>
           </form>
@@ -212,6 +214,7 @@ export default async function AdminOrderDetailPage({ params, searchParams }: Pro
           <input type="hidden" name="id" value={order.id} />
           <button
             type="submit"
+            title="Permanently delete this order"
             className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
           >
             <Trash2 className="h-3.5 w-3.5" />

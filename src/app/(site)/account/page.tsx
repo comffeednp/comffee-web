@@ -68,7 +68,7 @@ export default async function AccountPage({ searchParams }: Props) {
       <p className="mt-2 text-sm text-cream-dim">
         Member since {new Date(member.joined_at).getFullYear()} ·{" "}
         <span className="font-mono text-amber">{member.member_number}</span> ·{" "}
-        <Link href="/account/profile" className="text-amber hover:underline">edit profile</Link>
+        <Link href="/account/profile" title="Edit your profile" className="text-amber hover:underline">edit profile</Link>
       </p>
 
       {ok && (
@@ -108,6 +108,7 @@ export default async function AccountPage({ searchParams }: Props) {
                       {r.branch?.slug && (
                         <Link
                           href={`/playcation/${r.branch.slug}/confirmed/${r.id}`}
+                          title="View booking receipt"
                           className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline"
                         >
                           View receipt →
@@ -138,7 +139,7 @@ export default async function AccountPage({ searchParams }: Props) {
         <h2 className="font-display text-2xl font-bold text-cream">
           Your station reservations
         </h2>
-        <Link href="/account/reservations/new" className="key-cap key-cap-primary !py-2 !px-4">
+        <Link href="/account/reservations/new" title="Request a new station reservation" className="key-cap key-cap-primary !py-2 !px-4">
           <Plus className="h-4 w-4" />
           New request
         </Link>
@@ -192,7 +193,7 @@ export default async function AccountPage({ searchParams }: Props) {
             <p className="mt-4 font-mono text-xs uppercase tracking-widest text-mocha">
               // no reservations yet
             </p>
-            <Link href="/account/reservations/new" className="mt-6 inline-flex key-cap">
+            <Link href="/account/reservations/new" title="Request your first station reservation" className="mt-6 inline-flex key-cap">
               Request your first station
             </Link>
           </li>

@@ -42,6 +42,7 @@ export default async function PCReservationDetailPage({ params, searchParams }: 
     <section className="container-edge py-12 max-w-3xl">
       <Link
         href="/admin/pc-reservations"
+        title="Back to all PC reservations"
         className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
       >
         <ArrowLeft className="h-3 w-3" />
@@ -94,7 +95,7 @@ export default async function PCReservationDetailPage({ params, searchParams }: 
           <div className="mt-3 flex flex-wrap gap-3">
             <form action={honorPCReservationAction}>
               <input type="hidden" name="id" value={data.id} />
-              <button type="submit" className="key-cap key-cap-primary">
+              <button type="submit" title="Mark as honored — customer has arrived" className="key-cap key-cap-primary">
                 <Check className="h-3.5 w-3.5" />
                 Honor (customer arrived)
               </button>
@@ -103,6 +104,7 @@ export default async function PCReservationDetailPage({ params, searchParams }: 
               <input type="hidden" name="id" value={data.id} />
               <button
                 type="submit"
+                title="Mark as expired — customer did not show up"
                 className="inline-flex items-center gap-2 border border-line-bright rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber/60"
               >
                 <Clock className="h-3.5 w-3.5" />
@@ -113,6 +115,7 @@ export default async function PCReservationDetailPage({ params, searchParams }: 
               <input type="hidden" name="id" value={data.id} />
               <button
                 type="submit"
+                title="Cancel this PC reservation"
                 className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
               >
                 <X className="h-3.5 w-3.5" />

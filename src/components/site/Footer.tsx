@@ -66,13 +66,13 @@ export default function Footer({ settings }: { settings: SiteSettings }) {
         <div>
           <p className="terminal-label">Navigate</p>
           <ul className="mt-4 space-y-2.5 text-sm">
-            <li><Link href="/" className="text-cream hover:underline">Home</Link></li>
-            <li><Link href="/branches" className="text-cream hover:underline">All Branches</Link></li>
-            <li><Link href="/playcation" className="text-cream hover:underline">Playcation Stays</Link></li>
-            <li><Link href="/menu" className="text-cream hover:underline">Menu</Link></li>
-            <li><Link href="/about" className="text-cream hover:underline">About Us</Link></li>
-            <li><Link href="/contact" className="text-cream hover:underline">Contact</Link></li>
-            <li><Link href="/lookup" className="text-cream hover:underline">Look up an order</Link></li>
+            <li><Link href="/" title="Go to the home page" className="text-cream hover:underline">Home</Link></li>
+            <li><Link href="/branches" title="View all Comffee branches" className="text-cream hover:underline">All Branches</Link></li>
+            <li><Link href="/playcation" title="Book a Playcation stay" className="text-cream hover:underline">Playcation Stays</Link></li>
+            <li><Link href="/menu" title="View our menu" className="text-cream hover:underline">Menu</Link></li>
+            <li><Link href="/about" title="Learn about Comffee" className="text-cream hover:underline">About Us</Link></li>
+            <li><Link href="/contact" title="Get in touch with us" className="text-cream hover:underline">Contact</Link></li>
+            <li><Link href="/lookup" title="Look up an existing order" className="text-cream hover:underline">Look up an order</Link></li>
           </ul>
         </div>
 

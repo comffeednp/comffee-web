@@ -63,6 +63,7 @@ export default function PCTierEditor({ branchId, stations }: Props) {
           </select>
           <button
             type="submit"
+            title="Save tier for this station"
             className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline px-2"
           >
             Save

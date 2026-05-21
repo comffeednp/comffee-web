@@ -162,11 +162,11 @@ export default async function BranchDetailPage({
           )}
 
           <div className="mt-10 flex flex-wrap gap-4">
-            <Link href={ctaHref} className="key-cap key-cap-primary">
+            <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
               <Power className="h-4 w-4" />
               {ctaLabel}
             </Link>
-            <a href="#walkthrough" className="key-cap">
+            <a href="#walkthrough" title="Walk through this branch" className="key-cap">
               Walk through
             </a>
           </div>
@@ -355,7 +355,7 @@ export default async function BranchDetailPage({
             ))}
           </div>
           <div className="mt-8">
-            <Link href="/menu" className="key-cap">
+            <Link href="/menu" title="See the full menu" className="key-cap">
               <Coffee className="h-4 w-4" />
               Full menu
             </Link>
@@ -405,11 +405,11 @@ export default async function BranchDetailPage({
               : "Walk-ins welcome. Or message us if you want to reserve a private station."}
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link href={ctaHref} className="key-cap key-cap-primary">
+            <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
               <Power className="h-4 w-4" />
               {ctaLabel}
             </Link>
-            <Link href="/branches" className="key-cap">
+            <Link href="/branches" title="See other branches" className="key-cap">
               See other branches
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>

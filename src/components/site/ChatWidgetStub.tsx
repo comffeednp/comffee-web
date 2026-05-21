@@ -580,12 +580,14 @@ export default function ChatWidgetStub() {
                           <button
                             type="button"
                             onClick={() => setInquiryGuests((g) => Math.max(1, g - 1))}
+                            title="Remove a guest"
                             className="h-7 w-7 rounded-full border border-line-bright flex items-center justify-center text-cream-dim hover:border-amber hover:text-amber transition text-base leading-none"
                           >−</button>
                           <span className="font-mono text-sm text-cream w-5 text-center">{inquiryGuests}</span>
                           <button
                             type="button"
                             onClick={() => setInquiryGuests((g) => g + 1)}
+                            title="Add a guest"
                             className="h-7 w-7 rounded-full border border-line-bright flex items-center justify-center text-cream-dim hover:border-amber hover:text-amber transition text-base leading-none"
                           >+</button>
                           <span className="font-mono text-[0.6rem] text-mocha">{inquiryGuests === 1 ? "guest" : "guests"}</span>
@@ -620,6 +622,7 @@ export default function ChatWidgetStub() {
                     type="button"
                     onClick={handleInquirySubmit}
                     disabled={inquirySending || !inquiryMsg.trim()}
+                    title="Send your inquiry message"
                     className="w-full flex items-center justify-center gap-2 bg-amber text-bg rounded-md py-2.5 font-mono text-xs uppercase tracking-widest disabled:opacity-40 hover:bg-amber/90 transition"
                   >
                     <Send className="h-3.5 w-3.5" />
@@ -634,6 +637,7 @@ export default function ChatWidgetStub() {
                     <button
                       type="button"
                       onClick={() => openSession(s)}
+                      title={`Open conversation: ${s.branchName ?? "General inquiry"}`}
                       className={`w-full text-left px-4 py-3 transition ${
                         unreadConvIds.has(s.conversationId)
                           ? "bg-amber/5 hover:bg-amber/10"

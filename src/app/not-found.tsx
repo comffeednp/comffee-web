@@ -13,11 +13,11 @@ export default function NotFound() {
       </p>
 
       <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-        <Link href="/" className="key-cap key-cap-primary">
+        <Link href="/" className="key-cap key-cap-primary" title="Go to the home page">
           <Home className="h-4 w-4" />
           Return to base
         </Link>
-        <Link href="/branches" className="key-cap">
+        <Link href="/branches" className="key-cap" title="View all Comffee branches">
           See branches
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
@@ -37,6 +37,7 @@ export default function NotFound() {
             <li key={l.href}>
               <Link
                 href={l.href}
+                title={`Go to ${l.label}`}
                 className="block font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber py-1"
               >
                 → {l.label}

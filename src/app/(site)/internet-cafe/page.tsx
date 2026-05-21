@@ -44,10 +44,10 @@ export default async function InternetCafePage() {
             Pay by the hour or grab a package — walk-in or reserve a station online.
           </p>
           <div className="mt-10 flex flex-wrap gap-4">
-            <Link href="#locations" className="key-cap key-cap-primary">
+            <Link href="#locations" title="Jump to cafe locations" className="key-cap key-cap-primary">
               Find a location
             </Link>
-            <Link href="/menu" className="key-cap">
+            <Link href="/menu" title="View the menu" className="key-cap">
               <Coffee className="h-4 w-4" />
               View menu
             </Link>
@@ -114,6 +114,7 @@ export default async function InternetCafePage() {
             <Reveal key={b.id} delay={i * 0.05}>
               <Link
                 href={`/branches/${b.slug}`}
+                title={`Visit ${b.name}`}
                 className="group block relative overflow-hidden rounded-xl border border-line-bright bg-bg-card hover:border-amber/60 hover:-translate-y-0.5 transition-all"
               >
                 <div className="relative aspect-[16/10] overflow-hidden">
@@ -151,12 +152,12 @@ export default async function InternetCafePage() {
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               {cafeBranches[0] && (
-                <Link href={`/branches/${cafeBranches[0].slug}`} className="key-cap key-cap-primary">
+                <Link href={`/branches/${cafeBranches[0].slug}`} title="Reserve a PC station" className="key-cap key-cap-primary">
                   <Cpu className="h-4 w-4" />
                   Reserve a station
                 </Link>
               )}
-              <Link href="#locations" className="key-cap">See all locations</Link>
+              <Link href="#locations" title="See all cafe locations" className="key-cap">See all locations</Link>
             </div>
           </div>
         </div>

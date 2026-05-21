@@ -141,6 +141,7 @@ export default async function AdminTopupsPage({ searchParams }: Props) {
                       <input type="hidden" name="id" value={t.id} />
                       <button
                         type="submit"
+                        title="Mark as credited in PanCafe"
                         className="flex items-center gap-1.5 border border-phosphor/50 rounded-md px-3 py-1.5 text-[0.7rem] font-mono uppercase tracking-widest text-phosphor hover:bg-phosphor/10"
                       >
                         <Check className="h-3 w-3" />
@@ -188,6 +189,7 @@ function FilterChip({
   return (
     <a
       href={href}
+      title={`Filter: ${String(children)}`}
       className={`font-mono text-[0.7rem] uppercase tracking-[0.18em] px-3 py-2 rounded-md border transition ${
         active
           ? "bg-amber text-bg border-amber"

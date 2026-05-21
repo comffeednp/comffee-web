@@ -41,6 +41,7 @@ export default async function LoginPage({ searchParams }: Props) {
             <input type="hidden" name="next" value={next ?? "/account"} />
             <button
               type="submit"
+              title="Sign in with your Google account"
               className="w-full flex items-center justify-center gap-3 border border-line-bright rounded-lg px-4 py-3 font-mono text-sm text-cream hover:border-amber/50 hover:bg-bg-soft transition"
             >
               <GoogleIcon />
@@ -79,7 +80,7 @@ export default async function LoginPage({ searchParams }: Props) {
               <p className="font-mono text-xs text-red-400">// {error.replaceAll("_", " ")}</p>
             )}
 
-            <button type="submit" className="key-cap key-cap-primary w-full justify-center">
+            <button type="submit" title="Sign in to your account" className="key-cap key-cap-primary w-full justify-center">
               <Power className="h-4 w-4" />
               Sign in
             </button>
@@ -87,7 +88,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
           <p className="mt-8 text-center text-sm text-cream-dim">
             New here?{" "}
-            <Link href="/account/signup" className="text-amber hover:underline">
+            <Link href="/account/signup" title="Create a new member account" className="text-amber hover:underline">
               Become a member
             </Link>
           </p>

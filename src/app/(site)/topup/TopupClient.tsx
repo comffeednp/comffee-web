@@ -113,6 +113,7 @@ export default function TopupClient({ branches }: Props) {
                         key={b.id}
                         type="button"
                         onClick={() => setBranchId(b.id)}
+                        title={`Select ${b.name} as branch`}
                         className={`p-4 rounded-lg border text-left transition ${
                           branchId === b.id
                             ? "border-amber bg-amber/10 glow-amber"
@@ -191,6 +192,7 @@ export default function TopupClient({ branches }: Props) {
                         setAmount(preset);
                         setCustomAmount("");
                       }}
+                      title={`Set amount to ₱${preset}`}
                       className={`py-3 rounded-lg border font-mono font-bold transition ${
                         amount === preset && customAmount === ""
                           ? "border-amber bg-amber/10 text-amber glow-amber"
@@ -228,6 +230,7 @@ export default function TopupClient({ branches }: Props) {
                 type="button"
                 onClick={handleSubmit}
                 disabled={!canSubmit}
+                title="Pay and proceed to checkout"
                 className="key-cap key-cap-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <CreditCard className="h-4 w-4" />
@@ -277,6 +280,7 @@ export default function TopupClient({ branches }: Props) {
                   setStep("form");
                   setErrorMsg(null);
                 }}
+                title="Try again"
                 className="mt-6 key-cap"
               >
                 Try again

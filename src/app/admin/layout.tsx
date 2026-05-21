@@ -53,7 +53,7 @@ export default async function AdminLayout({
       <header className="border-b border-line bg-bg sticky top-0 z-[100]" style={{ backgroundColor: 'var(--color-bg)' }}>
         {/* Identity row */}
         <div className="container-edge h-12 flex items-center justify-between gap-4">
-          <Link href={admin ? "/admin/dashboard" : "/admin"} className="flex items-center gap-2.5 shrink-0">
+          <Link href={admin ? "/admin/dashboard" : "/admin"} title="Go to admin dashboard" className="flex items-center gap-2.5 shrink-0">
             <div className="h-12 w-12 overflow-hidden relative shrink-0">
               <Image
                 src="/comffee-logo.png"
@@ -77,6 +77,7 @@ export default async function AdminLayout({
               <form action={signOutAction}>
                 <button
                   type="submit"
+                  title="Sign out of admin"
                   className="flex items-center gap-2 border border-line-bright rounded-md px-3 py-1.5 text-xs font-mono uppercase tracking-widest text-cream-dim hover:text-cream hover:border-cream transition"
                 >
                   <LogOut className="h-3 w-3" />
@@ -97,6 +98,7 @@ export default async function AdminLayout({
                 <Link
                   key={l.href}
                   href={l.href}
+                  title={`Go to ${l.label}`}
                   className="font-mono text-[0.65rem] uppercase tracking-[0.15em] text-cream-dim hover:text-cream whitespace-nowrap px-3 py-2 transition shrink-0"
                 >
                   {l.label}

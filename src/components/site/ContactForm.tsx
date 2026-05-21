@@ -61,6 +61,7 @@ export default function ContactForm({ branches }: Props) {
         </p>
         <button
           onClick={() => setDone(false)}
+          title="Send another message"
           className="mt-5 font-mono text-xs uppercase tracking-widest text-amber hover:underline"
         >
           // send another
@@ -141,6 +142,7 @@ export default function ContactForm({ branches }: Props) {
       <button
         type="submit"
         disabled={isSubmitting}
+        title="Send your message"
         className="key-cap key-cap-primary w-full md:w-auto"
       >
         {isSubmitting ? (

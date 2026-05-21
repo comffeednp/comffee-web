@@ -37,7 +37,7 @@ export default async function AdminMenuPage() {
         <form action={addCategoryAction} className="mt-3 grid gap-3 md:grid-cols-[2fr_1fr_auto]">
           <input name="name" required placeholder="Category name *" className="admin-input" />
           <input name="sort_order" type="number" placeholder="order" defaultValue={cats.length} className="admin-input" />
-          <button type="submit" className="key-cap !py-2 !px-3">
+          <button type="submit" title="Add this menu category" className="key-cap !py-2 !px-3">
             <Plus className="h-4 w-4" />
             Add
           </button>
@@ -106,7 +106,7 @@ export default async function AdminMenuPage() {
                 <input name="name" required placeholder="Item name *" className="admin-input" />
                 <input name="base_price_php" type="number" step="0.01" required placeholder="Price *" className="admin-input" />
                 <input name="description" placeholder="Description (optional)" className="admin-input" />
-                <button type="submit" className="key-cap !py-2 !px-3">
+                <button type="submit" title="Add this item to the category" className="key-cap !py-2 !px-3">
                   <Plus className="h-4 w-4" />
                   Add
                 </button>

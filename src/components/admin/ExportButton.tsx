@@ -19,6 +19,7 @@ export default function ExportButton({ entity, label = "Export CSV" }: Props) {
   return (
     <Link
       href={`/api/admin/export/${entity}`}
+      title={`Download ${label}`}
       className="inline-flex items-center gap-2 border border-line-bright rounded-md px-3 py-2 text-[0.7rem] font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber/60 transition no-print"
       prefetch={false}
     >

@@ -34,7 +34,7 @@ export default function AddAmenityForm({ branchId, nextOrder, addAction }: Props
       <input name="label" placeholder="Label *" required className="admin-input" />
       <input name="sort_order" type="number" placeholder="order" defaultValue={nextOrder} className="admin-input" />
       <input name="description" placeholder="Description (optional)" className="admin-input" />
-      <button type="submit" disabled={isPending} className="key-cap !py-2 !px-3 disabled:opacity-40">
+      <button type="submit" disabled={isPending} title="Add this amenity to the branch" className="key-cap !py-2 !px-3 disabled:opacity-40">
         <Plus className="h-4 w-4" />
         {isPending ? "Adding…" : "Add"}
       </button>

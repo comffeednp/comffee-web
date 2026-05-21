@@ -34,6 +34,7 @@ export default function AmenityIconPicker({ defaultValue = "sparkles" }: { defau
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        title="Pick an amenity icon"
         className="flex items-center gap-2 w-full px-3 py-2 border border-line-bright rounded-lg bg-bg hover:border-amber/60 transition"
       >
         <AmenityIcon name={selected} className="h-4 w-4 text-amber shrink-0" />
@@ -49,6 +50,7 @@ export default function AmenityIconPicker({ defaultValue = "sparkles" }: { defau
               <button
                 type="button"
                 onMouseDown={() => { setSelected(icon); setOpen(false); }}
+                title={`Select icon: ${icon}`}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-bg-soft transition text-left border-b border-line last:border-0 ${
                   selected === icon ? "bg-amber/10 text-amber" : ""
                 }`}

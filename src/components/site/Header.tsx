@@ -47,6 +47,7 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
             <Link
               key={link.href}
               href={link.href}
+              title={`Go to ${link.label}`}
               className="font-mono text-xs uppercase tracking-[0.18em] text-cream-dim hover:text-cream px-3 py-2 transition-colors focus-visible:outline-none rounded"
             >
               {link.label}
@@ -67,6 +68,7 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
           </Link>
           <Link
             href="/playcation"
+            title="Book a Playcation stay"
             className="key-cap key-cap-primary !py-2 !px-4 hidden md:inline-flex"
           >
             Book Playcation

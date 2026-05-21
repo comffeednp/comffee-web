@@ -78,6 +78,7 @@ export default function RefundButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        title="Issue a refund for this transaction"
         className="inline-flex items-center gap-2 border border-amber/50 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-amber hover:bg-amber/10"
       >
         <Undo2 className="h-3.5 w-3.5" />
@@ -142,6 +143,7 @@ export default function RefundButton({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
+                title="Cancel and close refund dialog"
                 className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
               >
                 Cancel
@@ -150,6 +152,7 @@ export default function RefundButton({
                 type="button"
                 onClick={handle}
                 disabled={loading}
+                title="Confirm and process refund"
                 className="key-cap key-cap-primary"
               >
                 {loading ? (

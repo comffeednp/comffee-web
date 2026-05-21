@@ -43,10 +43,10 @@ export default async function PlaycationPage() {
             PlayStation, fiber internet, and barista-grade coffee included.
           </p>
           <div className="mt-10 flex flex-wrap gap-4">
-            <Link href="#stays" className="key-cap key-cap-primary">
+            <Link href="#stays" title="Jump to available stays" className="key-cap key-cap-primary">
               See available stays
             </Link>
-            <Link href="/contact" className="key-cap">
+            <Link href="/contact" title="Contact us for custom dates" className="key-cap">
               <Calendar className="h-4 w-4" />
               Custom dates
             </Link>
@@ -113,6 +113,7 @@ export default async function PlaycationPage() {
             <Reveal key={b.id} delay={i * 0.05}>
               <Link
                 href={`/playcation/${b.slug}`}
+                title={`Book ${b.name}`}
                 className="group block relative overflow-hidden rounded-xl border border-line-bright bg-bg-card hover:border-amber/60 hover:-translate-y-0.5 transition-all"
               >
                 <div className="relative aspect-[16/10] overflow-hidden">
@@ -150,11 +151,11 @@ export default async function PlaycationPage() {
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               {featured && (
-                <Link href={`/playcation/${featured.slug}`} className="key-cap key-cap-primary">
+                <Link href={`/playcation/${featured.slug}`} title="Start booking your stay" className="key-cap key-cap-primary">
                   Start booking
                 </Link>
               )}
-              <Link href="#stays" className="key-cap">See all stays</Link>
+              <Link href="#stays" title="See all available stays" className="key-cap">See all stays</Link>
             </div>
           </div>
         </div>

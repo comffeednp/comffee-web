@@ -30,11 +30,11 @@ export default async function NewBranchPage({ searchParams }: PageProps) {
         <BranchCoreFields />
 
         <div className="flex items-center gap-3">
-          <button type="submit" className="key-cap key-cap-primary">
+          <button type="submit" title="Create this new branch" className="key-cap key-cap-primary">
             <Save className="h-4 w-4" />
             Create branch
           </button>
-          <Link href="/admin/branches" className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber">
+          <Link href="/admin/branches" title="Cancel and go back to branches list" className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber">
             Cancel
           </Link>
         </div>

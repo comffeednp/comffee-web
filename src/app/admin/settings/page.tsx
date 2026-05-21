@@ -45,7 +45,7 @@ export default async function AdminSettingsPage({ searchParams }: Props) {
           <Field label="TikTok URL" name="social_tiktok" defaultValue={settings.social_tiktok} />
         </div>
 
-        <button type="submit" className="key-cap key-cap-primary">
+        <button type="submit" title="Save site settings" className="key-cap key-cap-primary">
           <Save className="h-4 w-4" />
           Save settings
         </button>

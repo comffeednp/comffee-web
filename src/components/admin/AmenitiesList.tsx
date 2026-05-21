@@ -54,6 +54,7 @@ export default function AmenitiesList({ amenities, branchId, updateAction, delet
               <button
                 type="button"
                 onClick={() => setOpenId(openId === a.id ? null : a.id)}
+                title={openId === a.id ? "Close edit form" : "Edit this amenity"}
                 className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline px-2 py-1"
               >
                 {openId === a.id ? "Close" : "Edit"}
@@ -92,7 +93,7 @@ export default function AmenitiesList({ amenities, branchId, updateAction, delet
                   <input name="sort_order" type="number" defaultValue={a.sort_order} className="admin-input" />
                 </div>
               </div>
-              <button type="submit" disabled={isPending} className="key-cap key-cap-primary !py-1.5 !px-4 text-xs disabled:opacity-40">
+              <button type="submit" disabled={isPending} title="Save amenity changes" className="key-cap key-cap-primary !py-1.5 !px-4 text-xs disabled:opacity-40">
                 {isPending ? "Saving…" : "Save"}
               </button>
             </form>

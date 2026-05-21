@@ -136,7 +136,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
             <input name="price_php" type="number" step="0.01" placeholder="price" required className="admin-input" />
             <input name="unit" placeholder="unit" defaultValue={branch.type === "playcation" ? "night" : "hour"} className="admin-input" />
             <input name="description" placeholder="Description" className="admin-input" />
-            <button type="submit" className="key-cap !py-2 !px-3">
+            <button type="submit" title="Add this rate to the branch" className="key-cap !py-2 !px-3">
               <Plus className="h-4 w-4" />
               Add
             </button>
@@ -202,7 +202,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
             folder={`branches/${branch.slug}`}
             multiple
           />
-          <button type="submit" className="key-cap !py-2 !px-3">
+          <button type="submit" title="Upload and add photos to this branch" className="key-cap !py-2 !px-3">
             <Plus className="h-4 w-4" />
             Add photos
           </button>
@@ -246,7 +246,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
               folder={`branches/${branch.slug}/instructions`}
             />
           </div>
-          <button type="submit" className="key-cap key-cap-primary">
+          <button type="submit" title="Save guest instruction photos" className="key-cap key-cap-primary">
             <Save className="h-4 w-4" />
             Save instruction photos
           </button>
@@ -255,7 +255,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
 
       {/* SAVE */}
       <div className="mt-16 pt-10 border-t border-line flex items-center gap-3">
-        <button type="submit" form="branch-core-form" className="key-cap key-cap-primary">
+        <button type="submit" form="branch-core-form" title="Save all branch changes" className="key-cap key-cap-primary">
           <Save className="h-4 w-4" />
           Save changes
         </button>
@@ -271,6 +271,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
           <input type="hidden" name="id" value={branch.id} />
           <button
             type="submit"
+            title="Permanently delete this branch and all its data"
             className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
           >
             <Trash2 className="h-3.5 w-3.5" />
