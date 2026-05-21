@@ -7,8 +7,11 @@ export interface PCStation {
   is_occupied: boolean;
   raw_terminal_status: number | null;
   current_session_started_at: string | null;
+  current_session_ends_at: string | null;
   current_session_member_id: number | null;
   current_session_amount_php: number | null;
+  is_member_session: boolean;
+  time_remaining_min: number | null;
   last_synced_at: string;
   sort_order: number;
   pc_tier: string | null;

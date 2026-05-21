@@ -212,6 +212,27 @@ export default function LivePCStations({
   );
 }
 
+function CountdownTimer({ endsAt }: { endsAt: string }) {
+  const calc = () => Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000));
+  const [remaining, setRemaining] = useState(calc);
+
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(calc), 10000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endsAt]);
+
+  if (remaining <= 0) return <span className="font-mono text-[0.7rem] text-red-400">ending soon</span>;
+  const hrs = Math.floor(remaining / 60);
+  const mins = remaining % 60;
+  const label = hrs > 0 ? `${hrs}h ${mins}m left` : `${mins}m left`;
+  return (
+    <span className={`font-mono text-[0.7rem] ${remaining <= 10 ? "text-red-400" : "text-amber"}`}>
+      {label}
+    </span>
+  );
+}
+
 function StationCard({
   station,
   branchSlug,
@@ -260,12 +281,16 @@ function StationCard({
             <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">
               // in use
             </p>
-            {station.current_session_amount_php != null &&
-              Number(station.current_session_amount_php) > 0 && (
-                <p className="font-mono text-[0.7rem] text-amber mt-1">
-                  ₱{Number(station.current_session_amount_php).toFixed(0)}
-                </p>
-              )}
+            {station.current_session_ends_at ? (
+              <CountdownTimer endsAt={station.current_session_ends_at} />
+            ) : station.is_member_session ? (
+              <p className="font-mono text-[0.7rem] text-cream-dim mt-1">member session</p>
+            ) : station.current_session_amount_php != null &&
+              Number(station.current_session_amount_php) > 0 ? (
+              <p className="font-mono text-[0.7rem] text-amber mt-1">
+                ₱{Number(station.current_session_amount_php).toFixed(0)}
+              </p>
+            ) : null}
           </div>
         ) : (
           <Link
