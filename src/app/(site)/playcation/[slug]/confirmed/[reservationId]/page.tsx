@@ -35,6 +35,7 @@ export default async function ConfirmedPage({
       <BookingConfirmedNotifier
         reservationId={reservationId}
         branchId={(reservation as { branch_id?: string }).branch_id ?? ""}
+        branchName={branch.name}
         checkIn={reservation.check_in}
         checkOut={reservation.check_out}
       />
