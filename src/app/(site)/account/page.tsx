@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireMember } from "@/lib/auth/require-member";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { cancelMyReservationAction, cancelMyPlaycationAction } from "./_actions/reservations";
-import { Calendar, Cpu, Gamepad2, Plus, Trash2 } from "lucide-react";
+import CancelBookingButton from "./CancelBookingButton";
+import { Calendar, Cpu, Gamepad2, Plus } from "lucide-react";
 import { formatDateTime, formatPHP } from "@/lib/utils";
 import { formatRange, nightsBetween } from "@/lib/dates";
 
@@ -115,16 +116,7 @@ export default async function AccountPage({ searchParams }: Props) {
                         </Link>
                       )}
                       {(r.status === "pending_hold" || r.status === "confirmed") && (
-                        <form action={cancelMyPlaycationAction}>
-                          <input type="hidden" name="id" value={r.id} />
-                          <button
-                            type="submit"
-                            className="text-red-400 hover:text-red-300 p-2"
-                            aria-label="Cancel booking"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </form>
+                        <CancelBookingButton id={r.id} kind="booking" action={cancelMyPlaycationAction} />
                       )}
                     </div>
                   </div>
@@ -174,16 +166,7 @@ export default async function AccountPage({ searchParams }: Props) {
               )}
             </div>
             {(r.status === "requested" || r.status === "confirmed") && (
-              <form action={cancelMyReservationAction}>
-                <input type="hidden" name="id" value={r.id} />
-                <button
-                  type="submit"
-                  className="text-red-400 hover:text-red-300 p-2"
-                  aria-label="Cancel"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </form>
+              <CancelBookingButton id={r.id} kind="reservation" action={cancelMyReservationAction} />
             )}
           </li>
         ))}
