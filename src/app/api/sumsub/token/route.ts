@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const token = await generateAccessToken(parsed.data.userId, "playcation-guest");
+    const token = await generateAccessToken(parsed.data.userId, "id-and-liveness");
     return NextResponse.json({ token });
   } catch (e) {
     console.error("sumsub token error", e);
