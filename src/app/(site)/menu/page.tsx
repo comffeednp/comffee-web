@@ -7,7 +7,7 @@ export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Menu",
-  description: "Coffee, cold drinks, rice meals, snacks, and desserts at every Comffee branch.",
+  description: "Lattes, mocktails, rice meals, and snacks at every Comffee branch.",
 };
 
 export default async function MenuPage() {
@@ -23,7 +23,7 @@ export default async function MenuPage() {
             The menu.
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-cream-dim">
-            Real espresso. Cold brew. Rice meals that fuel a 6-hour ranked grind. Available at every branch unless noted.
+            Iced and hot lattes, mocktails, rice meals, and snacks. Available at all branches — Matcha Espresso at cafe locations only.
           </p>
         </div>
       </section>
