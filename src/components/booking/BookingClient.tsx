@@ -16,7 +16,7 @@ import {
 // Calendar is used in SummaryRow below
 import { addDays, formatRange, nightsBetween, todayString } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
-import SumsubVerify from "@/components/booking/SumsubVerify";
+import KycVerify, { KycResult } from "@/components/booking/KycVerify";
 import BookingCalendar from "@/components/booking/BookingCalendar";
 
 interface Branch {
@@ -35,8 +35,6 @@ interface Branch {
 interface Props {
   branch: Branch;
   initialBlocked: Array<{ check_in: string; check_out: string; source: string }>;
-  kycEnabled: boolean;
-  kycVerified?: boolean;
   memberId?: string | null;
   initialCheckIn?: string;
   initialCheckOut?: string;
@@ -62,7 +60,7 @@ interface AppliedPromo {
 
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
-export default function BookingClient({ branch, initialBlocked, kycEnabled, kycVerified = false, memberId, initialCheckIn, initialCheckOut }: Props) {
+export default function BookingClient({ branch, initialBlocked, memberId, initialCheckIn, initialCheckOut }: Props) {
   const SECURITY_DEPOSIT_PHP = branch.securityDepositPhp;
   const router = useRouter();
   const tomorrow = addDays(todayString(), 1);
@@ -80,16 +78,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
   const [isPending, startTransition] = useTransition();
 
   const [paymentType, setPaymentType] = useState<"full" | "partial">("full");
-  // Use a deterministic ID tied to the member so Sumsub recognises returning users
-  const [sumsubUserId] = useState<string>(
-    () => memberId ? `comffee-member-${memberId}` : `comffee-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-  );
-  // Pre-fill applicant ID if already verified so it's sent with the payment request
-  const [sumsubApplicantId, setSumsubApplicantId] = useState<string | null>(
-    kycVerified && memberId ? `comffee-member-${memberId}` : null,
-  );
-  // Show the verify step only if KYC is enabled and member hasn't done it yet
-  const showKyc = kycEnabled && !kycVerified;
+  const [kycData, setKycData] = useState<KycResult | null>(null);
 
   // Promo code state (standalone — not tied to BookingState)
   const [promoCode, setPromoCode] = useState("");
@@ -170,6 +159,10 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
       setErrorMsg("Name is required");
       return;
     }
+    if (!kycData) {
+      setErrorMsg("Complete identity verification first");
+      return;
+    }
     setErrorMsg(null);
     setStep("loading");
 
@@ -188,8 +181,13 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
             guestPhone: state.guestPhone,
             promoCode: promoApplied?.code ?? "",
             paymentType,
-            sumsubApplicantId: sumsubApplicantId ?? "",
             memberId: memberId ?? null,
+            kycSelfieUrl: kycData.selfieUrl,
+            kycIdUrl: kycData.idUrl,
+            kycBillingUrl: kycData.billingUrl,
+            kycIpAddress: kycData.ipAddress ?? null,
+            kycLatitude: kycData.latitude ?? null,
+            kycLongitude: kycData.longitude ?? null,
           }),
         });
         const data = await res.json();
@@ -227,14 +225,10 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
           <StepDot active={["guest","terms","verify","review","loading"].includes(step)} done={["terms","verify","review","loading"].includes(step)} label="02 guest" />
           <ChevronRight className="h-3 w-3 text-mocha" />
           <StepDot active={["terms","verify","review","loading"].includes(step)} done={["verify","review","loading"].includes(step)} label="03 terms" />
-          {showKyc && (
-            <>
-              <ChevronRight className="h-3 w-3 text-mocha" />
-              <StepDot active={["verify","review","loading"].includes(step)} done={["review","loading"].includes(step)} label="04 verify" />
-            </>
-          )}
           <ChevronRight className="h-3 w-3 text-mocha" />
-          <StepDot active={["review","loading"].includes(step)} done={["loading"].includes(step)} label={showKyc ? "05 confirm" : "04 confirm"} />
+          <StepDot active={["verify","review","loading"].includes(step)} done={["review","loading"].includes(step)} label="04 verify" />
+          <ChevronRight className="h-3 w-3 text-mocha" />
+          <StepDot active={["review","loading"].includes(step)} done={["loading"].includes(step)} label="05 confirm" />
         </div>
 
         <div className="p-6 md:p-10 min-h-[400px]">
@@ -630,7 +624,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                   </button>
                   <button
                     type="button"
-                    onClick={() => state.termsAccepted && setStep(showKyc ? "verify" : "review")}
+                    onClick={() => state.termsAccepted && setStep("verify")}
                     disabled={!state.termsAccepted}
                     className="key-cap key-cap-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -655,19 +649,17 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                   Verify your identity.
                 </h2>
                 <p className="mt-3 text-cream-dim text-sm">
-                  A quick ID scan + liveness check. <span className="text-amber font-mono">One-time setup</span> — once verified, you won&apos;t need to do this again for future playcation bookings.
+                  Selfie, government ID, and proof of billing. Required for all playcation reservations.
                 </p>
 
                 <div className="mt-6">
-                  <SumsubVerify
-                    userId={sumsubUserId}
-                    onComplete={() => {
-                      setSumsubApplicantId(sumsubUserId);
+                  <KycVerify
+                    memberId={memberId ?? ""}
+                    onComplete={(result) => {
+                      setKycData(result);
                       setStep("review");
                     }}
-                    onFail={(msg) => {
-                      setErrorMsg(msg);
-                    }}
+                    onFail={(msg) => setErrorMsg(msg)}
                   />
                   {errorMsg && (
                     <p className="mt-4 font-mono text-xs text-red-400">// {errorMsg}</p>
@@ -695,7 +687,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.3 }}
               >
-                <p className="terminal-label">{showKyc ? "step.05" : "step.04"} // confirm_and_pay</p>
+                <p className="terminal-label">step.05 // confirm_and_pay</p>
                 <h2 className="mt-3 font-display text-3xl md:text-4xl font-bold text-cream tracking-tight">
                   Last check before launch.
                 </h2>
@@ -834,7 +826,7 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                 <div className="mt-8 flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setStep(showKyc ? "verify" : "terms")}
+                    onClick={() => setStep("verify")}
                     className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber"
                   >
                     ← back

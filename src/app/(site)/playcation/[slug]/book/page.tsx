@@ -6,7 +6,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireMember } from "@/lib/auth/require-member";
 import { addDays, findEarliestAvailable } from "@/lib/dates";
 import BookingClient from "@/components/booking/BookingClient";
-import { isSumsubConfigured } from "@/lib/sumsub";
 import { ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -89,7 +88,6 @@ export default async function BookPlaycationPage({
 
   // Require sign-in — redirects to /account/login?next=... if not authenticated
   const member = await requireMember(`/playcation/${slug}/book`);
-  const kycVerified = member.kyc_status === "approved";
   const memberId = member.id;
 
   return (
@@ -130,8 +128,6 @@ export default async function BookPlaycationPage({
             securityDepositPhp: branch.security_deposit_php != null ? Number(branch.security_deposit_php) : 1000,
           }}
           initialBlocked={initialBlocked}
-          kycEnabled={isSumsubConfigured()}
-          kycVerified={kycVerified}
           memberId={memberId}
           initialCheckIn={defaultCheckIn}
           initialCheckOut={defaultCheckOut}

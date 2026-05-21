@@ -31,8 +31,13 @@ const schema = z.object({
   guestPhone: z.string().max(40).optional().or(z.literal("")),
   promoCode: z.string().max(40).optional().or(z.literal("")),
   paymentType: z.enum(["full", "partial"]).default("full"),
-  sumsubApplicantId: z.string().max(120).optional().or(z.literal("")),
   memberId: z.string().uuid().optional().nullable(),
+  kycSelfieUrl: z.string().max(500).optional().nullable(),
+  kycIdUrl: z.string().max(500).optional().nullable(),
+  kycBillingUrl: z.string().max(500).optional().nullable(),
+  kycIpAddress: z.string().max(60).optional().nullable(),
+  kycLatitude: z.number().optional().nullable(),
+  kycLongitude: z.number().optional().nullable(),
 });
 
 export async function POST(request: Request) {
@@ -120,8 +125,13 @@ export async function POST(request: Request) {
       paymentType: v.paymentType,
       balancePhp,
       balanceDueDate,
-      sumsubApplicantId: v.sumsubApplicantId || undefined,
       memberId: v.memberId || undefined,
+      kycSelfieUrl: v.kycSelfieUrl || undefined,
+      kycIdUrl: v.kycIdUrl || undefined,
+      kycBillingUrl: v.kycBillingUrl || undefined,
+      kycIpAddress: v.kycIpAddress || undefined,
+      kycLatitude: v.kycLatitude ?? undefined,
+      kycLongitude: v.kycLongitude ?? undefined,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "hold_failed";

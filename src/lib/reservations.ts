@@ -78,8 +78,13 @@ export interface CreateHoldInput {
   paymentType?: "full" | "partial";
   balancePhp?: number;
   balanceDueDate?: string;
-  sumsubApplicantId?: string;
   memberId?: string;
+  kycSelfieUrl?: string;
+  kycIdUrl?: string;
+  kycBillingUrl?: string;
+  kycIpAddress?: string;
+  kycLatitude?: number;
+  kycLongitude?: number;
 }
 
 export interface CreatedHold {
@@ -115,8 +120,13 @@ export async function createHold(input: CreateHoldInput): Promise<CreatedHold> {
       payment_type: input.paymentType ?? "full",
       balance_php: input.balancePhp ?? 0,
       balance_due_date: input.balanceDueDate ?? null,
-      sumsub_applicant_id: input.sumsubApplicantId ?? null,
       member_id: input.memberId ?? null,
+      kyc_selfie_url: input.kycSelfieUrl ?? null,
+      kyc_id_url: input.kycIdUrl ?? null,
+      kyc_billing_url: input.kycBillingUrl ?? null,
+      kyc_ip_address: input.kycIpAddress ?? null,
+      kyc_latitude: input.kycLatitude ?? null,
+      kyc_longitude: input.kycLongitude ?? null,
       hold_expires_at: expiresAt,
     })
     .select("id, hold_expires_at")
