@@ -41,6 +41,7 @@ export default function AdminChatFloat({ adminName }: Props) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [unreadConvs, setUnreadConvs] = useState<Map<string, string>>(new Map());
   const [customerTyping, setCustomerTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
@@ -77,7 +78,12 @@ export default function AdminChatFloat({ adminName }: Props) {
           if (m.conversation_id === activeId) {
             setMessages((prev) => prev.find((x) => x.id === m.id) ? prev : [...prev, m]);
           }
-          if (m.sender_type === "customer") setUnread((u) => u + 1);
+          if (m.sender_type === "customer") {
+            setUnread((u) => u + 1);
+            if (m.conversation_id !== activeId) {
+              setUnreadConvs((prev) => new Map(prev).set(m.conversation_id, m.body));
+            }
+          }
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === m.conversation_id);
             if (idx === -1) {
@@ -171,6 +177,7 @@ export default function AdminChatFloat({ adminName }: Props) {
   const selectConversation = (id: string) => {
     setActiveId(id);
     setView("thread");
+    setUnreadConvs((prev) => { const n = new Map(prev); n.delete(id); return n; });
   };
 
   const sendTyping = useCallback(() => {
@@ -287,44 +294,52 @@ export default function AdminChatFloat({ adminName }: Props) {
             {/* Body */}
             {view === "list" ? (
               <ul className="flex-1 overflow-y-auto divide-y divide-line">
-                {conversations.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => selectConversation(c.id)}
-                      className="w-full text-left px-4 py-3 hover:bg-bg-elev/40 transition"
-                    >
-                      <div className="flex items-start gap-3">
-                        <Avatar url={c.customer_avatar_url} name={c.customer_name} size={8} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-cream text-sm font-medium truncate">
-                              {c.customer_name ?? "Anonymous"}
-                            </span>
-                            {c.status === "resolved" ? (
-                              <Check className="h-3 w-3 text-phosphor shrink-0" />
-                            ) : c.status === "open" ? (
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber shrink-0" />
-                            ) : null}
+                {conversations.map((c) => {
+                  const preview = unreadConvs.get(c.id);
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectConversation(c.id)}
+                        className={`w-full text-left px-4 py-3 transition ${
+                          preview ? "bg-amber/5 hover:bg-amber/10" : "hover:bg-bg-elev/40"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <Avatar url={c.customer_avatar_url} name={c.customer_name} size={8} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-sm truncate ${preview ? "text-cream font-semibold" : "text-cream font-medium"}`}>
+                                {c.customer_name ?? "Anonymous"}
+                              </span>
+                              {c.status === "resolved" ? (
+                                <Check className="h-3 w-3 text-phosphor shrink-0" />
+                              ) : preview ? (
+                                <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
+                              ) : null}
+                            </div>
+                            {(c as ConversationWithBranch).branch_name && (
+                              <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
+                                {(c as ConversationWithBranch).branch_name}
+                              </p>
+                            )}
+                            {c.inquiry_check_in && c.inquiry_check_out && (
+                              <p className="font-mono text-[0.6rem] text-cream-dim mt-0.5">
+                                {fmtDate(c.inquiry_check_in)} – {fmtDate(c.inquiry_check_out)}
+                              </p>
+                            )}
+                            <p className="font-mono text-[0.6rem] text-mocha mt-0.5">
+                              {formatDateTime(c.last_message_at)}
+                            </p>
+                            {preview && (
+                              <p className="mt-1 text-xs text-cream-dim truncate">{preview}</p>
+                            )}
                           </div>
-                          {(c as ConversationWithBranch).branch_name && (
-                            <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
-                              {(c as ConversationWithBranch).branch_name}
-                            </p>
-                          )}
-                          {c.inquiry_check_in && c.inquiry_check_out && (
-                            <p className="font-mono text-[0.6rem] text-cream-dim mt-0.5">
-                              {fmtDate(c.inquiry_check_in)} – {fmtDate(c.inquiry_check_out)}
-                            </p>
-                          )}
-                          <p className="font-mono text-[0.6rem] text-mocha mt-0.5">
-                            {formatDateTime(c.last_message_at)}
-                          </p>
                         </div>
-                      </div>
-                    </button>
-                  </li>
-                ))}
+                      </button>
+                    </li>
+                  );
+                })}
                 {conversations.length === 0 && (
                   <li className="px-4 py-10 font-mono text-xs text-mocha text-center">
                     // no conversations yet

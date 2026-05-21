@@ -36,7 +36,7 @@ export default function AdminChatClient({
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [customerTyping, setCustomerTyping] = useState(false);
-  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+  const [unreadConvs, setUnreadConvs] = useState<Map<string, string>>(new Map());
   const activeIdRef = useRef(activeId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
@@ -45,7 +45,7 @@ export default function AdminChatClient({
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => {
-    if (activeId) setUnreadIds((s) => { const n = new Set(s); n.delete(activeId); return n; });
+    if (activeId) setUnreadConvs((m) => { const n = new Map(m); n.delete(activeId); return n; });
   }, [activeId]);
 
   // Broadcast read + subscribe to customer typing when active conversation changes
@@ -133,7 +133,7 @@ export default function AdminChatClient({
               prev.find((x) => x.id === m.id) ? prev : [...prev, m],
             );
           } else if (m.sender_type === "customer") {
-            setUnreadIds((s) => new Set([...s, m.conversation_id]));
+            setUnreadConvs((prev) => new Map(prev).set(m.conversation_id, m.body));
           }
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === m.conversation_id);
@@ -290,49 +290,53 @@ export default function AdminChatClient({
           </button>
         </div>
         <ul className="overflow-y-auto flex-1 divide-y divide-line">
-          {conversations.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => setActiveId(c.id)}
-                className={`w-full text-left px-4 py-3 transition ${
-                  c.id === activeId
-                    ? "bg-bg-elev border-l-2 border-amber"
-                    : unreadIds.has(c.id)
-                    ? "bg-amber/5 border-l-2 border-amber hover:bg-amber/10"
-                    : "hover:bg-bg-elev/40 border-l-2 border-transparent"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`truncate ${unreadIds.has(c.id) ? "text-cream font-semibold" : "text-cream font-medium"}`}>
-                    {c.customer_name ?? "Anonymous"}
-                  </span>
-                  {c.status === "resolved" ? (
-                    <Check className="h-3 w-3 text-phosphor shrink-0" />
-                  ) : unreadIds.has(c.id) ? (
-                    <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
-                  ) : c.status === "open" ? (
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber/40 shrink-0" />
-                  ) : null}
-                </div>
-                {(c as ConversationWithBranch).branch_name && (
-                  <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
-                    {(c as ConversationWithBranch).branch_name}
+          {conversations.map((c) => {
+            const preview = unreadConvs.get(c.id);
+            return (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveId(c.id)}
+                  className={`w-full text-left px-4 py-3 transition ${
+                    c.id === activeId
+                      ? "bg-bg-elev border-l-2 border-amber"
+                      : preview
+                      ? "bg-amber/5 border-l-2 border-amber hover:bg-amber/10"
+                      : "hover:bg-bg-elev/40 border-l-2 border-transparent"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`truncate ${preview ? "text-cream font-semibold" : "text-cream font-medium"}`}>
+                      {c.customer_name ?? "Anonymous"}
+                    </span>
+                    {c.status === "resolved" ? (
+                      <Check className="h-3 w-3 text-phosphor shrink-0" />
+                    ) : preview ? (
+                      <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
+                    ) : null}
+                  </div>
+                  {(c as ConversationWithBranch).branch_name && (
+                    <p className="font-mono text-[0.6rem] uppercase tracking-widest text-amber mt-0.5 truncate">
+                      {(c as ConversationWithBranch).branch_name}
+                    </p>
+                  )}
+                  {c.inquiry_check_in && c.inquiry_check_out && (
+                    <p className="font-mono text-[0.6rem] text-amber/70 mt-0.5">
+                      {new Date(c.inquiry_check_in + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
+                      {" – "}
+                      {new Date(c.inquiry_check_out + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
+                    </p>
+                  )}
+                  <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
+                    {formatDateTime(c.last_message_at)}
                   </p>
-                )}
-                {c.inquiry_check_in && c.inquiry_check_out && (
-                  <p className="font-mono text-[0.6rem] text-amber/70 mt-0.5">
-                    {new Date(c.inquiry_check_in + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
-                    {" – "}
-                    {new Date(c.inquiry_check_out + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })}
-                  </p>
-                )}
-                <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
-                  {formatDateTime(c.last_message_at)}
-                </p>
-              </button>
-            </li>
-          ))}
+                  {preview && (
+                    <p className="mt-1 text-xs text-cream-dim truncate">{preview}</p>
+                  )}
+                </button>
+              </li>
+            );
+          })}
           {conversations.length === 0 && (
             <li className="px-4 py-8 font-mono text-xs text-mocha text-center">
               // no conversations yet
