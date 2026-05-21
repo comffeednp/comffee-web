@@ -86,7 +86,16 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
         </div>
       )}
 
-      <div className="mt-12 flex flex-wrap items-center gap-3">
+      {reservation.status === "cancelled" && (
+        <div className="mt-10 p-4 border border-red-700/40 bg-red-950/10 rounded-lg">
+          <p className="font-mono text-xs text-red-400 uppercase tracking-widest">// terminal state</p>
+          <p className="mt-1 text-sm text-cream-dim">
+            This booking is permanently cancelled. It cannot be reinstated — the customer must complete a new booking and payment.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         {reservation.status !== "confirmed" && reservation.status !== "cancelled" && (
           <form action={manualConfirmAction}>
             <input type="hidden" name="id" value={reservation.id} />
