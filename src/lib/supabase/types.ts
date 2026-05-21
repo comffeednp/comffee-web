@@ -25,6 +25,7 @@ export interface Branch {
   hours_text: string | null;
   max_guests: number | null;
   booking_cutoff_time: string | null;
+  security_deposit_php: number | null;
   is_published: boolean;
   sort_order: number;
   created_at: string;

@@ -127,6 +127,7 @@ export default async function BookPlaycationPage({
             maxPax: maxPax,
             extraPaxFeePhp: extraPaxFee ? Number(extraPaxFee) : null,
             maxGuests: branch.max_guests ?? null,
+            securityDepositPhp: branch.security_deposit_php != null ? Number(branch.security_deposit_php) : 1000,
           }}
           initialBlocked={initialBlocked}
           kycEnabled={isSumsubConfigured()}

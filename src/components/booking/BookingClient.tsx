@@ -29,6 +29,7 @@ interface Branch {
   maxPax: number | null;
   extraPaxFeePhp: number | null;
   maxGuests: number | null;
+  securityDepositPhp: number;
 }
 
 interface Props {
@@ -59,10 +60,10 @@ interface AppliedPromo {
   finalAmountPhp: number;
 }
 
-const SECURITY_DEPOSIT_PHP = 1000;
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
 export default function BookingClient({ branch, initialBlocked, kycEnabled, kycVerified = false, memberId, initialCheckIn, initialCheckOut }: Props) {
+  const SECURITY_DEPOSIT_PHP = branch.securityDepositPhp;
   const router = useRouter();
   const tomorrow = addDays(todayString(), 1);
   const [state, setState] = useState<BookingState>({

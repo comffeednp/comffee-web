@@ -14,6 +14,7 @@ interface Props {
   blocked: BlockedRange[];
   branchSlug: string;
   nightlyRate: number;
+  securityDepositPhp?: number;
 }
 
 const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -21,7 +22,7 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-const SECURITY_DEPOSIT_PHP = 1000;
+const DEFAULT_SECURITY_DEPOSIT_PHP = 1000;
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
 function toYMD(d: Date): string {
@@ -61,7 +62,8 @@ function findCutoff(from: string, blocked: BlockedRange[]): string | null {
   return cutoff;
 }
 
-export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate }: Props) {
+export default function AvailabilityCalendar({ blocked, branchSlug, nightlyRate, securityDepositPhp }: Props) {
+  const SECURITY_DEPOSIT_PHP = securityDepositPhp ?? DEFAULT_SECURITY_DEPOSIT_PHP;
   const today = new Date();
   const todayStr = toYMD(today);
 

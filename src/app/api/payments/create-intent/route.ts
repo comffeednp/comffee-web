@@ -19,7 +19,6 @@ import { sendBookingConfirmation } from "@/lib/email";
 
 export const runtime = "nodejs";
 
-const SECURITY_DEPOSIT_PHP = 1000;
 const PROCESSING_FEE_PHP = Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_PHP ?? "150");
 
 const schema = z.object({
@@ -59,12 +58,15 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, slug, name, type")
+    .select("id, slug, name, type, security_deposit_php")
     .eq("id", v.branchId)
     .maybeSingle();
   if (!branch || branch.type !== "playcation") {
     return NextResponse.json({ error: "branch_not_bookable" }, { status: 400 });
   }
+  const SECURITY_DEPOSIT_PHP = (branch as { security_deposit_php?: number | null }).security_deposit_php != null
+    ? Number((branch as { security_deposit_php: number }).security_deposit_php)
+    : 1000;
 
   const subtotal = await computePlaycationTotal(v.branchId, nights, v.numGuests);
   if (subtotal <= 0) {

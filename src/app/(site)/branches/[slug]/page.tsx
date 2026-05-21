@@ -384,6 +384,7 @@ export default async function BranchDetailPage({
               nightlyRate={Number(
                 (branch.rates.find(r => (r as {unit?:string}).unit === "night") ?? branch.rates[0])?.price_php ?? 0
               )}
+              securityDepositPhp={branch.security_deposit_php != null ? Number(branch.security_deposit_php) : 1000}
             />
           </div>
         </section>
