@@ -61,6 +61,7 @@ export default function ChatWidgetStub() {
   const [name, setName] = useState("");
   const [needsName, setNeedsName] = useState(true);
   const [sending, setSending] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [unread, setUnread] = useState(0);
   const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
   const [branchLabel, setBranchLabel] = useState<string | null>(null);
@@ -87,7 +88,7 @@ export default function ChatWidgetStub() {
 
   useEffect(() => { nameRef.current = name; }, [name]);
 
-  // Prefill name from Google auth on mount
+  // Prefill name from Google auth on mount; setAuthChecked when done so name prompt never flashes
   useEffect(() => {
     (async () => {
       try {
@@ -98,6 +99,7 @@ export default function ChatWidgetStub() {
           if (fullName) { setName(fullName); setNeedsName(false); }
         }
       } catch {}
+      setAuthChecked(true);
     })();
   }, []);
 
@@ -465,25 +467,33 @@ export default function ChatWidgetStub() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Open chat"
-        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-amber/50 bg-bg-card glow-amber hover:scale-105 transition-transform"
-      >
-        {open ? <X className="h-5 w-5 text-amber" /> : <MessageSquare className="h-5 w-5 text-amber" />}
+      <div className="fixed bottom-5 right-5 z-50">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-label={open ? "Close chat" : "Open chat"}
+          className={`flex items-center gap-2 h-14 rounded-full bg-amber text-bg font-bold shadow-lg shadow-amber/40 hover:scale-105 transition-transform ${open ? "w-14 justify-center" : "px-5"}`}
+        >
+          {open
+            ? <X className="h-5 w-5 shrink-0" />
+            : <>
+                <MessageSquare className="h-5 w-5 shrink-0" />
+                <span className="font-mono text-xs uppercase tracking-widest pr-1">Chat</span>
+              </>
+          }
+        </button>
         <AnimatePresence>
           {!open && unread > 0 && (
             <motion.span
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.5, opacity: 0 }}
-              className="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-rgb-r text-bg flex items-center justify-center font-mono text-[0.65rem] font-bold"
+              className="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-rgb-r text-cream flex items-center justify-center font-mono text-[0.65rem] font-bold pointer-events-none"
             >
               {unread}
             </motion.span>
           )}
         </AnimatePresence>
-      </button>
+      </div>
 
       <AnimatePresence>
         {open && (
@@ -595,7 +605,7 @@ export default function ChatWidgetStub() {
                       autoFocus
                     />
                   </div>
-                  {needsName && (
+                  {authChecked && needsName && (
                     <input
                       type="text"
                       value={name}
@@ -713,7 +723,7 @@ export default function ChatWidgetStub() {
                 </div>
 
                 <div className="border-t border-line p-3 space-y-2">
-                  {needsName && (
+                  {authChecked && needsName && (
                     <input
                       type="text"
                       value={name}

@@ -81,15 +81,6 @@ export async function findOrCreateConversation(
     });
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-  sendNewChatInquiry({
-    customerName,
-    branchName,
-    checkIn,
-    checkOut,
-    adminChatUrl: `${siteUrl}/admin/chat`,
-  }).catch(() => {});
-
   return data as ChatConversation;
 }
 
@@ -126,6 +117,33 @@ export async function postCustomerMessage(
     .from("chat_conversations")
     .update({ last_message_at: new Date().toISOString(), status: "open" })
     .eq("id", conversation.id);
+
+  // Send admin email notification on the FIRST customer message only (not on empty session open)
+  const { count } = await supabase
+    .from("chat_messages")
+    .select("*", { count: "exact", head: true })
+    .eq("conversation_id", conversation.id)
+    .eq("sender_type", "customer");
+  if (count === 1) {
+    // Fetch branch name for email context
+    let branchName: string | undefined;
+    if (conversation.branch_id) {
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("name")
+        .eq("id", conversation.branch_id)
+        .maybeSingle();
+      branchName = branch?.name ?? undefined;
+    }
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+    sendNewChatInquiry({
+      customerName: conversation.customer_name ?? customerName,
+      branchName,
+      checkIn: conversation.inquiry_check_in ?? undefined,
+      checkOut: conversation.inquiry_check_out ?? undefined,
+      adminChatUrl: `${siteUrl}/admin/chat`,
+    }).catch(() => {});
+  }
 
   return {
     conversation,
@@ -171,15 +189,25 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 
 export async function listConversations(): Promise<(ChatConversation & { branch_name?: string | null })[]> {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("chat_conversations")
-    .select("*, branches(name)")
-    .order("last_message_at", { ascending: false })
-    .limit(200);
-  return (data ?? []).map((row) => {
-    const { branches, ...rest } = row as typeof row & { branches?: { name: string } | null };
-    return { ...rest, branch_name: branches?.name ?? null };
-  }) as (ChatConversation & { branch_name?: string | null })[];
+  const [{ data: rows }, { data: activeIds }] = await Promise.all([
+    supabase
+      .from("chat_conversations")
+      .select("*, branches(name)")
+      .order("last_message_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("chat_messages")
+      .select("conversation_id")
+      .eq("sender_type", "customer")
+      .limit(1000),
+  ]);
+  const hasCustomerMessage = new Set((activeIds ?? []).map((m: { conversation_id: string }) => m.conversation_id));
+  return ((rows ?? []) as (typeof rows extends (infer T)[] | null ? T : never)[])
+    .filter((row) => hasCustomerMessage.has((row as { id: string }).id))
+    .map((row) => {
+      const { branches, ...rest } = row as typeof row & { branches?: { name: string } | null };
+      return { ...rest, branch_name: (branches as { name: string } | null)?.name ?? null };
+    }) as (ChatConversation & { branch_name?: string | null })[];
 }
 
 export async function markResolved(conversationId: string) {

@@ -455,3 +455,86 @@ export async function sendNewChatInquiry({
     text: `New chat from ${who}. ${context} Open: ${adminChatUrl}`,
   });
 }
+
+/* ---------------- booking cancellation ---------------- */
+
+export async function sendCancellationEmail({
+  guestEmail,
+  guestName,
+  branchName,
+  checkIn,
+  checkOut,
+  totalPhp,
+  refundIssued,
+  reservationId,
+  chatUrl,
+}: {
+  guestEmail: string;
+  guestName: string;
+  branchName: string;
+  checkIn: string;
+  checkOut: string;
+  totalPhp: number;
+  refundIssued: boolean;
+  reservationId: string;
+  chatUrl: string;
+}) {
+  const checkInDate = new Date(checkIn + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const checkOutDate = new Date(checkOut + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  const refundNote = refundIssued
+    ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+        A refund of <strong>${formatPHP(totalPhp)}</strong> has been initiated and will be returned to your original payment method within 5–10 business days, depending on your bank.
+      </p>
+      <p style="margin:0 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
+        <strong>Paid via QR Ph / GCash?</strong> Automatic API refunds are not available for QR Ph payments.
+        Please message us in chat with your GCash number or bank account details so we can process the manual transfer.
+        <a href="${escapeHtml(chatUrl)}" style="color:#c98a2a;">Open chat →</a>
+      </p>`
+    : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+        No charge was collected for this booking, so no refund is required.
+      </p>`;
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Booking cancelled.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(guestName.split(" ")[0])} — your reservation at <strong>${escapeHtml(branchName)}</strong> has been cancelled. We&rsquo;re sorry for the inconvenience.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", branchName)}
+      ${receiptRow("Check-in", checkInDate)}
+      ${receiptRow("Check-out", checkOutDate)}
+      ${totalPhp > 0 ? receiptRow("Amount paid", formatPHP(totalPhp), true) : ""}
+    </table>
+
+    ${refundNote}
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // reservation_id
+    </p>
+    <p style="margin:0;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;">
+      ${escapeHtml(reservationId)}
+    </p>
+  `;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  return sendEmail({
+    to: guestEmail,
+    subject: `Booking cancelled — ${branchName} · ${formatRange(checkIn, checkOut)}`,
+    html: chrome({
+      preheader: `Your reservation at ${branchName} has been cancelled.`,
+      bodyHtml: body,
+      ctaLabel: "Chat with us",
+      ctaHref: chatUrl,
+    }),
+    text: `Your booking at ${branchName} (${checkIn} – ${checkOut}) has been cancelled. Reservation ID: ${reservationId}. ${refundIssued ? `A refund of ${formatPHP(totalPhp)} has been initiated.` : ""} Chat: ${siteUrl}`,
+    replyTo: `bookings@comffee.org`,
+  });
+}

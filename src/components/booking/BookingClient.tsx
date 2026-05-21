@@ -388,6 +388,33 @@ export default function BookingClient({ branch, initialBlocked, kycEnabled, kycV
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
+
+                {/* Mobile sticky total — visible only on small screens */}
+                <div className="fixed bottom-0 inset-x-0 z-40 lg:hidden pointer-events-none">
+                  <div className="mx-3 mb-3 pointer-events-auto">
+                    <div className="bg-bg-card/95 backdrop-blur-md border border-line-bright rounded-xl px-4 py-3 flex items-center justify-between shadow-xl shadow-black/40 pr-20">
+                      {hasOverlap ? (
+                        <span className="font-mono text-xs text-red-400">// date conflict</span>
+                      ) : nights < 1 ? (
+                        <span className="font-mono text-xs text-amber">// select dates</span>
+                      ) : (
+                        <div>
+                          <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">{nights} {nights === 1 ? "night" : "nights"} · {formatPHP(branch.baseNightlyRate)}/night</span>
+                          <p className="font-display text-xl font-bold text-amber leading-tight">{formatPHP(total)}</p>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => datesValid && setStep("guest")}
+                        disabled={!datesValid}
+                        className="key-cap key-cap-primary !py-2 !px-4 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                      >
+                        Continue
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             )}
 

@@ -83,6 +83,12 @@ export default async function ConfirmedPage({
               />
               <Row icon={Power} label="nights" value={String(nights)} />
               <Row icon={Users} label="guests" value={String(reservation.num_guests ?? 1)} />
+              {(reservation as { guest_name?: string | null }).guest_name && (
+                <Row icon={Users} label="name" value={(reservation as { guest_name: string }).guest_name} />
+              )}
+              {(reservation as { guest_email?: string | null }).guest_email && (
+                <Row icon={MapPin} label="email" value={(reservation as { guest_email: string }).guest_email} />
+              )}
 
               <div className="pt-4 mt-2 border-t border-line flex items-baseline justify-between">
                 <span className="text-mocha uppercase tracking-widest text-[0.65rem]">
@@ -105,6 +111,14 @@ export default async function ConfirmedPage({
               </div>
             </div>
           </div>
+
+          {(reservation as { guest_email?: string | null }).guest_email && (
+            <p className="mt-6 font-mono text-sm text-cream-dim">
+              // A confirmation email has been sent to{" "}
+              <span className="text-amber">{(reservation as { guest_email: string }).guest_email}</span>
+              . Check your inbox (and spam folder).
+            </p>
+          )}
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-4">
             <Link href="/account" className="key-cap key-cap-primary">

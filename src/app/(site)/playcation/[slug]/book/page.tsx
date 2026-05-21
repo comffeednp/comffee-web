@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getBranchBySlug } from "@/lib/branches";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getMemberOptional } from "@/lib/auth/require-member";
+import { requireMember } from "@/lib/auth/require-member";
 import { addDays, findEarliestAvailable } from "@/lib/dates";
 import BookingClient from "@/components/booking/BookingClient";
 import { isSumsubConfigured } from "@/lib/sumsub";
@@ -87,10 +87,10 @@ export default async function BookPlaycationPage({
   const maxPax = nightlyRateRow?.max_pax ?? null;
   const extraPaxFee = nightlyRateRow?.extra_pax_fee_php ?? null;
 
-  // Check if the signed-in member has already completed KYC
-  const member = await getMemberOptional();
-  const kycVerified = member?.kyc_status === "approved";
-  const memberId = member?.id ?? null;
+  // Require sign-in — redirects to /account/login?next=... if not authenticated
+  const member = await requireMember(`/playcation/${slug}/book`);
+  const kycVerified = member.kyc_status === "approved";
+  const memberId = member.id;
 
   return (
     <>
