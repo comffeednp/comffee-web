@@ -90,7 +90,7 @@ export default function AdminChatFloat({ adminName }: Props) {
               fetchConversations();
               return prev;
             }
-            const updated = { ...prev[idx], last_message_at: m.created_at, status: "open" };
+            const updated = { ...prev[idx], last_message_at: m.created_at, status: "open", last_message_body: m.body, last_message_sender_type: m.sender_type };
             const next = [...prev];
             next.splice(idx, 1);
             return [updated, ...next];
@@ -197,7 +197,28 @@ export default function AdminChatFloat({ adminName }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId: activeId, body: text }),
       });
-      if (res.ok) setDraft("");
+      if (res.ok) {
+        const data = await res.json() as { message?: ChatMessage };
+        setDraft("");
+        if (data.message) {
+          setMessages((prev) =>
+            prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]
+          );
+          broadcastChannelRef.current?.send({
+            type: "broadcast",
+            event: "message",
+            payload: { message: data.message },
+          });
+          setConversations((prev) => {
+            const idx = prev.findIndex((c) => c.id === activeId);
+            if (idx === -1) return prev;
+            const updated = { ...prev[idx], last_message_body: data.message!.body, last_message_sender_type: "admin" };
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          });
+        }
+      }
     } finally {
       setSending(false);
     }
@@ -295,26 +316,26 @@ export default function AdminChatFloat({ adminName }: Props) {
             {view === "list" ? (
               <ul className="flex-1 overflow-y-auto divide-y divide-line">
                 {conversations.map((c) => {
-                  const preview = unreadConvs.get(c.id);
+                  const isUnread = unreadConvs.has(c.id);
                   return (
                     <li key={c.id}>
                       <button
                         type="button"
                         onClick={() => selectConversation(c.id)}
                         className={`w-full text-left px-4 py-3 transition ${
-                          preview ? "bg-amber/5 hover:bg-amber/10" : "hover:bg-bg-elev/40"
+                          isUnread ? "bg-amber/5 hover:bg-amber/10" : "hover:bg-bg-elev/40"
                         }`}
                       >
                         <div className="flex items-start gap-3">
                           <Avatar url={c.customer_avatar_url} name={c.customer_name} size={8} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className={`text-sm truncate ${preview ? "text-cream font-semibold" : "text-cream font-medium"}`}>
+                              <span className={`text-sm truncate ${isUnread ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                                 {c.customer_name ?? "Anonymous"}
                               </span>
                               {c.status === "resolved" ? (
                                 <Check className="h-3 w-3 text-phosphor shrink-0" />
-                              ) : preview ? (
+                              ) : isUnread ? (
                                 <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
                               ) : null}
                             </div>
@@ -331,8 +352,10 @@ export default function AdminChatFloat({ adminName }: Props) {
                             <p className="font-mono text-[0.6rem] text-mocha mt-0.5">
                               {formatDateTime(c.last_message_at)}
                             </p>
-                            {preview && (
-                              <p className="mt-1 text-xs text-cream-dim truncate">{preview}</p>
+                            {c.last_message_body && (
+                              <p className={`mt-0.5 text-xs truncate ${isUnread ? "text-cream-dim font-medium" : "text-mocha"}`}>
+                                {c.last_message_sender_type === "admin" ? "You: " : ""}{c.last_message_body}
+                              </p>
                             )}
                           </div>
                         </div>

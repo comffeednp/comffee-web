@@ -26,6 +26,8 @@ export interface ChatConversation {
   status: string;
   assigned_admin_id: string | null;
   last_message_at: string;
+  last_message_body: string | null;
+  last_message_sender_type: string | null;
   created_at: string;
 }
 
@@ -115,7 +117,12 @@ export async function postCustomerMessage(
   // Bump last_message_at
   await supabase
     .from("chat_conversations")
-    .update({ last_message_at: new Date().toISOString(), status: "open" })
+    .update({
+      last_message_at: new Date().toISOString(),
+      status: "open",
+      last_message_body: body,
+      last_message_sender_type: "customer",
+    })
     .eq("id", conversation.id);
 
   // Send admin email notification on the FIRST customer message only (not on empty session open)
@@ -171,7 +178,12 @@ export async function postAdminMessage(
 
   await supabase
     .from("chat_conversations")
-    .update({ last_message_at: new Date().toISOString(), assigned_admin_id: adminId })
+    .update({
+      last_message_at: new Date().toISOString(),
+      assigned_admin_id: adminId,
+      last_message_body: body,
+      last_message_sender_type: "admin",
+    })
     .eq("id", conversationId);
 
   return message as ChatMessage;

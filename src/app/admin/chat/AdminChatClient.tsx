@@ -70,7 +70,7 @@ export default function AdminChatClient({
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === m.conversation_id);
           if (idx === -1) return prev;
-          const updated = { ...prev[idx], last_message_at: m.created_at };
+          const updated = { ...prev[idx], last_message_at: m.created_at, last_message_body: m.body, last_message_sender_type: m.sender_type };
           const next = [...prev];
           next.splice(idx, 1);
           return [updated, ...next];
@@ -145,7 +145,7 @@ export default function AdminChatClient({
                 .catch(() => {});
               return prev;
             }
-            const updated = { ...prev[idx], last_message_at: m.created_at, status: "open" };
+            const updated = { ...prev[idx], last_message_at: m.created_at, status: "open", last_message_body: m.body, last_message_sender_type: m.sender_type };
             const next = [...prev];
             next.splice(idx, 1);
             return [updated, ...next];
@@ -291,7 +291,7 @@ export default function AdminChatClient({
         </div>
         <ul className="overflow-y-auto flex-1 divide-y divide-line">
           {conversations.map((c) => {
-            const preview = unreadConvs.get(c.id);
+            const isUnread = unreadConvs.has(c.id);
             return (
               <li key={c.id}>
                 <button
@@ -300,18 +300,18 @@ export default function AdminChatClient({
                   className={`w-full text-left px-4 py-3 transition ${
                     c.id === activeId
                       ? "bg-bg-elev border-l-2 border-amber"
-                      : preview
+                      : isUnread
                       ? "bg-amber/5 border-l-2 border-amber hover:bg-amber/10"
                       : "hover:bg-bg-elev/40 border-l-2 border-transparent"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`truncate ${preview ? "text-cream font-semibold" : "text-cream font-medium"}`}>
+                    <span className={`truncate ${isUnread ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                       {c.customer_name ?? "Anonymous"}
                     </span>
                     {c.status === "resolved" ? (
                       <Check className="h-3 w-3 text-phosphor shrink-0" />
-                    ) : preview ? (
+                    ) : isUnread ? (
                       <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
                     ) : null}
                   </div>
@@ -330,8 +330,10 @@ export default function AdminChatClient({
                   <p className="font-mono text-[0.65rem] text-mocha mt-0.5">
                     {formatDateTime(c.last_message_at)}
                   </p>
-                  {preview && (
-                    <p className="mt-1 text-xs text-cream-dim truncate">{preview}</p>
+                  {c.last_message_body && (
+                    <p className={`mt-0.5 text-xs truncate ${isUnread ? "text-cream-dim font-medium" : "text-mocha"}`}>
+                      {c.last_message_sender_type === "admin" ? "You: " : ""}{c.last_message_body}
+                    </p>
                   )}
                 </button>
               </li>
