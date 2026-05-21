@@ -3,29 +3,87 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-const OCR_URL = process.env.PADDLEOCR_SERVICE_URL;
+const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
+const VISION_URL = "https://vision.googleapis.com/v1/images:annotate";
 
-async function ocrVerify(
-  path: string,
-  buffer: Buffer,
-  contentType: string,
-): Promise<{ hint: string; failedStep: "id" | "billing" } | null> {
-  if (!OCR_URL) return null; // skip in dev / when service not configured
-  const form = new FormData();
-  form.append("file", new Blob([buffer.buffer as ArrayBuffer], { type: contentType }), "doc");
+const PH_ID_KEYWORDS = [
+  "REPUBLIC OF THE PHILIPPINES",
+  "PHILIPPINE IDENTIFICATION",
+  "PHILSYS",
+  "DRIVER'S LICENSE", "DRIVER S LICENSE",
+  "LAND TRANSPORTATION",
+  "UNIFIED MULTI-PURPOSE", "UMID",
+  "SOCIAL SECURITY",
+  "PASSPORT",
+  "PROFESSIONAL REGULATION",
+  "PHILHEALTH",
+  "VOTER",
+  "COMELEC",
+  "SENIOR CITIZEN",
+  "NBI CLEARANCE", "NATIONAL BUREAU",
+  "BARANGAY",
+  "OFW", "OVERSEAS WORKERS",
+];
+
+const UTILITY_KEYWORDS = [
+  "MERALCO", "MANILA ELECTRIC",
+  "MAYNILAD", "MANILA WATER",
+  "CONVERGE",
+  "PLDT",
+  "GLOBE",
+  "SMART",
+  "SKY CABLE", "CIGNAL",
+  "VECO", "DAVAO LIGHT",
+];
+
+async function extractText(buffer: Buffer, contentType: string): Promise<string | null> {
+  if (!VISION_API_KEY) return null;
+  if (contentType.includes("pdf")) return null; // PDFs: fail open, admin reviews manually
+
+  const body = {
+    requests: [{
+      image: { content: buffer.toString("base64") },
+      features: [{ type: "TEXT_DETECTION", maxResults: 1 }],
+    }],
+  };
   try {
-    const res = await fetch(`${OCR_URL}${path}`, {
+    const res = await fetch(`${VISION_URL}?key=${VISION_API_KEY}`, {
       method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(30_000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (res.ok) return null;
-    const data = await res.json() as { hint?: string; error?: string };
-    const step: "id" | "billing" = path.includes("billing") ? "billing" : "id";
-    return { hint: data.hint ?? data.error ?? "Verification failed. Please retake the photo.", failedStep: step };
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      responses?: Array<{ textAnnotations?: Array<{ description: string }> }>;
+    };
+    return data.responses?.[0]?.textAnnotations?.[0]?.description ?? null;
   } catch {
-    return null; // fail open — OCR service unreachable, don't block the user
+    return null; // fail open on any error
   }
+}
+
+async function verifyId(buffer: Buffer, contentType: string): Promise<string | null> {
+  const text = await extractText(buffer, contentType);
+  if (text === null) return null;
+  const upper = text.toUpperCase();
+  if (PH_ID_KEYWORDS.some((kw) => upper.includes(kw))) return null;
+  // Only reject when OCR found substantial text with no ID keywords
+  if (text.trim().length > 30) {
+    return "Upload a clear photo of a Philippine government-issued ID (PhilSys, UMID, Driver's License, Passport, etc.).";
+  }
+  return null;
+}
+
+async function verifyBilling(buffer: Buffer, contentType: string): Promise<string | null> {
+  const text = await extractText(buffer, contentType);
+  if (text === null) return null;
+  const upper = text.toUpperCase();
+  if (UTILITY_KEYWORDS.some((kw) => upper.includes(kw))) return null;
+  if (text.trim().length > 30) {
+    return "Must be a billing statement from Meralco, Maynilad, Converge, PLDT, Globe, or similar utility provider.";
+  }
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -56,26 +114,19 @@ export async function POST(request: Request) {
     toBuffer(billingDoc),
   ]);
 
-  // OCR validation — runs in parallel, skipped if PADDLEOCR_SERVICE_URL not set
-  const [idOcrError, billingOcrError] = await Promise.all([
-    ocrVerify("/verify-id", idBuffer, idDoc.type || "image/jpeg"),
-    ocrVerify("/verify-billing", billingBuffer, billingDoc.type || "image/jpeg"),
+  // OCR validation — skipped when GOOGLE_VISION_API_KEY is not set (dev)
+  const [idError, billingError] = await Promise.all([
+    verifyId(idBuffer, idDoc.type || "image/jpeg"),
+    verifyBilling(billingBuffer, billingDoc.type || "image/jpeg"),
   ]);
 
-  if (idOcrError) {
-    return NextResponse.json(
-      { error: idOcrError.hint, failedStep: idOcrError.failedStep },
-      { status: 422 },
-    );
+  if (idError) {
+    return NextResponse.json({ error: idError, failedStep: "id" }, { status: 422 });
   }
-  if (billingOcrError) {
-    return NextResponse.json(
-      { error: billingOcrError.hint, failedStep: billingOcrError.failedStep },
-      { status: 422 },
-    );
+  if (billingError) {
+    return NextResponse.json({ error: billingError, failedStep: "billing" }, { status: 422 });
   }
 
-  // Ensure kyc-documents bucket exists
   await supabase.storage.createBucket("kyc-documents", { public: false }).catch(() => {});
 
   const ts = Date.now();
