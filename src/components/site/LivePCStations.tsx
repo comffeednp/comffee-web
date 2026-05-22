@@ -104,7 +104,7 @@ export default function LivePCStations({
   const stale = useMemo(() => {
     if (!syncedAt) return true;
     const age = Date.now() - new Date(syncedAt).getTime();
-    return age > 60_000; // 60 seconds
+    return age > 600_000; // 10 minutes
   }, [syncedAt, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ageLabel = useMemo(() => {
@@ -153,7 +153,7 @@ export default function LivePCStations({
               <>
                 <AlertTriangle className="h-4 w-4 text-amber" />
                 <span className="font-mono text-xs text-amber">
-                  // sync stale ({ageLabel}) — data may be out of date
+                  // last update {ageLabel} — no session changes since then
                 </span>
               </>
             ) : (
