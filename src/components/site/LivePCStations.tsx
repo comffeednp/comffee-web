@@ -55,9 +55,9 @@ export default function LivePCStations({
       .eq("branch_id", branchId)
       .order("sort_order", { ascending: true })
       .order("station_name", { ascending: true })
-      .then(({ data }) => {
+      .then(({ data }: { data: PCStation[] | null }) => {
         if (!data || data.length === 0) return;
-        const rows = data as PCStation[];
+        const rows = data;
         setStations(rows);
         const latest = rows.reduce(
           (l, s) => (!l || new Date(s.last_synced_at) > new Date(l) ? s.last_synced_at : l),
