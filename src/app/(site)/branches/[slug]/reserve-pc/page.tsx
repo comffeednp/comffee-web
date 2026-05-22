@@ -79,6 +79,8 @@ export default async function ReservePCPage({
             name: s.station_name,
             isOccupied: s.is_occupied,
             tier: (s as unknown as { pc_tier?: string | null }).pc_tier ?? null,
+            currentSessionEndsAt: s.current_session_ends_at,
+            isMemberSession: s.is_member_session,
           }))}
           rates={allRates.map((r) => ({
             id: r.id,

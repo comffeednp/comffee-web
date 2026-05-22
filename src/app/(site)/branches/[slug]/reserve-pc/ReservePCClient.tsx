@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import { isRateAvailableNow } from "@/lib/rate-window";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 interface Branch {
   id: string;
@@ -29,6 +30,8 @@ interface Station {
   name: string;
   isOccupied: boolean;
   tier: string | null;
+  currentSessionEndsAt: string | null;
+  isMemberSession: boolean;
 }
 
 interface Rate {
@@ -56,21 +59,68 @@ type Step = "pick" | "loading" | "done" | "error";
 
 export default function ReservePCClient({
   branch,
-  stations,
+  stations: initialStations,
   rates,
   requestedPc,
 }: Props) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("pick");
   const [mode, setMode] = useState<Mode>("walk_in");
+  const [stations, setStations] = useState<Station[]>(initialStations);
+
+  // Re-fetch + subscribe to Realtime on mount — handles back-navigation and live updates
+  useEffect(() => {
+    let supabase: ReturnType<typeof getSupabaseBrowser>;
+    try { supabase = getSupabaseBrowser(); } catch { return; }
+
+    const toStation = (row: Record<string, unknown>): Station => ({
+      id: row.id as string,
+      name: row.station_name as string,
+      isOccupied: row.is_occupied as boolean,
+      tier: (row.pc_tier ?? null) as string | null,
+      currentSessionEndsAt: (row.current_session_ends_at ?? null) as string | null,
+      isMemberSession: (row.is_member_session ?? false) as boolean,
+    });
+
+    supabase
+      .from("pc_stations")
+      .select("*")
+      .eq("branch_id", branch.id)
+      .order("sort_order", { ascending: true })
+      .order("station_name", { ascending: true })
+      .then(({ data }: { data: Record<string, unknown>[] | null }) => {
+        if (data && data.length > 0) setStations(data.map(toStation));
+      });
+
+    const channel = supabase
+      .channel(`reserve_pc_stations:${branch.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pc_stations", filter: `branch_id=eq.${branch.id}` },
+        (payload: { eventType: string; new: Record<string, unknown> | null; old: Record<string, unknown> | null }) => {
+          if (payload.eventType === "DELETE" && payload.old) {
+            setStations((prev) => prev.filter((s) => s.id !== payload.old!.id));
+            return;
+          }
+          if (!payload.new) return;
+          const updated = toStation(payload.new);
+          setStations((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((s) => s.id === updated.id);
+            if (idx >= 0) next[idx] = updated; else next.push(updated);
+            return next.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+          });
+        })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [branch.id]);
 
   // Default: requested PC (if vacant), otherwise first vacant
   const [stationName, setStationName] = useState(() => {
     if (requestedPc) {
-      const r = stations.find((s) => s.name === requestedPc);
+      const r = initialStations.find((s) => s.name === requestedPc);
       if (r && !r.isOccupied) return r.name;
     }
-    return stations.find((s) => !s.isOccupied)?.name ?? "";
+    return initialStations.find((s) => !s.isOccupied)?.name ?? "";
   });
 
   const [rateId, setRateId] = useState<string>("");
@@ -231,6 +281,15 @@ export default function ReservePCClient({
                         >
                           {s.name}
                         </span>
+                        {occupied && (
+                          <span className="mt-1 font-mono text-[0.55rem] text-center leading-tight">
+                            {s.currentSessionEndsAt
+                              ? <InlineCountdown endsAt={s.currentSessionEndsAt} />
+                              : s.isMemberSession
+                              ? <span className="text-mocha">member</span>
+                              : null}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -578,6 +637,24 @@ export default function ReservePCClient({
         }
       `}</style>
     </div>
+  );
+}
+
+function InlineCountdown({ endsAt }: { endsAt: string }) {
+  const calc = () => Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000));
+  const [remaining, setRemaining] = useState(calc);
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(calc), 10000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endsAt]);
+  if (remaining <= 0) return <span className="text-red-400">ending</span>;
+  const hrs = Math.floor(remaining / 60);
+  const mins = remaining % 60;
+  return (
+    <span className={remaining <= 10 ? "text-red-400" : "text-amber"}>
+      {hrs > 0 ? `${hrs}h${mins}m` : `${mins}m`}
+    </span>
   );
 }
 
