@@ -48,6 +48,24 @@ export default function LivePCStations({
       return;
     }
 
+    // Re-fetch on mount so back-navigation always shows current state
+    supabase
+      .from("pc_stations")
+      .select("*")
+      .eq("branch_id", branchId)
+      .order("sort_order", { ascending: true })
+      .order("station_name", { ascending: true })
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const rows = data as PCStation[];
+        setStations(rows);
+        const latest = rows.reduce(
+          (l, s) => (!l || new Date(s.last_synced_at) > new Date(l) ? s.last_synced_at : l),
+          null as string | null,
+        );
+        if (latest) setSyncedAt(latest);
+      });
+
     const channel = supabase
       .channel(`pc_stations:${branchId}`)
       .on(
