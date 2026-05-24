@@ -211,7 +211,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     </p>
     ${photos.length > 0
       ? `<p style="margin:0 0 12px;color:#5a4a3c;font-size:14px;line-height:1.6;">
-          Your stay essentials are <strong>attached</strong> — ${essentialsLead}. Give them a quick read before you arrive. If anything's unclear, just reply to this email or message us — we're happy to help.
+          Your stay essentials are <strong>attached</strong> — ${essentialsLead}. Give them a quick read before you arrive. If anything's unclear, message us anytime through the <a href="${siteUrl}" style="color:#c98a2a;">chat on our website</a> — we're happy to help.
         </p>
         <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
           ${photos.map((p) => `<li>${escapeHtml(p.label)}</li>`).join("")}
@@ -222,7 +222,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
             </p>`
           : ""}`
       : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
-          We'll send your check-in details and door PIN closer to your stay. If you have any questions in the meantime, just reply to this email or message us anytime.
+          We'll send your check-in details and door PIN closer to your stay. If you have any questions in the meantime, message us through the <a href="${siteUrl}" style="color:#c98a2a;">chat on our website</a> anytime.
         </p>`}
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
@@ -233,7 +233,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     </p>
 
     <p style="margin:0;color:#5a4a3c;font-size:14px;line-height:1.6;">
-      Reply to this email if you have any questions. See you soon!
+      Have a question? Message us through the <a href="${siteUrl}" style="color:#c98a2a;">chat on our website</a> anytime. See you soon!
     </p>
   `;
 
