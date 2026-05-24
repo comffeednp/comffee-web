@@ -159,8 +159,7 @@ interface BookingEmailInput {
   numGuests: number;
   totalPhp: number;
   reservationId: string;
-  checkinPhotoUrl?: string | null;
-  checkoutPhotoUrl?: string | null;
+  instructionPhotos?: Array<{ label: string; url: string }>;
 }
 
 export async function sendBookingConfirmation(input: BookingEmailInput) {
@@ -193,30 +192,25 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     </table>
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
-      // check-in instructions
+      // house rules
     </p>
-    ${input.checkinPhotoUrl
-      ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">Check-in details, door access, WiFi, and room information are in the <strong>attached photo</strong>. Please save it before your arrival.</p>`
-      : `<ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
-      <li>Present a valid government-issued photo ID upon arrival.</li>
-      <li>The name on the ID must match the reservation name.</li>
-      <li>Only the number of guests declared at booking are allowed inside.</li>
-      ${input.checkInTime ? `<li>Earliest check-in is <strong>${escapeHtml(input.checkInTime)}</strong>. Early check-in is subject to availability — message us to ask.</li>` : ""}
-      <li>WiFi access details will be sent in a separate email on the day of your check-in.</li>
-    </ul>`}
+    <p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+      A quick note on house rules — please keep noise, music, and smoking moderate, especially during quiet hours, so we stay on great terms with the neighbours and everyone enjoys their stay. Thank you so much for your cooperation!
+    </p>
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
-      // checkout instructions
+      // your stay essentials
     </p>
-    ${input.checkoutPhotoUrl
-      ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">Check-out steps and house rules are in the <strong>attached photo</strong>. Please review it before your departure.</p>`
-      : `<ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
-      ${input.checkOutTime ? `<li>Check-out is by <strong>${escapeHtml(input.checkOutTime)}</strong>. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>` : "<li>Check-out is by 11:00 AM. Late check-out beyond 12:00 PM may incur an additional night's charge.</li>"}
-      <li>Leave the unit in the same condition as you found it — surfaces clean, trash in bins, gaming gear back in place.</li>
-      <li>Log out of any personal accounts on the PCs and consoles before leaving.</li>
-      <li>Lock the door and return the key/access card to staff before departing.</li>
-      <li>Your ₱1,000 security deposit will be returned within 24–48 hours after a satisfactory checkout inspection.</li>
-    </ul>`}
+    ${(input.instructionPhotos?.length ?? 0) > 0
+      ? `<p style="margin:0 0 12px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+          Your stay essentials are <strong>attached</strong> — self check-in &amp; check-out steps, the door PIN and where to find it, and answers to the most common questions. Give them a quick read before you arrive. If anything's unclear, just reply to this email or message us — we're happy to help.
+        </p>
+        <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
+          ${input.instructionPhotos!.map((p) => `<li>${escapeHtml(p.label)}</li>`).join("")}
+        </ul>`
+      : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+          We'll send your check-in details and door PIN closer to your stay. If you have any questions in the meantime, just reply to this email or message us anytime.
+        </p>`}
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // reservation_id
@@ -230,9 +224,10 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     </p>
   `;
 
-  const attachments: Array<{ filename: string; path: string }> = [];
-  if (input.checkinPhotoUrl) attachments.push({ filename: "checkin-instructions.jpg", path: input.checkinPhotoUrl });
-  if (input.checkoutPhotoUrl) attachments.push({ filename: "checkout-instructions.jpg", path: input.checkoutPhotoUrl });
+  const attachments: Array<{ filename: string; path: string }> = (input.instructionPhotos ?? []).map((p, i) => ({
+    filename: `${(p.label.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || `sheet-${i + 1}`)}.jpg`,
+    path: p.url,
+  }));
 
   return sendEmail({
     to: input.to,
@@ -481,6 +476,7 @@ export async function sendCancellationEmail({
   refundIssued,
   reservationId,
   chatUrl,
+  amountForfeitedPhp,
 }: {
   guestEmail: string;
   guestName: string;
@@ -491,6 +487,7 @@ export async function sendCancellationEmail({
   refundIssued: boolean;
   reservationId: string;
   chatUrl: string;
+  amountForfeitedPhp?: number;
 }) {
   const checkInDate = new Date(checkIn + "T00:00:00").toLocaleDateString("en-PH", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -506,6 +503,12 @@ export async function sendCancellationEmail({
       <p style="margin:0 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
         <strong>Paid via QR Ph / GCash?</strong> Automatic API refunds are not available for QR Ph payments.
         Comffee will manually issue the refund via GCash or InstaPay to the mobile number on your reservation within 10 calendar days.
+        <a href="${escapeHtml(chatUrl)}" style="color:#c98a2a;">Message us if you have questions →</a>
+      </p>`
+    : amountForfeitedPhp && amountForfeitedPhp > 0
+    ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+        The remaining balance was not paid by the due date, so this reservation has been cancelled and the dates released.
+        As stated in our terms, the <strong>${formatPHP(amountForfeitedPhp)}</strong> reservation fee already paid is non-refundable.
         <a href="${escapeHtml(chatUrl)}" style="color:#c98a2a;">Message us if you have questions →</a>
       </p>`
     : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
@@ -549,5 +552,108 @@ export async function sendCancellationEmail({
     }),
     text: `Your booking at ${branchName} (${checkIn} – ${checkOut}) has been cancelled. Reservation ID: ${reservationId}. ${refundIssued ? `A refund of ${formatPHP(totalPhp)} has been initiated.` : ""} Chat: ${siteUrl}`,
     replyTo: `bookings@comffee.org`,
+  });
+}
+
+/* ---------------- partial-payment balance reminder ---------------- */
+
+interface BalanceReminderInput {
+  to: string;
+  guestName: string;
+  branchName: string;
+  checkIn: string;
+  checkOut: string;
+  balancePhp: number;
+  balanceDueDate: string; // YYYY-MM-DD
+  reservationId: string;
+}
+
+export async function sendBalanceReminder(input: BalanceReminderInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  // The guest pays the balance from their account page (signed-in, owns the booking).
+  const payUrl = `${siteUrl}/account`;
+  const dueDate = new Date(input.balanceDueDate + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Your balance is due soon.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — thanks for reserving <strong>${escapeHtml(input.branchName)}</strong>.
+      The remaining balance for your stay is due by <strong>${escapeHtml(dueDate)}</strong>. Please settle it
+      before then so we can keep your dates locked in.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", input.branchName)}
+      ${receiptRow("Stay", formatRange(input.checkIn, input.checkOut))}
+      ${receiptRow("Balance due by", dueDate)}
+      ${receiptRow("Balance amount", formatPHP(input.balancePhp), true)}
+    </table>
+
+    <p style="margin:16px 0 0;color:#8a7a68;font-size:13px;line-height:1.6;">
+      If the balance is not paid by the due date, the reservation may be cancelled and the dates released.
+      The 30% reservation fee already paid is non-refundable.
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Balance due soon · ${input.branchName} · ${formatRange(input.checkIn, input.checkOut)}`,
+    html: chrome({
+      preheader: `Your remaining balance of ${formatPHP(input.balancePhp)} is due by ${dueDate}`,
+      bodyHtml: body,
+      ctaLabel: "Pay balance",
+      ctaHref: payUrl,
+    }),
+    text: `Reminder: the remaining balance of ${formatPHP(input.balancePhp)} for your stay at ${input.branchName} (${formatRange(input.checkIn, input.checkOut)}) is due by ${dueDate}. Pay it from your account: ${payUrl}`,
+    replyTo: `bookings@comffee.org`,
+  });
+}
+
+/* ---------------- balance paid (receipt) ---------------- */
+
+interface BalancePaidInput {
+  to: string;
+  guestName: string;
+  branchName: string;
+  checkIn: string;
+  checkOut: string;
+  balancePhp: number;
+  reservationId: string;
+}
+
+export async function sendBalancePaidReceipt(input: BalancePaidInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Balance paid — you're all set.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(input.guestName.split(" ")[0])} — we received your balance payment for
+      <strong>${escapeHtml(input.branchName)}</strong>. Your stay is now paid in full. See you soon!
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", input.branchName)}
+      ${receiptRow("Stay", formatRange(input.checkIn, input.checkOut))}
+      ${receiptRow("Balance paid", formatPHP(input.balancePhp), true)}
+    </table>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Balance paid · ${input.branchName} · ${formatRange(input.checkIn, input.checkOut)}`,
+    html: chrome({
+      preheader: `We received your balance payment of ${formatPHP(input.balancePhp)}`,
+      bodyHtml: body,
+      ctaLabel: "View reservation",
+      ctaHref: lookupUrl,
+    }),
+    text: `We received your balance payment of ${formatPHP(input.balancePhp)} for ${input.branchName} (${formatRange(input.checkIn, input.checkOut)}). Your stay is paid in full. View: ${lookupUrl}`,
   });
 }

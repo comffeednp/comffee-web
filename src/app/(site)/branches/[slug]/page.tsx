@@ -13,6 +13,7 @@ import LivePCStations from "@/components/site/LivePCStations";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import BranchChatContext from "@/components/site/BranchChatContext";
+import StayInstructions from "@/components/site/StayInstructions";
 import {
   ArrowRight,
   Clock,
@@ -389,6 +390,11 @@ export default async function BranchDetailPage({
           </div>
         </section>
       )}
+
+      {/* ============================================================
+          STAY INSTRUCTIONS (playcation only; confirmed bookings see it)
+          ============================================================ */}
+      {isPlay && <StayInstructions slug={branch.slug} />}
 
       {/* ============================================================
           FINAL CTA

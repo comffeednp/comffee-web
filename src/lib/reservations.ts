@@ -99,6 +99,20 @@ export interface CreatedHold {
  */
 export async function createHold(input: CreateHoldInput): Promise<CreatedHold> {
   const supabase = getSupabaseAdmin();
+
+  // An expired hold still blocks the database overlap constraint until the
+  // cleanup cron runs (every 5 min). So a slot that's really free can wrongly
+  // reject a new booking with a "dates taken" error during that window. Release
+  // any expired holds overlapping these dates first to close that gap.
+  await supabase
+    .from("reservations")
+    .update({ status: "cancelled", notes: "auto-released: hold expired (pre-booking sweep)" })
+    .eq("branch_id", input.branchId)
+    .eq("status", "pending_hold")
+    .lt("hold_expires_at", new Date().toISOString())
+    .lt("check_in", input.checkOut)
+    .gt("check_out", input.checkIn);
+
   const expiresAt = new Date(
     Date.now() + HOLD_WINDOW_MINUTES * 60 * 1000,
   ).toISOString();
@@ -206,6 +220,44 @@ export async function getReservationByIntent(intentId: string) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+/** Set the PayMongo intent ID for the *balance* payment (partial scheme). */
+export async function attachBalanceIntent(
+  reservationId: string,
+  paymongoIntentId: string,
+) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("reservations")
+    .update({ balance_paymongo_intent_id: paymongoIntentId })
+    .eq("id", reservationId);
+  if (error) throw new Error(`attach balance intent failed: ${error.message}`);
+}
+
+/** Look up a reservation by its *balance* PayMongo intent ID (used in webhook). */
+export async function getReservationByBalanceIntent(intentId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("balance_paymongo_intent_id", intentId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Mark the partial-payment balance as paid (called from PayMongo webhook). */
+export async function markBalancePaid(reservationId: string, paymentId?: string) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("reservations")
+    .update({
+      balance_paid_at: new Date().toISOString(),
+      balance_paymongo_payment_id: paymentId ?? null,
+    })
+    .eq("id", reservationId);
+  if (error) throw new Error(`mark balance paid failed: ${error.message}`);
 }
 
 /** Compute the total for a Playcation booking based on branch rates, nights, and guest count. */

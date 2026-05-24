@@ -7,8 +7,9 @@ import {
   confirmReservation,
   createHold,
 } from "@/lib/reservations";
-import { nightsBetween } from "@/lib/dates";
+import { addDays, nightsBetween } from "@/lib/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getMemberOptional } from "@/lib/auth/require-member";
 import {
   createPaymentLink,
   isPaymongoConfigured,
@@ -16,6 +17,7 @@ import {
 import { recordRedemption, validatePromoCode } from "@/lib/promo-codes";
 import { guardMutating } from "@/lib/security";
 import { sendBookingConfirmation } from "@/lib/email";
+import { listInstructionPhotos } from "@/lib/branch-instructions";
 
 export const runtime = "nodejs";
 
@@ -31,10 +33,12 @@ const schema = z.object({
   guestPhone: z.string().max(40).optional().or(z.literal("")),
   promoCode: z.string().max(40).optional().or(z.literal("")),
   paymentType: z.enum(["full", "partial"]).default("full"),
-  memberId: z.string().uuid().optional().nullable(),
-  kycSelfieUrl: z.string().max(500).optional().nullable(),
-  kycIdUrl: z.string().max(500).optional().nullable(),
-  kycBillingUrl: z.string().max(500).optional().nullable(),
+  // memberId is intentionally NOT read from the body — it's taken from the
+  // signed-in session below so a caller can't book under someone else's account.
+  // ID-verification documents are required; the booking can't be created without them.
+  kycSelfieUrl: z.string().min(1).max(500),
+  kycIdUrl: z.string().min(1).max(500),
+  kycBillingUrl: z.string().min(1).max(500),
   kycIpAddress: z.string().max(60).optional().nullable(),
   kycLatitude: z.number().optional().nullable(),
   kycLongitude: z.number().optional().nullable(),
@@ -55,6 +59,14 @@ export async function POST(request: Request) {
   }
 
   const v = parsed.data;
+
+  // Booking requires a signed-in member. We trust the session, not the request
+  // body, for who is booking.
+  const member = await getMemberOptional();
+  if (!member) {
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  }
+
   const nights = nightsBetween(v.checkIn, v.checkOut);
   if (nights < 1) {
     return NextResponse.json({ error: "min_one_night" }, { status: 400 });
@@ -63,7 +75,7 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, slug, name, type, security_deposit_php, checkin_photo_url, checkout_photo_url")
+    .select("id, slug, name, type, security_deposit_php")
     .eq("id", v.branchId)
     .maybeSingle();
   if (!branch || branch.type !== "playcation") {
@@ -107,6 +119,16 @@ export async function POST(request: Request) {
         .slice(0, 10)
     : undefined;
 
+  // Partial payment only makes sense if the balance due date is far enough out
+  // to collect it. Mirror the client's gate so a crafted request can't create a
+  // partial booking whose balance is already due (or overdue).
+  if (v.paymentType === "partial") {
+    const phToday = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    if (!balanceDueDate || balanceDueDate <= addDays(phToday, 1)) {
+      return NextResponse.json({ error: "partial_not_allowed_close_checkin" }, { status: 400 });
+    }
+  }
+
   const total = reservationFee + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
 
   // Soft-hold (will throw with CONFLICT message if dates collide)
@@ -125,7 +147,7 @@ export async function POST(request: Request) {
       paymentType: v.paymentType,
       balancePhp,
       balanceDueDate,
-      memberId: v.memberId || undefined,
+      memberId: member.id,
       kycSelfieUrl: v.kycSelfieUrl || undefined,
       kycIdUrl: v.kycIdUrl || undefined,
       kycBillingUrl: v.kycBillingUrl || undefined,
@@ -166,6 +188,10 @@ export async function POST(request: Request) {
       console.error("simulated confirm failed", e);
     }
     if (v.guestEmail) {
+      const instructionPhotos = (await listInstructionPhotos(branch.id)).map((p) => ({
+        label: p.label,
+        url: p.signedUrl,
+      }));
       sendBookingConfirmation({
         to: v.guestEmail,
         guestName: v.guestName,
@@ -176,8 +202,7 @@ export async function POST(request: Request) {
         numGuests: v.numGuests,
         totalPhp: total,
         reservationId: hold.id,
-        checkinPhotoUrl: (branch as { checkin_photo_url?: string | null }).checkin_photo_url ?? null,
-        checkoutPhotoUrl: (branch as { checkout_photo_url?: string | null }).checkout_photo_url ?? null,
+        instructionPhotos,
       }).catch((e) => console.error("[email] booking failed", e));
     }
     return NextResponse.json({

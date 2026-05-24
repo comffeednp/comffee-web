@@ -16,6 +16,7 @@ export interface SyncResult {
     calendar_id: string;
     upserted: number;
     cancelled: number;
+    failed?: number;
     error?: string;
   }>;
 }
@@ -68,32 +69,42 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
       );
 
       let upserted = 0;
+      let failed = 0;
+      let firstEventError: string | null = null;
       const seenUids = new Set<string>();
 
       for (const ev of events) {
         seenUids.add(ev.uid);
-        const row = existingByUid.get(ev.uid);
-        if (row) {
-          // Admin already cancelled this — don't re-import from Airbnb
-          if (row.status === "cancelled") continue;
-          const { error: upErr } = await supabase
-            .from("reservations")
-            .update({ check_in: ev.start, check_out: ev.end, guest_name: ev.summary })
-            .eq("id", row.id);
-          if (upErr) throw new Error(`update failed: ${upErr.message}`);
-        } else {
-          const { error: insErr } = await supabase.from("reservations").insert({
-            branch_id: cal.branch_id,
-            source: "airbnb",
-            status: "confirmed",
-            check_in: ev.start,
-            check_out: ev.end,
-            guest_name: ev.summary || "Airbnb guest",
-            ical_uid: ev.uid,
-          });
-          if (insErr) throw new Error(`insert failed: ${insErr.message}`);
+        // Each event is independent — one bad row (e.g. an Airbnb date that
+        // overlaps an existing website booking and trips the no-overlap
+        // constraint) must not stop the rest of the calendar from importing.
+        try {
+          const row = existingByUid.get(ev.uid);
+          if (row) {
+            // Admin already cancelled this — don't re-import from Airbnb
+            if (row.status === "cancelled") continue;
+            const { error: upErr } = await supabase
+              .from("reservations")
+              .update({ check_in: ev.start, check_out: ev.end, guest_name: ev.summary })
+              .eq("id", row.id);
+            if (upErr) throw new Error(upErr.message);
+          } else {
+            const { error: insErr } = await supabase.from("reservations").insert({
+              branch_id: cal.branch_id,
+              source: "airbnb",
+              status: "confirmed",
+              check_in: ev.start,
+              check_out: ev.end,
+              guest_name: ev.summary || "Airbnb guest",
+              ical_uid: ev.uid,
+            });
+            if (insErr) throw new Error(insErr.message);
+          }
+          upserted++;
+        } catch (e) {
+          failed++;
+          if (!firstEventError) firstEventError = e instanceof Error ? e.message : "unknown";
         }
-        upserted++;
       }
 
       let cancelled = 0;
@@ -105,16 +116,19 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
         }
       }
 
+      // Record a partial-failure note so the admin can see something went wrong,
+      // without failing the whole sync (the events that did import are kept).
+      const syncNote = failed > 0 ? `${failed} event(s) failed: ${firstEventError}` : null;
       await supabase
         .from("airbnb_calendars")
-        .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
+        .update({ last_synced_at: new Date().toISOString(), last_sync_error: syncNote })
         .eq("id", cal.id);
 
       const branchRaw = cal.branch as { slug: string } | { slug: string }[] | null;
       const branchSlug = Array.isArray(branchRaw) ? branchRaw[0]?.slug : branchRaw?.slug;
       if (branchSlug) revalidatePath(`/branches/${branchSlug}`);
 
-      results.push({ calendar_id: cal.id, upserted, cancelled });
+      results.push({ calendar_id: cal.id, upserted, cancelled, failed });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown";
       await supabase

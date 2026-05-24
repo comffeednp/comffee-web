@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { INSTRUCTIONS_BUCKET } from "@/lib/branch-instructions";
 import { slugify } from "@/lib/utils";
 
 function nullable(v: FormDataEntryValue | null): string | null {
@@ -269,14 +271,66 @@ export async function deletePhotoAction(formData: FormData) {
   revalidatePath("/branches");
 }
 
-export async function updateBranchInstructionPhotosAction(formData: FormData) {
+/* ---------- instruction photos (private bucket, sent to confirmed guests) ---------- */
+const INSTRUCTION_EXTS = ["jpg", "jpeg", "png", "webp"];
+
+export async function uploadInstructionPhotosAction(formData: FormData) {
   await requireAdmin();
-  const supabase = await getSupabaseServer();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  await supabase.from("branches").update({
-    checkin_photo_url: nullable(formData.get("checkin_photo_url")),
-    checkout_photo_url: nullable(formData.get("checkout_photo_url")),
-  }).eq("id", id);
-  revalidatePath(`/admin/branches/${id}`);
+  const branchId = String(formData.get("branch_id") ?? "");
+  if (!branchId) redirect("/admin/branches");
+
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (!files.length) redirect(`/admin/branches/${branchId}#instructions`);
+
+  const admin = getSupabaseAdmin();
+  // Existing count drives the NN- ordering prefix.
+  const { data: existing } = await admin.storage.from(INSTRUCTIONS_BUCKET).list(branchId);
+  let n = (existing ?? []).length;
+
+  for (const file of files) {
+    const lower = file.name.toLowerCase();
+    const isHeic = lower.endsWith(".heic") || lower.endsWith(".heif") ||
+      file.type === "image/heic" || file.type === "image/heif";
+    let ext = lower.split(".").pop() ?? "jpg";
+    if (!isHeic && !INSTRUCTION_EXTS.includes(ext)) continue; // skip non-images (pdf, etc.)
+
+    let buffer = Buffer.from(await file.arrayBuffer());
+    let contentType = file.type || "image/jpeg";
+    if (isHeic) {
+      const heicConvert = (await import("heic-convert")).default;
+      buffer = Buffer.from(await heicConvert({ buffer, format: "JPEG", quality: 0.92 }));
+      contentType = "image/jpeg";
+      ext = "jpg";
+    }
+
+    n += 1;
+    const safe = file.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40) || "sheet";
+    const path = `${branchId}/${String(n).padStart(2, "0")}-${safe}.${ext}`;
+    const { error } = await admin.storage
+      .from(INSTRUCTIONS_BUCKET)
+      .upload(path, buffer, { contentType, upsert: true });
+    if (error) {
+      redirect(`/admin/branches/${branchId}?error=${encodeURIComponent(error.message)}#instructions`);
+    }
+  }
+
+  revalidatePath(`/admin/branches/${branchId}`);
+  revalidatePath(`/branches`);
+  redirect(`/admin/branches/${branchId}?ok=1#instructions`);
+}
+
+export async function deleteInstructionPhotoAction(formData: FormData) {
+  await requireAdmin();
+  const branchId = String(formData.get("branch_id") ?? "");
+  const path = String(formData.get("path") ?? "");
+  if (!branchId || !path) redirect(`/admin/branches/${branchId}`);
+  // Guard: only allow deleting within this branch's own folder.
+  if (!path.startsWith(`${branchId}/`)) {
+    redirect(`/admin/branches/${branchId}?error=bad_path#instructions`);
+  }
+  await getSupabaseAdmin().storage.from(INSTRUCTIONS_BUCKET).remove([path]);
+  revalidatePath(`/admin/branches/${branchId}`);
+  redirect(`/admin/branches/${branchId}?ok=1#instructions`);
 }

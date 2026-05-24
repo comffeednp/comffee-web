@@ -4,7 +4,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   cancelReservation,
   confirmReservation,
+  getReservationByBalanceIntent,
   getReservationByIntent,
+  markBalancePaid,
 } from "@/lib/reservations";
 import {
   getOrderById,
@@ -13,7 +15,8 @@ import {
   markOrderPaid,
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
-import { sendBookingConfirmation, sendOrderConfirmation } from "@/lib/email";
+import { sendBalancePaidReceipt, sendBookingConfirmation, sendOrderConfirmation } from "@/lib/email";
+import { listInstructionPhotos } from "@/lib/branch-instructions";
 
 export const runtime = "nodejs";
 
@@ -109,9 +112,11 @@ export async function POST(request: Request) {
     actualPaymentId = inner.attributes.payments[0]?.data?.id ?? null;
   }
 
-  // Find which entity this payment belongs to — reservation, order, or topup
-  const [reservation, order, topupRes] = await Promise.all([
+  // Find which entity this payment belongs to — reservation (initial payment),
+  // a reservation balance payment, an order, or a wallet top-up.
+  const [reservation, balanceRes, order, topupRes] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
+    getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
     (async () => {
       try {
@@ -148,7 +153,7 @@ export async function POST(request: Request) {
           if (reservation.guest_email) {
             const { data: branch } = await supabase
               .from("branches")
-              .select("name, slug, address, checkin_photo_url, checkout_photo_url, branch_rates (check_in_time, check_out_time, sort_order)")
+              .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
               .eq("id", reservation.branch_id)
               .maybeSingle();
             const rates = (
@@ -169,8 +174,10 @@ export async function POST(request: Request) {
               numGuests: reservation.num_guests ?? 1,
               totalPhp: Number(reservation.total_php ?? 0),
               reservationId: reservation.id,
-              checkinPhotoUrl: (branch as { checkin_photo_url?: string | null } | null)?.checkin_photo_url ?? null,
-              checkoutPhotoUrl: (branch as { checkout_photo_url?: string | null } | null)?.checkout_photo_url ?? null,
+              instructionPhotos: (await listInstructionPhotos(reservation.branch_id)).map((p) => ({
+                label: p.label,
+                url: p.signedUrl,
+              })),
             }).catch((e) => console.error("[email] booking failed", e));
           }
           break;
@@ -184,6 +191,36 @@ export async function POST(request: Request) {
         }
       }
       return NextResponse.json({ ok: true, kind: "reservation" });
+    }
+
+    if (balanceRes) {
+      switch (eventType) {
+        case "link.payment.paid":
+        case "payment.paid": {
+          // The booking is already confirmed; this just settles the 70% balance.
+          await markBalancePaid(balanceRes.id, actualPaymentId ?? undefined);
+          if (balanceRes.guest_email) {
+            const { data: branch } = await supabase
+              .from("branches")
+              .select("name")
+              .eq("id", balanceRes.branch_id)
+              .maybeSingle();
+            sendBalancePaidReceipt({
+              to: balanceRes.guest_email,
+              guestName: balanceRes.guest_name ?? "there",
+              branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
+              checkIn: balanceRes.check_in,
+              checkOut: balanceRes.check_out,
+              balancePhp: Number(balanceRes.balance_php ?? 0),
+              reservationId: balanceRes.id,
+            }).catch((e) => console.error("[email] balance receipt failed", e));
+          }
+          break;
+        }
+        // payment.failed: nothing to undo — the booking stays confirmed and the
+        // guest can retry the balance payment from their account.
+      }
+      return NextResponse.json({ ok: true, kind: "reservation_balance" });
     }
 
     if (order) {
@@ -260,6 +297,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ignored: "no_match_for_link" });
   } catch (e) {
     console.error("webhook handling failed", e instanceof Error ? e.message : e);
+    // We recorded this event up-front for idempotency. Since handling it failed,
+    // delete that record so PayMongo's automatic retry reprocesses the event.
+    // Without this, the retry would be treated as a duplicate and the payment
+    // would never get applied — the booking would stay on hold and auto-cancel.
+    await supabase
+      .from("paymongo_webhook_events")
+      .delete()
+      .eq("paymongo_event_id", eventId);
     return NextResponse.json({ error: "handler_failed" }, { status: 500 });
   }
 }

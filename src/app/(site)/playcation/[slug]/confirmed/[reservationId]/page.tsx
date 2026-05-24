@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getReservationById } from "@/lib/reservations";
+import { getMemberOptional } from "@/lib/auth/require-member";
+import { getAdminOptional } from "@/lib/auth/require-admin";
 import { formatRange, nightsBetween } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
 import ConfirmedAnimation from "@/components/booking/ConfirmedAnimation";
@@ -26,6 +28,13 @@ export default async function ConfirmedPage({
   const branch =
     (reservation as { branch?: { slug: string; name: string; type: string; hero_image_url: string | null } | null }).branch ?? null;
   if (!branch || branch.slug !== slug) notFound();
+
+  // This receipt shows the guest's name and email — only the member who owns the
+  // booking (or an admin) may view it.
+  const [member, admin] = await Promise.all([getMemberOptional(), getAdminOptional()]);
+  const ownerId = (reservation as { member_id?: string | null }).member_id ?? null;
+  const isOwner = !!member && !!ownerId && member.id === ownerId;
+  if (!isOwner && !admin) notFound();
 
   const nights = nightsBetween(reservation.check_in, reservation.check_out);
   const isConfirmed = reservation.status === "confirmed";

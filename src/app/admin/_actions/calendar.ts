@@ -25,7 +25,13 @@ export async function createManualBlockAction(
     notes,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    // The overlap constraint returns a raw Postgres message — show something readable.
+    const overlap =
+      error.message.includes("reservations_no_overlap") ||
+      (error as { code?: string }).code === "23P01";
+    return { error: overlap ? "Those dates overlap an existing booking or block" : error.message };
+  }
   revalidatePath("/admin/calendar");
   return {};
 }

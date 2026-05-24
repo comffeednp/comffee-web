@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/auth/require-member";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { cancelMyReservationAction, cancelMyPlaycationAction } from "./_actions/reservations";
 import CancelBookingButton from "./CancelBookingButton";
+import PayBalanceButton from "./PayBalanceButton";
 import { Calendar, Cpu, Gamepad2, Plus } from "lucide-react";
 import { formatDateTime, formatPHP } from "@/lib/utils";
 import { formatRange, nightsBetween } from "@/lib/dates";
@@ -30,6 +31,10 @@ interface PlaycationBooking {
   status: string;
   total_php: number | null;
   num_guests: number | null;
+  payment_type: string | null;
+  balance_php: number | null;
+  balance_due_date: string | null;
+  balance_paid_at: string | null;
   branch: { name: string; slug: string } | null;
 }
 
@@ -45,12 +50,13 @@ export default async function AccountPage({ searchParams }: Props) {
 
   const { data: playcationData } = await admin
     .from("reservations")
-    .select("id, check_in, check_out, status, total_php, num_guests, branch:branches(name, slug)")
+    .select("id, check_in, check_out, status, total_php, num_guests, payment_type, balance_php, balance_due_date, balance_paid_at, branch:branches(name, slug)")
     .eq("member_id", member.id)
     .in("status", ["pending_hold", "confirmed", "cancelled"])
     .order("check_in", { ascending: false })
     .limit(20);
   const playcationBookings = (playcationData ?? []) as unknown as PlaycationBooking[];
+  const phToday = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
   const { data } = await admin
     .from("internet_reservations")
@@ -86,6 +92,13 @@ export default async function AccountPage({ searchParams }: Props) {
           <ul className="space-y-3">
             {playcationBookings.map((r) => {
               const nights = nightsBetween(r.check_in, r.check_out);
+              const balanceDue = Number(r.balance_php ?? 0);
+              const hasUnpaidBalance =
+                r.status === "confirmed" &&
+                r.payment_type === "partial" &&
+                balanceDue > 0 &&
+                !r.balance_paid_at;
+              const overdue = hasUnpaidBalance && r.balance_due_date != null && r.balance_due_date < phToday;
               return (
                 <li key={r.id} className="p-5 border border-line-bright bg-bg-card rounded-xl">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -104,6 +117,11 @@ export default async function AccountPage({ searchParams }: Props) {
                       <p className="mt-1 font-mono text-xs text-amber">
                         {r.total_php != null ? formatPHP(r.total_php) : "—"}
                       </p>
+                      {hasUnpaidBalance && (
+                        <p className={`mt-1 font-mono text-xs ${overdue ? "text-red-400" : "text-cream-dim"}`}>
+                          // balance {formatPHP(balanceDue)} {overdue ? "overdue" : `due ${r.balance_due_date}`}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       {r.branch?.slug && (
@@ -114,6 +132,9 @@ export default async function AccountPage({ searchParams }: Props) {
                         >
                           View receipt →
                         </Link>
+                      )}
+                      {hasUnpaidBalance && (
+                        <PayBalanceButton reservationId={r.id} balancePhp={balanceDue} />
                       )}
                       {(r.status === "pending_hold" || r.status === "confirmed") && (
                         <CancelBookingButton id={r.id} kind="booking" action={cancelMyPlaycationAction} />

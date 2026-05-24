@@ -13,8 +13,10 @@ import {
   deleteRateAction,
   addPhotosAction,
   deletePhotoAction,
-  updateBranchInstructionPhotosAction,
+  uploadInstructionPhotosAction,
+  deleteInstructionPhotoAction,
 } from "../../_actions/branches";
+import { listInstructionPhotos } from "@/lib/branch-instructions";
 import BranchCoreFields from "@/components/admin/BranchCoreFields";
 import ImageUpload from "@/components/admin/ImageUpload";
 import PCTierEditor from "@/components/admin/PCTierEditor";
@@ -55,6 +57,8 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
   ]);
   const branch = branchRes.data as Branch | null;
   if (!branch) notFound();
+
+  const instructionPhotos = await listInstructionPhotos(branch.id);
 
   const amenities = (amenitiesRes.data ?? []) as BranchAmenity[];
   const rates = (ratesRes.data ?? []) as BranchRate[];
@@ -224,31 +228,48 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
       )}
 
       {/* GUEST INSTRUCTIONS */}
-      <Section id="instructions" title="Guest instructions" subtitle="sent as email attachments">
+      <Section id="instructions" title="Guest instructions" subtitle="private — sent to confirmed bookings">
         <p className="mb-6 text-sm text-cream-dim">
-          Upload one photo per type. These are attached to the booking confirmation email so guests have everything they need — address, door code, WiFi, room details, check-in/out steps, etc.
+          Upload the check-in, house-rules, and FAQ sheets for this branch. They&apos;re attached to the booking-confirmation email and shown on the branch page only to guests with a confirmed booking. Door PINs stay private — these are never public. Add as many as you need.
         </p>
-        <form action={updateBranchInstructionPhotosAction} className="space-y-8">
-          <input type="hidden" name="id" value={branch.id} />
-          <div>
-            <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-3">// check-in instructions photo</p>
-            <ImageUpload
-              name="checkin_photo_url"
-              defaultValue={branch.checkin_photo_url as string | null}
-              folder={`branches/${branch.slug}/instructions`}
-            />
+
+        {instructionPhotos.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 mb-8">
+            {instructionPhotos.map((p) => (
+              <div key={p.path} className="border border-line-bright bg-bg rounded-xl overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.signedUrl} alt={p.label} className="w-full h-auto block" />
+                <div className="flex items-center justify-between px-3 py-2 gap-2">
+                  <span className="font-mono text-[0.65rem] uppercase tracking-widest text-cream-dim truncate">
+                    {p.label}
+                  </span>
+                  <form action={deleteInstructionPhotoAction}>
+                    <input type="hidden" name="branch_id" value={branch.id} />
+                    <input type="hidden" name="path" value={p.path} />
+                    <button type="submit" title={`Remove ${p.label}`} className="text-red-400 hover:text-red-300">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-3">// check-out instructions photo</p>
-            <ImageUpload
-              name="checkout_photo_url"
-              defaultValue={branch.checkout_photo_url as string | null}
-              folder={`branches/${branch.slug}/instructions`}
-            />
-          </div>
-          <button type="submit" title="Save guest instruction photos" className="key-cap key-cap-primary">
-            <Save className="h-4 w-4" />
-            Save instruction photos
+        ) : (
+          <p className="mb-8 font-mono text-xs text-mocha">// no instruction photos yet</p>
+        )}
+
+        <form action={uploadInstructionPhotosAction} className="space-y-4">
+          <input type="hidden" name="branch_id" value={branch.id} />
+          <input
+            type="file"
+            name="files"
+            multiple
+            accept="image/*,.heic,.heif"
+            className="block text-sm text-cream-dim file:mr-4 file:rounded file:border-0 file:bg-amber file:px-4 file:py-2 file:text-bg file:font-mono file:text-xs"
+          />
+          <button type="submit" title="Upload instruction photos" className="key-cap key-cap-primary">
+            <Plus className="h-4 w-4" />
+            Upload photos
           </button>
         </form>
       </Section>

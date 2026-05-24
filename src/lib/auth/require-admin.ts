@@ -24,3 +24,23 @@ export async function requireAdmin(): Promise<AdminUser> {
   if (!admin) redirect("/admin?error=not_admin");
   return admin as AdminUser;
 }
+
+/** Soft check — returns the admin if logged in as an active admin, null otherwise. */
+export async function getAdminOptional(): Promise<AdminUser | null> {
+  try {
+    const supabase = await getSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data } = await supabase
+      .from("admin_users")
+      .select("*")
+      .eq("auth_user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+    return (data as AdminUser) ?? null;
+  } catch {
+    return null;
+  }
+}

@@ -150,7 +150,13 @@ export async function manualBlockAction(formData: FormData) {
     notes,
   });
   if (error) {
-    redirect(`/admin/bookings?error=${encodeURIComponent(error.message)}`);
+    // The overlap constraint returns a raw Postgres message — show something readable.
+    const overlap =
+      error.message.includes("reservations_no_overlap") || error.code === "23P01";
+    const friendly = overlap
+      ? "Those dates overlap an existing booking or block"
+      : error.message;
+    redirect(`/admin/bookings?error=${encodeURIComponent(friendly)}`);
   }
   bumpAll();
   redirect("/admin/bookings");
