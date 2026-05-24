@@ -113,7 +113,7 @@ export async function findOrCreateConversation(
           .update({ last_message_body: note, last_message_sender_type: "system" })
           .eq("id", conv.id);
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-        sendNewChatInquiry({
+        await sendNewChatInquiry({
           customerName: conv.customer_name ?? customerName,
           branchName,
           checkIn,
@@ -217,7 +217,9 @@ export async function postCustomerMessage(
       branchName = branch?.name ?? undefined;
     }
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-    sendNewChatInquiry({
+    // Awaited (not fire-and-forget): on serverless, un-awaited work after the
+    // response can be killed before it finishes, dropping the alert.
+    await sendNewChatInquiry({
       customerName: conversation.customer_name ?? customerName,
       branchName,
       checkIn: conversation.inquiry_check_in ?? undefined,
