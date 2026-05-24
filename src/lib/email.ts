@@ -21,7 +21,7 @@ export function isEmailConfigured(): boolean {
 }
 
 interface SendEmailInput {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   text?: string;
@@ -445,8 +445,12 @@ export async function sendNewChatInquiry({
   checkOut?: string | null;
   adminChatUrl: string;
 }) {
-  const to = process.env.ADMIN_NOTIFICATION_EMAIL;
-  if (!to) return;
+  // ADMIN_NOTIFICATION_EMAIL may be a comma-separated list — alert all of them.
+  const recipients = (process.env.ADMIN_NOTIFICATION_EMAIL ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!recipients.length) return;
 
   const who = customerName ?? "Anonymous";
   const context = [
@@ -465,7 +469,7 @@ export async function sendNewChatInquiry({
   `;
 
   return sendEmail({
-    to,
+    to: recipients,
     subject: `New chat from ${who}${branchName ? ` · ${branchName}` : ""}`,
     html: chrome({
       preheader: `${who} is asking${branchName ? ` about ${branchName}` : ""}${checkIn ? ` · ${checkIn}` : ""}`,
