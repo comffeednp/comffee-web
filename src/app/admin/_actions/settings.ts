@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 const KNOWN_KEYS = [
   "company_name",
@@ -20,7 +20,7 @@ const KNOWN_KEYS = [
 ];
 
 export async function saveSettingsAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
 
   const rows = KNOWN_KEYS.map((key) => ({

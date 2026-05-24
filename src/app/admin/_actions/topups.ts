@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 function bumpAll() {
   revalidatePath("/admin/topups");
@@ -11,7 +11,7 @@ function bumpAll() {
 }
 
 export async function fulfillTopupAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/topups?error=missing_id");
@@ -28,7 +28,7 @@ export async function fulfillTopupAction(formData: FormData) {
 }
 
 export async function cancelTopupAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/topups?error=missing_id");

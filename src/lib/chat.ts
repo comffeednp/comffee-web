@@ -302,14 +302,17 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
   return (data ?? []) as ChatMessage[];
 }
 
-export async function listConversations(): Promise<(ChatConversation & { branch_name?: string | null; unread: boolean })[]> {
+export async function listConversations(branchId?: string | null): Promise<(ChatConversation & { branch_name?: string | null; unread: boolean })[]> {
   const supabase = getSupabaseAdmin();
+  let convQ = supabase
+    .from("chat_conversations")
+    .select("*, branches(name)")
+    .order("last_message_at", { ascending: false })
+    .limit(200);
+  // Branch-partners only see their branch's conversations.
+  if (branchId) convQ = convQ.eq("branch_id", branchId) as typeof convQ;
   const [{ data: rows }, { data: activeIds }] = await Promise.all([
-    supabase
-      .from("chat_conversations")
-      .select("*, branches(name)")
-      .order("last_message_at", { ascending: false })
-      .limit(200),
+    convQ,
     supabase
       .from("chat_messages")
       .select("conversation_id")

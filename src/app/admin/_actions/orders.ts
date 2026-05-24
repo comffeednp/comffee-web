@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 const VALID_STATUSES = ["placed", "preparing", "ready", "served", "cancelled"] as const;
 type OrderStatus = (typeof VALID_STATUSES)[number];
@@ -14,7 +14,7 @@ function bumpAll(id?: string) {
 }
 
 export async function setOrderStatusAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "") as OrderStatus;
@@ -27,7 +27,7 @@ export async function setOrderStatusAction(formData: FormData) {
 }
 
 export async function manualMarkPaidAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("orders").update({ payment_status: "paid" }).eq("id", id);
@@ -36,7 +36,7 @@ export async function manualMarkPaidAction(formData: FormData) {
 }
 
 export async function deleteOrderAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("orders").delete().eq("id", id);

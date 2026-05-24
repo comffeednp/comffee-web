@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { markHandledAction, deleteSubmissionAction } from "../_actions/contact";
 import { Check, Trash2 } from "lucide-react";
@@ -8,7 +8,7 @@ import type { ContactSubmission } from "@/lib/supabase/types";
 export const dynamic = "force-dynamic";
 
 export default async function ContactSubmissionsPage() {
-  await requireAdmin();
+  await requireFullAdmin();
   const supabase = await getSupabaseServer();
   const { data } = await supabase
     .from("contact_form_submissions")

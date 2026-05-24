@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { listConversations } from "@/lib/chat";
 import AdminChatClient from "./AdminChatClient";
 
@@ -9,9 +9,9 @@ interface Props {
 }
 
 export default async function AdminChatPage({ searchParams }: Props) {
-  const admin = await requireAdmin();
+  const { admin, branchId } = await getAdminScope();
   const { conversation } = await searchParams;
-  const conversations = await listConversations();
+  const conversations = await listConversations(branchId);
 
   return (
     <section className="container-edge py-12">
@@ -29,6 +29,7 @@ export default async function AdminChatPage({ searchParams }: Props) {
           adminName={admin.full_name}
           initialConversations={conversations}
           initialActiveId={conversation ?? null}
+          canReply={admin.role !== "partner"}
         />
       </div>
     </section>

@@ -3,7 +3,7 @@
 // public marketing site + admin CRUD.
 
 export type BranchType = "cafe" | "playcation";
-export type AdminRole = "super_admin" | "branch_manager" | "staff";
+export type AdminRole = "super_admin" | "branch_manager" | "staff" | "partner";
 export type ReservationSource = "website" | "airbnb" | "manual_block";
 export type ReservationStatus = "pending_hold" | "confirmed" | "cancelled" | "completed";
 export type PaymentStatus = "unpaid" | "pending" | "paid" | "failed" | "refunded";
@@ -114,6 +114,7 @@ export interface AdminUser {
   full_name: string;
   email: string | null;
   role: AdminRole;
+  branch_id: string | null;
   is_active: boolean;
   created_at: string;
 }

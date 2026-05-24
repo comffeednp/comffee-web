@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fulfillTopupAction, cancelTopupAction } from "../_actions/topups";
 import { Check, Wallet, X } from "lucide-react";
@@ -27,7 +27,7 @@ interface Props {
 }
 
 export default async function AdminTopupsPage({ searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { status, ok, error } = await searchParams;
   const supabase = await getSupabaseServer();
 
@@ -51,6 +51,7 @@ export default async function AdminTopupsPage({ searchParams }: Props) {
   } else if (status === "pending") {
     q = q.eq("payment_status", "pending");
   }
+  if (branchId) q = q.eq("branch_id", branchId) as typeof q; // branch-partner scope
 
   const { data } = await q;
   const topups = (data ?? []) as unknown as TopupRow[];

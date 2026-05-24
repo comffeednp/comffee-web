@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { formatDateTime, formatPHP } from "@/lib/utils";
 import {
@@ -21,13 +21,65 @@ export const dynamic = "force-dynamic";
  * pending hold expiries, unread chats, and pending station requests.
  */
 export default async function AdminTodayPage() {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const supabase = await getSupabaseServer();
 
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
   const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
+
+  // Every panel here is branch-relevant — scope all of them to a partner's branch.
+  let pickupsQ = supabase
+    .from("orders")
+    .select("id, customer_name, total_php, scheduled_for, status, payment_status, branch:branches(name)")
+    .gte("scheduled_for", startOfDay)
+    .lt("scheduled_for", endOfDay)
+    .in("status", ["placed", "preparing", "ready"])
+    .order("scheduled_for", { ascending: true });
+  let checkInsQ = supabase
+    .from("reservations")
+    .select("id, guest_name, check_in, check_out, total_php, status, branch:branches(name)")
+    .eq("check_in", todayIso)
+    .in("status", ["confirmed", "pending_hold"])
+    .order("guest_name", { ascending: true });
+  let checkOutsQ = supabase
+    .from("reservations")
+    .select("id, guest_name, check_in, check_out, branch:branches(name)")
+    .eq("check_out", todayIso)
+    .eq("status", "confirmed")
+    .order("guest_name", { ascending: true });
+  let activeStationsQ = supabase
+    .from("internet_reservations")
+    .select("id, station_label, actual_start, requested_start, requested_end, time_extended_minutes, member:members(full_name), branch:branches(name)")
+    .eq("status", "active")
+    .order("actual_start", { ascending: true });
+  let holdsExpiringQ = supabase
+    .from("reservations")
+    .select("id, guest_name, hold_expires_at, branch:branches(name)")
+    .eq("status", "pending_hold")
+    .order("hold_expires_at", { ascending: true })
+    .limit(20);
+  let openChatsQ = supabase
+    .from("chat_conversations")
+    .select("id, customer_name, last_message_at")
+    .eq("status", "open")
+    .order("last_message_at", { ascending: false })
+    .limit(10);
+  let pendingStationReqsQ = supabase
+    .from("internet_reservations")
+    .select("id, station_label, requested_start, member:members(full_name), branch:branches(name)")
+    .eq("status", "requested")
+    .order("created_at", { ascending: false });
+  if (branchId) {
+    pickupsQ = pickupsQ.eq("branch_id", branchId) as typeof pickupsQ;
+    checkInsQ = checkInsQ.eq("branch_id", branchId) as typeof checkInsQ;
+    checkOutsQ = checkOutsQ.eq("branch_id", branchId) as typeof checkOutsQ;
+    activeStationsQ = activeStationsQ.eq("branch_id", branchId) as typeof activeStationsQ;
+    holdsExpiringQ = holdsExpiringQ.eq("branch_id", branchId) as typeof holdsExpiringQ;
+    openChatsQ = openChatsQ.eq("branch_id", branchId) as typeof openChatsQ;
+    pendingStationReqsQ = pendingStationReqsQ.eq("branch_id", branchId) as typeof pendingStationReqsQ;
+  }
 
   const [
     pickupsRes,
@@ -38,58 +90,7 @@ export default async function AdminTodayPage() {
     openChatsRes,
     pendingStationReqsRes,
   ] = await Promise.all([
-    // Orders ready for pickup today
-    supabase
-      .from("orders")
-      .select("id, customer_name, total_php, scheduled_for, status, payment_status, branch:branches(name)")
-      .gte("scheduled_for", startOfDay)
-      .lt("scheduled_for", endOfDay)
-      .in("status", ["placed", "preparing", "ready"])
-      .order("scheduled_for", { ascending: true }),
-    // Reservations checking in today
-    supabase
-      .from("reservations")
-      .select("id, guest_name, check_in, check_out, total_php, status, branch:branches(name)")
-      .eq("check_in", todayIso)
-      .in("status", ["confirmed", "pending_hold"])
-      .order("guest_name", { ascending: true }),
-    // Reservations checking out today
-    supabase
-      .from("reservations")
-      .select("id, guest_name, check_in, check_out, branch:branches(name)")
-      .eq("check_out", todayIso)
-      .eq("status", "confirmed")
-      .order("guest_name", { ascending: true }),
-    // Active internet sessions (timer running)
-    supabase
-      .from("internet_reservations")
-      .select(
-        "id, station_label, actual_start, requested_start, requested_end, time_extended_minutes, member:members(full_name), branch:branches(name)",
-      )
-      .eq("status", "active")
-      .order("actual_start", { ascending: true }),
-    // Pending holds about to expire
-    supabase
-      .from("reservations")
-      .select("id, guest_name, hold_expires_at, branch:branches(name)")
-      .eq("status", "pending_hold")
-      .order("hold_expires_at", { ascending: true })
-      .limit(20),
-    // Open chats
-    supabase
-      .from("chat_conversations")
-      .select("id, customer_name, last_message_at")
-      .eq("status", "open")
-      .order("last_message_at", { ascending: false })
-      .limit(10),
-    // Pending station requests
-    supabase
-      .from("internet_reservations")
-      .select(
-        "id, station_label, requested_start, member:members(full_name), branch:branches(name)",
-      )
-      .eq("status", "requested")
-      .order("created_at", { ascending: false }),
+    pickupsQ, checkInsQ, checkOutsQ, activeStationsQ, holdsExpiringQ, openChatsQ, pendingStationReqsQ,
   ]);
 
   const pickups = pickupsRes.data ?? [];

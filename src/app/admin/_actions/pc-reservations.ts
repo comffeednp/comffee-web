@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 function bumpAll(id?: string) {
   revalidatePath("/admin/pc-reservations");
@@ -12,7 +12,7 @@ function bumpAll(id?: string) {
 }
 
 export async function honorPCReservationAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/pc-reservations?error=missing_id");
@@ -29,7 +29,7 @@ export async function honorPCReservationAction(formData: FormData) {
 }
 
 export async function cancelPCReservationAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/pc-reservations?error=missing_id");
@@ -45,7 +45,7 @@ export async function cancelPCReservationAction(formData: FormData) {
 }
 
 export async function expirePCReservationAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/pc-reservations?error=missing_id");

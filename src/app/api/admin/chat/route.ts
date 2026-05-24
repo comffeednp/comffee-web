@@ -13,11 +13,11 @@ async function requireAdminApi() {
   if (!user) return null;
   const { data: admin } = await supabase
     .from("admin_users")
-    .select("id")
+    .select("id, role, branch_id")
     .eq("auth_user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
-  return (admin as { id: string } | null) ?? null;
+  return (admin as { id: string; role: string; branch_id: string | null } | null) ?? null;
 }
 
 export async function GET(request: Request) {
@@ -28,12 +28,13 @@ export async function GET(request: Request) {
   const conversationId = url.searchParams.get("conversationId");
 
   if (!conversationId) {
-    const conversations = await listConversations();
+    const conversations = await listConversations(admin.role === "partner" ? admin.branch_id : null);
     return NextResponse.json({ ok: true, conversations });
   }
 
-  // Opening a conversation marks it seen — clears unread + stops escalation emails.
-  await markConversationSeen(conversationId);
+  // Opening a conversation marks it seen — but only for editor admins. A read-only
+  // partner viewing must NOT clear the owner's unread/escalation state.
+  if (admin.role !== "partner") await markConversationSeen(conversationId);
   const messages = await listMessages(conversationId);
   return NextResponse.json({ ok: true, messages });
 }
@@ -46,6 +47,7 @@ const sendSchema = z.object({
 export async function POST(request: Request) {
   const admin = await requireAdminApi();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (admin.role === "partner") return NextResponse.json({ error: "read_only" }, { status: 403 });
 
   let body: unknown;
   try {

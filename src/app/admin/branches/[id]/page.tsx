@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   updateBranchAction,
@@ -39,7 +39,7 @@ interface Props {
 }
 
 export default async function EditBranchPage({ params, searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { id } = await params;
   const { ok, error } = await searchParams;
 

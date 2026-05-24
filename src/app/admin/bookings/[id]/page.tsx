@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getReservationById } from "@/lib/reservations";
 import { manualConfirmAction, cancelBookingAction } from "../../_actions/bookings";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -17,11 +17,12 @@ interface Props {
 }
 
 export default async function BookingDetailPage({ params, searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { id } = await params;
   const { ok, error } = await searchParams;
   const reservation = await getReservationById(id);
   if (!reservation) notFound();
+  if (branchId && (reservation as { branch_id?: string | null }).branch_id !== branchId) notFound();
 
   const branch = (reservation as { branch?: { slug: string; name: string } | null }).branch;
   const nights = nightsBetween(reservation.check_in, reservation.check_out);

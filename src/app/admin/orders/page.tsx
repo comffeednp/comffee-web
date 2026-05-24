@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { ArrowRight } from "lucide-react";
 import { formatDateTime, formatPHP } from "@/lib/utils";
@@ -23,7 +23,7 @@ interface OrderRow {
 }
 
 export default async function AdminOrdersPage({ searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { status, payment, ok } = await searchParams;
   const supabase = await getSupabaseServer();
 
@@ -34,6 +34,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
     .limit(200);
   if (status) q = q.eq("status", status);
   if (payment) q = q.eq("payment_status", payment);
+  if (branchId) q = q.eq("branch_id", branchId) as typeof q; // branch-partner scope
   const { data } = await q;
   const orders = (data ?? []) as unknown as OrderRow[];
 

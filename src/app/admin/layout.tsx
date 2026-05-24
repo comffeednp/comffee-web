@@ -48,6 +48,20 @@ export default async function AdminLayout({
     if (data) admin = data as AdminBrief;
   }
 
+  // Branch-partners get a reduced, ops-only nav (their branch only).
+  const PARTNER_HREFS = new Set([
+    "/admin/today", "/admin/dashboard", "/admin/chat", "/admin/bookings",
+    "/admin/calendar", "/admin/orders", "/admin/pc-reservations",
+    "/admin/topups", "/admin/internet-reservations",
+  ]);
+  const links =
+    admin?.role === "partner"
+      ? navLinks.filter((l) => PARTNER_HREFS.has(l.href))
+      : admin?.role === "super_admin"
+        ? [...navLinks, { href: "/admin/team", label: "Team" }]
+        : navLinks;
+  const canReply = admin?.role !== "partner";
+
   return (
     <div className="min-h-screen bg-bg-soft flex flex-col">
       <header className="border-b border-line bg-bg sticky top-0 z-[100]" style={{ backgroundColor: 'var(--color-bg)' }}>
@@ -94,7 +108,7 @@ export default async function AdminLayout({
         {admin && (
           <NavScroller>
             <nav className="container-edge flex items-center gap-0.5 h-10 w-max min-w-full">
-              {navLinks.map((l) => (
+              {links.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
@@ -112,7 +126,7 @@ export default async function AdminLayout({
       <main className="flex-1 relative z-0 isolate">{children}</main>
 
       {admin && (
-        <AdminChatFloat adminId={admin.id} adminName={admin.full_name} />
+        <AdminChatFloat adminId={admin.id} adminName={admin.full_name} canReply={canReply} />
       )}
     </div>
   );

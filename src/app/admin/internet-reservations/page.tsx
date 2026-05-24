@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { ArrowRight } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export default async function AdminInternetReservationsPage({ searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { status } = await searchParams;
   const supabase = await getSupabaseServer();
 
@@ -33,6 +33,7 @@ export default async function AdminInternetReservationsPage({ searchParams }: Pr
     .order("requested_start", { ascending: false })
     .limit(200);
   if (status) q = q.eq("status", status);
+  if (branchId) q = q.eq("branch_id", branchId) as typeof q; // branch-partner scope
   const { data } = await q;
   const reservations = (data ?? []) as unknown as ReservationRow[];
 

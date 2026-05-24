@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 function nullable(v: FormDataEntryValue | null): string | null {
   const s = String(v ?? "").trim();
@@ -34,7 +34,7 @@ function bump(id?: string) {
 }
 
 export async function createPromoCodeAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
   if (!code) redirect("/admin/promo-codes/new?error=code_required");
@@ -66,7 +66,7 @@ export async function createPromoCodeAction(formData: FormData) {
 }
 
 export async function updatePromoCodeAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/promo-codes?error=missing_id");
@@ -91,7 +91,7 @@ export async function updatePromoCodeAction(formData: FormData) {
 }
 
 export async function deletePromoCodeAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("promo_codes").delete().eq("id", id);

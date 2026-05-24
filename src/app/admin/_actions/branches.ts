@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 import { INSTRUCTIONS_BUCKET } from "@/lib/branch-instructions";
 import { slugify } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ function numOrNull(v: FormDataEntryValue | null): number | null {
 }
 
 export async function createBranchAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
 
   const name = String(formData.get("name") ?? "").trim();
@@ -66,7 +66,7 @@ export async function createBranchAction(formData: FormData) {
 }
 
 export async function updateBranchAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/branches?error=missing_id");
@@ -104,7 +104,7 @@ export async function updateBranchAction(formData: FormData) {
 }
 
 export async function deleteBranchAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/branches?error=missing_id");
@@ -118,7 +118,7 @@ export async function deleteBranchAction(formData: FormData) {
 
 /* ---------- amenities ---------- */
 export async function addAmenityAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const branch_id = String(formData.get("branch_id") ?? "");
   const label = String(formData.get("label") ?? "").trim();
@@ -135,7 +135,7 @@ export async function addAmenityAction(formData: FormData) {
 }
 
 export async function updateAmenityAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
@@ -152,7 +152,7 @@ export async function updateAmenityAction(formData: FormData) {
 }
 
 export async function deleteAmenityAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
@@ -163,7 +163,7 @@ export async function deleteAmenityAction(formData: FormData) {
 
 /* ---------- rates ---------- */
 export async function addRateAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const branch_id = String(formData.get("branch_id") ?? "");
   const label = String(formData.get("label") ?? "").trim();
@@ -188,7 +188,7 @@ export async function addRateAction(formData: FormData) {
 }
 
 export async function updateRateAction(formData: FormData): Promise<{ error: string } | undefined> {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
@@ -212,7 +212,7 @@ export async function updateRateAction(formData: FormData): Promise<{ error: str
 }
 
 export async function deleteRateAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
@@ -223,7 +223,7 @@ export async function deleteRateAction(formData: FormData) {
 
 /* ---------- photos ---------- */
 export async function addPhotosAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const branch_id = String(formData.get("branch_id") ?? "");
   const urls = formData.getAll("public_url").map(String).filter(Boolean);
@@ -244,7 +244,7 @@ export async function addPhotosAction(formData: FormData) {
 }
 
 export async function addPhotoAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const branch_id = String(formData.get("branch_id") ?? "");
   const public_url = String(formData.get("public_url") ?? "").trim();
@@ -262,7 +262,7 @@ export async function addPhotoAction(formData: FormData) {
 }
 
 export async function deletePhotoAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
@@ -275,7 +275,7 @@ export async function deletePhotoAction(formData: FormData) {
 const INSTRUCTION_EXTS = ["jpg", "jpeg", "png", "webp"];
 
 export async function uploadInstructionPhotosAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const branchId = String(formData.get("branch_id") ?? "");
   if (!branchId) redirect("/admin/branches");
 
@@ -322,7 +322,7 @@ export async function uploadInstructionPhotosAction(formData: FormData) {
 }
 
 export async function deleteInstructionPhotoAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const branchId = String(formData.get("branch_id") ?? "");
   const path = String(formData.get("path") ?? "");
   if (!branchId || !path) redirect(`/admin/branches/${branchId}`);

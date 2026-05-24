@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { createPromoCodeAction } from "../../_actions/promo-codes";
 import PromoCodeFields from "@/components/admin/PromoCodeFields";
 import { ArrowLeft, Save } from "lucide-react";
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default async function NewPromoCodePage({ searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { error } = await searchParams;
   return (
     <section className="container-edge py-12 max-w-3xl">

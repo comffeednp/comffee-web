@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 export async function createManualBlockAction(
   branchId: string,
@@ -10,7 +10,7 @@ export async function createManualBlockAction(
   checkOut: string,
   notes = "Manual block",
 ): Promise<{ error?: string }> {
-  await requireAdmin();
+  await requireEditor();
   if (!branchId || !checkIn || !checkOut) return { error: "Missing fields" };
   if (checkIn >= checkOut) return { error: "check-out must be after check-in" };
 
@@ -37,7 +37,7 @@ export async function createManualBlockAction(
 }
 
 export async function unblockAction(reservationId: string): Promise<{ error?: string }> {
-  await requireAdmin();
+  await requireEditor();
   const supabase = getSupabaseAdmin();
 
   const { data, error: fetchError } = await supabase

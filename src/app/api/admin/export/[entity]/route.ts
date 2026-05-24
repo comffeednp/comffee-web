@@ -17,11 +17,13 @@ async function requireAdminApi() {
   if (!user) return null;
   const { data: admin } = await supabase
     .from("admin_users")
-    .select("id")
+    .select("id, role, branch_id")
     .eq("auth_user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
-  return admin ? { id: admin.id as string } : null;
+  return admin
+    ? { id: admin.id as string, role: (admin as { role: string }).role, branch_id: (admin as { branch_id: string | null }).branch_id }
+    : null;
 }
 
 export async function GET(
@@ -36,17 +38,25 @@ export async function GET(
   const admin = await requireAdminApi();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  // Branch-partners may only export their branch's operational data.
+  const branchId = admin.role === "partner" ? admin.branch_id : null;
+  if (branchId && (entity === "members" || entity === "contact-submissions")) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const sb = getSupabaseAdmin();
   let csv: string;
   let name: string;
 
   switch (entity as Entity) {
     case "orders": {
-      const { data } = await sb
+      let oq = sb
         .from("orders")
         .select("*, branch:branches(name), order_items(name_snapshot, qty, line_total)")
         .order("created_at", { ascending: false })
         .limit(10000);
+      if (branchId) oq = oq.eq("branch_id", branchId) as typeof oq;
+      const { data } = await oq;
       type Row = {
         id: string;
         created_at: string;
@@ -103,11 +113,13 @@ export async function GET(
     }
 
     case "bookings": {
-      const { data } = await sb
+      let rq = sb
         .from("reservations")
         .select("*, branch:branches(name)")
         .order("created_at", { ascending: false })
         .limit(10000);
+      if (branchId) rq = rq.eq("branch_id", branchId) as typeof rq;
+      const { data } = await rq;
       type Row = {
         id: string;
         created_at: string;
@@ -204,13 +216,15 @@ export async function GET(
     }
 
     case "internet-reservations": {
-      const { data } = await sb
+      let iq = sb
         .from("internet_reservations")
         .select(
           "id, station_label, requested_start, requested_end, actual_start, actual_end, status, prepaid_php, time_extended_minutes, created_at, member:members(full_name, member_number), branch:branches(name)",
         )
         .order("created_at", { ascending: false })
         .limit(10000);
+      if (branchId) iq = iq.eq("branch_id", branchId) as typeof iq;
+      const { data } = await iq;
       type Row = {
         id: string;
         station_label: string;

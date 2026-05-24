@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   addAirbnbCalendarAction,
@@ -16,7 +16,7 @@ interface Props {
 }
 
 export default async function AirbnbCalendarsPage({ searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { ok, error } = await searchParams;
   const supabase = await getSupabaseServer();
   const [calsRes, branchesRes] = await Promise.all([

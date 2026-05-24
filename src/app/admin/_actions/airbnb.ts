@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 import { runAirbnbSync } from "@/lib/airbnb-sync";
 
 export async function addAirbnbCalendarAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const branch_id = String(formData.get("branch_id") ?? "");
   const ical_url = String(formData.get("ical_url") ?? "").trim();
@@ -26,7 +26,7 @@ export async function addAirbnbCalendarAction(formData: FormData) {
 }
 
 export async function deleteAirbnbCalendarAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("airbnb_calendars").delete().eq("id", id);
@@ -35,7 +35,7 @@ export async function deleteAirbnbCalendarAction(formData: FormData) {
 }
 
 export async function syncNowAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const id = String(formData.get("id") ?? "") || undefined;
   let result;
   try {

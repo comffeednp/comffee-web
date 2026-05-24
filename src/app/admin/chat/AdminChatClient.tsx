@@ -18,6 +18,7 @@ interface Props {
   adminName: string;
   initialConversations: ConversationWithBranch[];
   initialActiveId: string | null;
+  canReply?: boolean;
 }
 
 export default function AdminChatClient({
@@ -25,6 +26,7 @@ export default function AdminChatClient({
   adminName,
   initialConversations,
   initialActiveId,
+  canReply = true,
 }: Props) {
   const [conversations, setConversations] =
     useState<ConversationWithBranch[]>(initialConversations);
@@ -424,26 +426,32 @@ export default function AdminChatClient({
               )}
             </div>
 
-            <div className="border-t border-line p-4 flex gap-2">
-              <input
-                type="text"
-                value={draft}
-                onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder={`Reply as ${adminName}…`}
-                className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
-              />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={sending || !draft.trim()}
-                title="Send reply"
-                className="flex h-10 px-4 items-center gap-2 bg-amber text-bg rounded-md disabled:opacity-40 font-mono text-xs uppercase tracking-widest"
-              >
-                <Send className="h-3.5 w-3.5" />
-                Send
-              </button>
-            </div>
+            {canReply ? (
+              <div className="border-t border-line p-4 flex gap-2">
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  placeholder={`Reply as ${adminName}…`}
+                  className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
+                />
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={sending || !draft.trim()}
+                  title="Send reply"
+                  className="flex h-10 px-4 items-center gap-2 bg-amber text-bg rounded-md disabled:opacity-40 font-mono text-xs uppercase tracking-widest"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Send
+                </button>
+              </div>
+            ) : (
+              <div className="border-t border-line p-4 text-center">
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">// read-only · partner view</p>
+              </div>
+            )}
             {/* placeholder use of adminId to satisfy TS */}
             <input type="hidden" value={adminId} readOnly />
           </>

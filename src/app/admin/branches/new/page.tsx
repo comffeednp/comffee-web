@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { createBranchAction } from "../../_actions/branches";
 import BranchCoreFields from "@/components/admin/BranchCoreFields";
 import { Save } from "lucide-react";
@@ -9,7 +9,7 @@ interface PageProps {
 }
 
 export default async function NewBranchPage({ searchParams }: PageProps) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { error } = await searchParams;
 
   return (

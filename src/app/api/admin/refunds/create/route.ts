@@ -26,11 +26,14 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { data: admin } = await supabase
     .from("admin_users")
-    .select("id")
+    .select("id, role")
     .eq("auth_user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if ((admin as { role?: string }).role === "partner") {
+    return NextResponse.json({ error: "read_only" }, { status: 403 });
+  }
 
   let body: unknown;
   try {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 
 function bumpAll(id?: string) {
   revalidatePath("/admin/internet-reservations");
@@ -12,7 +12,7 @@ function bumpAll(id?: string) {
 }
 
 export async function confirmInternetReservationAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase
@@ -24,7 +24,7 @@ export async function confirmInternetReservationAction(formData: FormData) {
 }
 
 export async function startTimerAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase
@@ -40,7 +40,7 @@ export async function startTimerAction(formData: FormData) {
 }
 
 export async function stopTimerAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase
@@ -52,7 +52,7 @@ export async function stopTimerAction(formData: FormData) {
 }
 
 export async function extendTimerAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const minutes = parseInt(String(formData.get("minutes") ?? "0"), 10);
@@ -75,7 +75,7 @@ export async function extendTimerAction(formData: FormData) {
 }
 
 export async function cancelInternetReservationAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase
@@ -87,7 +87,7 @@ export async function cancelInternetReservationAction(formData: FormData) {
 }
 
 export async function setPrepaidAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const amount = parseFloat(String(formData.get("prepaid_php") ?? "0"));

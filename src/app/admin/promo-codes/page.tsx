@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { ArrowRight, Plus } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default async function PromoCodesPage({ searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { deleted } = await searchParams;
   const supabase = await getSupabaseServer();
   const { data } = await supabase

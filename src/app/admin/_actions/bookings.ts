@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 import { issueRefund } from "@/lib/refunds";
 import { sendCancellationEmail } from "@/lib/email";
 
@@ -13,7 +13,7 @@ function bumpAll(id?: string) {
 }
 
 export async function manualConfirmAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = getSupabaseAdmin();
   const id = String(formData.get("id") ?? "");
   await supabase
@@ -25,7 +25,7 @@ export async function manualConfirmAction(formData: FormData) {
 }
 
 export async function cancelBookingAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEditor();
   const supabase = getSupabaseAdmin();
   const id = String(formData.get("id") ?? "");
   const reason = String(formData.get("reason") ?? "cancelled by admin");
@@ -129,7 +129,7 @@ export async function cancelBookingAction(formData: FormData) {
 }
 
 export async function manualBlockAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = getSupabaseAdmin();
   const branch_id = String(formData.get("branch_id") ?? "");
   const check_in = String(formData.get("check_in") ?? "");

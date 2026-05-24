@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import AdminBlockCalendar from "@/components/admin/AdminBlockCalendar";
 import type { CalendarReservation } from "@/components/admin/ReservationCalendar";
@@ -6,15 +6,17 @@ import type { CalendarReservation } from "@/components/admin/ReservationCalendar
 export const dynamic = "force-dynamic";
 
 export default async function AdminCalendarPage() {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const supabase = getSupabaseAdmin();
 
-  // Fetch playcation branches for the branch selector
-  const { data: branchRows } = await supabase
+  // Fetch playcation branches for the branch selector (partner: only theirs)
+  let branchQ = supabase
     .from("branches")
     .select("id, name")
     .eq("type", "playcation")
     .order("name");
+  if (branchId) branchQ = branchQ.eq("id", branchId) as typeof branchQ;
+  const { data: branchRows } = await branchQ;
 
   const branches = (branchRows ?? []).map(b => ({ id: b.id, name: b.name }));
 
@@ -24,7 +26,7 @@ export default async function AdminCalendarPage() {
   const to = new Date();
   to.setMonth(to.getMonth() + 6);
 
-  const { data: rows } = await supabase
+  let resQ = supabase
     .from("reservations")
     .select(`
       id, check_in, check_out, guest_name, source, status, branch_id, member_id,
@@ -34,6 +36,8 @@ export default async function AdminCalendarPage() {
     .gte("check_out", from.toISOString().slice(0, 10))
     .lte("check_in", to.toISOString().slice(0, 10))
     .order("check_in");
+  if (branchId) resQ = resQ.eq("branch_id", branchId) as typeof resQ;
+  const { data: rows } = await resQ;
 
   // Fetch member names + avatars for website bookings
   const memberIds = [

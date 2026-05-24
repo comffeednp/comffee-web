@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { manualBlockAction } from "../_actions/bookings";
 import ExportButton from "@/components/admin/ExportButton";
@@ -29,7 +29,7 @@ interface Props {
 }
 
 export default async function AdminBookingsPage({ searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { status, error } = await searchParams;
   const supabase = await getSupabaseServer();
 
@@ -40,6 +40,7 @@ export default async function AdminBookingsPage({ searchParams }: Props) {
     .limit(200);
   if (status === "active") q = q.in("status", ["pending_hold", "confirmed"]);
   else if (status === "cancelled") q = q.eq("status", "cancelled");
+  if (branchId) q = q.eq("branch_id", branchId) as typeof q; // branch-partner scope
   const { data } = await q;
   const reservations = (data ?? []) as Array<
     Reservation & { branch: { slug: string; name: string; type: string } | null }

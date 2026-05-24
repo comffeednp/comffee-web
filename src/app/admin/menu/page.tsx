@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   addCategoryAction,
@@ -14,7 +14,7 @@ import { formatPHP } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function AdminMenuPage() {
-  await requireAdmin();
+  await requireFullAdmin();
   const supabase = await getSupabaseServer();
   const [catsRes, itemsRes] = await Promise.all([
     supabase.from("menu_categories").select("*").order("sort_order"),

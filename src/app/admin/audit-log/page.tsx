@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { formatDateTime } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
@@ -34,7 +34,7 @@ const ENTITY_TYPES = [
 ];
 
 export default async function AuditLogPage({ searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { entity, action } = await searchParams;
   const supabase = await getSupabaseServer();
 

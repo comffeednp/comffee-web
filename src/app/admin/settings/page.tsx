@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSiteSettings } from "@/lib/settings";
 import { saveSettingsAction } from "../_actions/settings";
 import { Save } from "lucide-react";
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default async function AdminSettingsPage({ searchParams }: Props) {
-  await requireAdmin();
+  await requireFullAdmin();
   const { ok, error } = await searchParams;
   const settings = await getSiteSettings();
 

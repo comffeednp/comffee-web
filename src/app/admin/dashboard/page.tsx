@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   Building2,
@@ -17,8 +17,24 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const supabase = await getSupabaseServer();
+
+  // Operational counts get scoped to a partner's branch; global config counts don't.
+  let confirmedQ = supabase.from("reservations").select("id", { count: "exact", head: true }).eq("status", "confirmed");
+  let holdsQ = supabase.from("reservations").select("id", { count: "exact", head: true }).eq("status", "pending_hold");
+  let ordersQ = supabase.from("orders").select("id", { count: "exact", head: true }).in("status", ["placed", "preparing", "ready"]);
+  let stationReqQ = supabase.from("internet_reservations").select("id", { count: "exact", head: true }).eq("status", "requested");
+  let activeStationsQ = supabase.from("internet_reservations").select("id", { count: "exact", head: true }).eq("status", "active");
+  let openChatsQ = supabase.from("chat_conversations").select("id", { count: "exact", head: true }).eq("status", "open");
+  if (branchId) {
+    confirmedQ = confirmedQ.eq("branch_id", branchId) as typeof confirmedQ;
+    holdsQ = holdsQ.eq("branch_id", branchId) as typeof holdsQ;
+    ordersQ = ordersQ.eq("branch_id", branchId) as typeof ordersQ;
+    stationReqQ = stationReqQ.eq("branch_id", branchId) as typeof stationReqQ;
+    activeStationsQ = activeStationsQ.eq("branch_id", branchId) as typeof activeStationsQ;
+    openChatsQ = openChatsQ.eq("branch_id", branchId) as typeof openChatsQ;
+  }
 
   const [
     { count: branchesCount },
@@ -33,34 +49,13 @@ export default async function AdminDashboardPage() {
   ] = await Promise.all([
     supabase.from("branches").select("id", { count: "exact", head: true }),
     supabase.from("menu_items").select("id", { count: "exact", head: true }),
-    supabase
-      .from("contact_form_submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("handled", false),
-    supabase
-      .from("reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "confirmed"),
-    supabase
-      .from("reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending_hold"),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["placed", "preparing", "ready"]),
-    supabase
-      .from("internet_reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "requested"),
-    supabase
-      .from("internet_reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "active"),
-    supabase
-      .from("chat_conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "open"),
+    supabase.from("contact_form_submissions").select("id", { count: "exact", head: true }).eq("handled", false),
+    confirmedQ,
+    holdsQ,
+    ordersQ,
+    stationReqQ,
+    activeStationsQ,
+    openChatsQ,
   ]);
 
   const tiles = [

@@ -25,6 +25,44 @@ export async function requireAdmin(): Promise<AdminUser> {
   return admin as AdminUser;
 }
 
+/**
+ * For mutating actions. Same as requireAdmin, but read-only "partner" admins are
+ * rejected — they can view everything but can't edit or send messages.
+ */
+export async function requireEditor(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (admin.role === "partner") redirect("/admin/dashboard?error=read_only");
+  return admin;
+}
+
+/**
+ * Blocks read-only partners entirely — for global/owner pages a branch-partner
+ * should never see (branch settings, menu, promos, airbnb, settings, audit).
+ */
+export async function requireFullAdmin(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (admin.role === "partner") redirect("/admin/dashboard?error=forbidden");
+  return admin;
+}
+
+/**
+ * The branch a viewer is limited to. `null` = all branches (owner/staff).
+ * A partner is limited to their assigned branch; if somehow unassigned, the
+ * sentinel "__none__" matches nothing (fail closed — see nothing, not everything).
+ */
+export async function getAdminScope(): Promise<{ admin: AdminUser; branchId: string | null }> {
+  const admin = await requireAdmin();
+  const branchId = admin.role === "partner" ? (admin.branch_id ?? "__none__") : null;
+  return { admin, branchId };
+}
+
+/** Owner-only (super_admin) — e.g. managing partner accounts. */
+export async function requireSuperAdmin(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (admin.role !== "super_admin") redirect("/admin/dashboard?error=forbidden");
+  return admin;
+}
+
 /** Soft check — returns the admin if logged in as an active admin, null otherwise. */
 export async function getAdminOptional(): Promise<AdminUser | null> {
   try {

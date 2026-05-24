@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   honorPCReservationAction,
@@ -18,7 +18,7 @@ interface Props {
 }
 
 export default async function PCReservationDetailPage({ params, searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { id } = await params;
   const { ok, error } = await searchParams;
   const supabase = await getSupabaseServer();
@@ -30,6 +30,7 @@ export default async function PCReservationDetailPage({ params, searchParams }: 
     .maybeSingle();
 
   if (!data) notFound();
+  if (branchId && (data as { branch_id?: string | null }).branch_id !== branchId) notFound();
 
   const branch = (data as { branch?: { name: string; slug: string }[] | { name: string; slug: string } | null }).branch;
   const branchObj = Array.isArray(branch) ? branch[0] : branch;

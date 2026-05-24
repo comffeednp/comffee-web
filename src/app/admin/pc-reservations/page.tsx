@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { ArrowRight, Cpu } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
@@ -25,7 +25,7 @@ interface Props {
 }
 
 export default async function AdminPCReservationsPage({ searchParams }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { status } = await searchParams;
   const supabase = await getSupabaseServer();
 
@@ -35,6 +35,7 @@ export default async function AdminPCReservationsPage({ searchParams }: Props) {
     .order("reserved_for_start", { ascending: true })
     .limit(200);
   if (status) q = q.eq("status", status);
+  if (branchId) q = q.eq("branch_id", branchId) as typeof q; // branch-partner scope
   const { data } = await q;
   const reservations = (data ?? []) as unknown as PCReservationRow[];
 

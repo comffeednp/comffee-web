@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { ArrowRight, Plus } from "lucide-react";
 import type { Branch } from "@/lib/supabase/types";
@@ -7,7 +7,7 @@ import type { Branch } from "@/lib/supabase/types";
 export const dynamic = "force-dynamic";
 
 export default async function AdminBranchesPage() {
-  await requireAdmin();
+  await requireFullAdmin();
   const supabase = await getSupabaseServer();
   const { data } = await supabase
     .from("branches")

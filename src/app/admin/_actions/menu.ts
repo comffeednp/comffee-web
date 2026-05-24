@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireEditor } from "@/lib/auth/require-admin";
 import { slugify } from "@/lib/utils";
 
 function nullable(v: FormDataEntryValue | null): string | null {
@@ -26,7 +26,7 @@ function bumpAll() {
 
 /* ---------- categories ---------- */
 export async function addCategoryAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) redirect("/admin/menu?error=name_required");
@@ -40,7 +40,7 @@ export async function addCategoryAction(formData: FormData) {
 }
 
 export async function deleteCategoryAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("menu_categories").delete().eq("id", id);
@@ -50,7 +50,7 @@ export async function deleteCategoryAction(formData: FormData) {
 
 /* ---------- items ---------- */
 export async function addItemAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const name = String(formData.get("name") ?? "").trim();
   const category_id = String(formData.get("category_id") ?? "");
@@ -69,7 +69,7 @@ export async function addItemAction(formData: FormData) {
 }
 
 export async function deleteItemAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   await supabase.from("menu_items").delete().eq("id", id);
@@ -78,7 +78,7 @@ export async function deleteItemAction(formData: FormData) {
 }
 
 export async function toggleItemAvailableAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const supabase = await getSupabaseServer();
   const id = String(formData.get("id") ?? "");
   const next = formData.get("next") === "true";

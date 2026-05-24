@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { getAdminScope } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
   confirmInternetReservationAction,
@@ -25,7 +25,7 @@ export default async function AdminInternetReservationDetailPage({
   params,
   searchParams,
 }: Props) {
-  await requireAdmin();
+  const { branchId } = await getAdminScope();
   const { id } = await params;
   const { ok, error } = await searchParams;
 
@@ -39,6 +39,7 @@ export default async function AdminInternetReservationDetailPage({
     .maybeSingle();
 
   if (!reservation) notFound();
+  if (branchId && (reservation as { branch_id?: string | null }).branch_id !== branchId) notFound();
 
   const branch = (reservation as { branch?: { name: string; slug: string } | null }).branch;
   const member = (reservation as {

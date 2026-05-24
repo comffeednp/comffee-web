@@ -16,6 +16,7 @@ interface ConversationWithBranch extends ChatConversation {
 interface Props {
   adminId: string;
   adminName: string;
+  canReply?: boolean;
 }
 
 function fmtDate(iso: string) {
@@ -32,7 +33,7 @@ function Avatar({ url, name, size = 8 }: { url?: string | null; name?: string | 
   );
 }
 
-export default function AdminChatFloat({ adminName }: Props) {
+export default function AdminChatFloat({ adminName, canReply = true }: Props) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"list" | "thread">("list");
   const [conversations, setConversations] = useState<ConversationWithBranch[]>([]);
@@ -410,26 +411,32 @@ export default function AdminChatFloat({ adminName }: Props) {
                   )}
                 </div>
 
-                {/* Reply input */}
-                <div className="border-t border-line p-3 flex gap-2 shrink-0">
-                  <input
-                    type="text"
-                    value={draft}
-                    onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
-                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                    placeholder={`Reply as ${adminName}…`}
-                    className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={sending || !draft.trim()}
-                    className="flex h-10 w-10 items-center justify-center bg-amber text-bg rounded-md disabled:opacity-40"
-                    aria-label="Send"
-                  >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </button>
-                </div>
+                {/* Reply input (hidden for read-only partners) */}
+                {canReply ? (
+                  <div className="border-t border-line p-3 flex gap-2 shrink-0">
+                    <input
+                      type="text"
+                      value={draft}
+                      onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
+                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                      placeholder={`Reply as ${adminName}…`}
+                      className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={sending || !draft.trim()}
+                      className="flex h-10 w-10 items-center justify-center bg-amber text-bg rounded-md disabled:opacity-40"
+                      aria-label="Send"
+                    >
+                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-t border-line p-3 text-center shrink-0">
+                    <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">// read-only · partner view</p>
+                  </div>
+                )}
               </>
             )}
           </motion.div>
