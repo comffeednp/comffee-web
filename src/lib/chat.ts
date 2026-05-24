@@ -339,6 +339,9 @@ export async function listUnseenConversations(): Promise<
     .order("last_message_at", { ascending: true })
     .limit(500);
   const list = (rows ?? []) as (ChatConversation & { branches?: { name: string } | null })[];
+  // Guard: if migration 0023 hasn't been applied, the escalation column is
+  // absent — do nothing rather than email repeatedly with no way to dedupe.
+  if (list.length && !("escalation_last_sent_at" in list[0])) return [];
   return list.filter(isUnseen).map((row) => {
     const { branches, ...rest } = row;
     return { ...rest, branch_name: branches?.name ?? null };
