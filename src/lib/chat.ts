@@ -20,6 +20,7 @@ export interface ChatConversation {
   customer_phone: string | null;
   customer_email: string | null;
   customer_avatar_url: string | null;
+  member_id: string | null;
   branch_id: string | null;
   inquiry_check_in: string | null;
   inquiry_check_out: string | null;
@@ -64,6 +65,8 @@ export async function findOrCreateConversation(
   checkIn?: string,
   checkOut?: string,
   avatarUrl?: string,
+  memberId?: string,
+  memberEmail?: string,
 ): Promise<ChatConversation> {
   const supabase = getSupabaseAdmin();
 
@@ -75,6 +78,18 @@ export async function findOrCreateConversation(
 
   if (existing) {
     const conv = existing as ChatConversation;
+    // Link a logged-in member (so we have an email to send reply-reminders to).
+    if (memberId && (!conv.member_id || !conv.customer_email)) {
+      const patch = {
+        member_id: conv.member_id ?? memberId,
+        customer_email: conv.customer_email ?? memberEmail ?? null,
+        customer_name: conv.customer_name ?? customerName ?? null,
+      };
+      await supabase.from("chat_conversations").update(patch).eq("id", conv.id);
+      conv.member_id = patch.member_id;
+      conv.customer_email = patch.customer_email;
+      conv.customer_name = patch.customer_name;
+    }
     // Returning visitor opening chat with a DIFFERENT branch/dates than the
     // thread currently holds = a new inquiry. Refresh the thread's context,
     // drop a divider note so both sides see the switch, and alert the admin.
@@ -133,6 +148,8 @@ export async function findOrCreateConversation(
       customer_session_token: sessionToken,
       customer_name: customerName ?? null,
       customer_avatar_url: avatarUrl ?? null,
+      member_id: memberId ?? null,
+      customer_email: memberEmail ?? null,
       branch_id: branchId ?? null,
       inquiry_check_in: checkIn ?? null,
       inquiry_check_out: checkOut ?? null,
@@ -166,9 +183,13 @@ export async function postCustomerMessage(
   sessionToken: string,
   body: string,
   customerName?: string,
+  memberId?: string,
+  memberEmail?: string,
 ): Promise<{ conversation: ChatConversation; message: ChatMessage }> {
   const supabase = getSupabaseAdmin();
-  const conversation = await findOrCreateConversation(sessionToken, customerName);
+  const conversation = await findOrCreateConversation(
+    sessionToken, customerName, undefined, undefined, undefined, undefined, undefined, memberId, memberEmail,
+  );
 
   // Update name if provided and not set yet
   if (customerName && !conversation.customer_name) {
@@ -343,6 +364,32 @@ export async function listUnseenConversations(): Promise<
   // absent — do nothing rather than email repeatedly with no way to dedupe.
   if (list.length && !("escalation_last_sent_at" in list[0])) return [];
   return list.filter(isUnseen).map((row) => {
+    const { branches, ...rest } = row;
+    return { ...rest, branch_name: branches?.name ?? null };
+  });
+}
+
+/**
+ * Conversations where the admin replied last and a member guest (with an email
+ * on file) hasn't responded yet — for guest reply-reminders. Capped at 24h so
+ * we don't nag forever on a conversation that's naturally over.
+ */
+export async function listConversationsAwaitingCustomerReply(): Promise<
+  (ChatConversation & { branch_name?: string | null })[]
+> {
+  const supabase = getSupabaseAdmin();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: rows } = await supabase
+    .from("chat_conversations")
+    .select("*, branches(name)")
+    .eq("last_message_sender_type", "admin")
+    .not("customer_email", "is", null)
+    .gt("last_message_at", cutoff)
+    .order("last_message_at", { ascending: true })
+    .limit(500);
+  const list = (rows ?? []) as (ChatConversation & { branches?: { name: string } | null })[];
+  if (list.length && !("escalation_last_sent_at" in list[0])) return []; // not migrated yet
+  return list.map((row) => {
     const { branches, ...rest } = row;
     return { ...rest, branch_name: branches?.name ?? null };
   });

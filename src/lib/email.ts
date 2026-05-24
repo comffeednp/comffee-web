@@ -717,3 +717,42 @@ export async function sendChatReminder({
     text: `${who}${branchName ? ` (${branchName})` : ""} is waiting for a reply (${waitingLabel}). ${lastMessage ? `Last: "${lastMessage}". ` : ""}Open: ${adminChatUrl}`,
   });
 }
+
+/* ---------------- guest reply reminder (nudge the customer) ---------------- */
+
+export async function sendCustomerReplyReminder({
+  to,
+  guestName,
+  branchName,
+  lastMessage,
+  chatUrl,
+}: {
+  to: string;
+  guestName?: string | null;
+  branchName?: string | null;
+  lastMessage?: string | null;
+  chatUrl: string;
+}) {
+  const first = (guestName ?? "there").split(" ")[0];
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      You have a reply from Comffee
+    </h1>
+    <p style="margin:0 0 16px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(first)} — we replied to your chat${branchName ? ` about <strong>${escapeHtml(branchName)}</strong>` : ""} and haven't heard back yet. Whenever you're ready, just hop back into the chat to continue.
+    </p>
+    ${lastMessage ? `<p style="margin:0 0 16px;padding:12px 16px;background:#faf6ee;border:1px solid #e8dcc4;border-radius:10px;color:#1a0f06;font-size:14px;">&ldquo;${escapeHtml(lastMessage)}&rdquo;</p>` : ""}
+  `;
+  return sendEmail({
+    to,
+    subject: `You have a reply from Comffee${branchName ? ` · ${branchName}` : ""}`,
+    html: chrome({
+      preheader: "We replied to your chat — pick up where you left off",
+      bodyHtml: body,
+      ctaLabel: "Continue chat",
+      ctaHref: chatUrl,
+    }),
+    text: `Hi ${first}, we replied to your Comffee chat and haven't heard back yet. Continue the chat: ${chatUrl}`,
+    replyTo: `bookings@comffee.org`,
+  });
+}

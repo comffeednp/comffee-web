@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/cron-auth";
-import { listUnseenConversations, markEscalationSent } from "@/lib/chat";
-import { sendChatReminder } from "@/lib/email";
+import { listConversationsAwaitingCustomerReply, listUnseenConversations, markEscalationSent } from "@/lib/chat";
+import { sendChatReminder, sendCustomerReplyReminder } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -24,33 +24,51 @@ function waitingLabel(ms: number): string {
 }
 
 async function run() {
-  const convs = await listUnseenConversations();
   const now = Date.now();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-  let sent = 0;
 
-  for (const c of convs) {
-    const msgTime = new Date(c.last_message_at).getTime();
-    const escAt = c.escalation_last_sent_at ? new Date(c.escalation_last_sent_at).getTime() : 0;
-    // Has THIS unseen message already been escalated? (a newer message resets it)
-    const alreadyEscalated = escAt >= msgTime;
-    const due = alreadyEscalated
-      ? now - escAt >= REPEAT_MS // then hourly
-      : now - msgTime >= FIRST_MS; // first reminder at 5 min
-    if (!due) continue;
+  // Reminder due? first at 5 min, then hourly. A newer message resets the cycle
+  // (escalation_last_sent_at < last_message_at means this message is un-escalated).
+  const isDue = (lastAt: string, escAt: string | null) => {
+    const msgTime = new Date(lastAt).getTime();
+    const esc = escAt ? new Date(escAt).getTime() : 0;
+    return esc >= msgTime ? now - esc >= REPEAT_MS : now - msgTime >= FIRST_MS;
+  };
 
+  // 1. ADMIN side — guest messages you haven't seen.
+  const adminConvs = await listUnseenConversations();
+  let adminSent = 0;
+  for (const c of adminConvs) {
+    if (!isDue(c.last_message_at, c.escalation_last_sent_at)) continue;
     await sendChatReminder({
       customerName: c.customer_name,
       branchName: c.branch_name,
       lastMessage: c.last_message_body,
-      waitingLabel: waitingLabel(now - msgTime),
+      waitingLabel: waitingLabel(now - new Date(c.last_message_at).getTime()),
       adminChatUrl: `${siteUrl}/admin/chat`,
     });
     await markEscalationSent(c.id);
-    sent++;
+    adminSent++;
   }
 
-  return { ok: true, checked: convs.length, sent };
+  // 2. GUEST side — you replied and a member guest hasn't responded yet.
+  const guestConvs = await listConversationsAwaitingCustomerReply();
+  let guestSent = 0;
+  for (const c of guestConvs) {
+    if (!c.customer_email) continue;
+    if (!isDue(c.last_message_at, c.escalation_last_sent_at)) continue;
+    await sendCustomerReplyReminder({
+      to: c.customer_email,
+      guestName: c.customer_name,
+      branchName: c.branch_name,
+      lastMessage: c.last_message_body,
+      chatUrl: siteUrl,
+    });
+    await markEscalationSent(c.id);
+    guestSent++;
+  }
+
+  return { ok: true, adminChecked: adminConvs.length, adminSent, guestChecked: guestConvs.length, guestSent };
 }
 
 export async function GET(request: Request) {

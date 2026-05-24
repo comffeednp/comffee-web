@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { findOrCreateConversation, generateSessionToken } from "@/lib/chat";
+import { getMemberOptional } from "@/lib/auth/require-member";
 import { guardMutating } from "@/lib/security";
 
 export const runtime = "nodejs";
@@ -39,7 +40,8 @@ export async function POST(request: Request) {
   const avatarUrl = typeof body.avatarUrl === "string" && body.avatarUrl.startsWith("https://") && body.avatarUrl.length <= 512 ? body.avatarUrl : undefined;
 
   try {
-    const conversation = await findOrCreateConversation(token, customerName, branchId, branchName, checkIn, checkOut, avatarUrl);
+    const member = await getMemberOptional();
+    const conversation = await findOrCreateConversation(token, customerName, branchId, branchName, checkIn, checkOut, avatarUrl, member?.id, member?.email ?? undefined);
     return NextResponse.json({
       ok: true,
       sessionToken: token,

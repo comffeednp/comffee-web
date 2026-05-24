@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listMessages, postCustomerMessage } from "@/lib/chat";
+import { getMemberOptional } from "@/lib/auth/require-member";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { notifyAdminsOfChat } from "@/lib/fcm";
 import { guardMutating, rateLimit } from "@/lib/security";
@@ -50,10 +51,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    const member = await getMemberOptional();
     const { conversation, message } = await postCustomerMessage(
       parsed.data.sessionToken,
       parsed.data.body,
       parsed.data.customerName,
+      member?.id,
+      member?.email ?? undefined,
     );
     notifyAdminsOfChat(conversation, message).catch((e) =>
       console.error("admin push failed", e instanceof Error ? e.message : e),
