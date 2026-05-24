@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Check, Loader2, MessageSquare, Send, X } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Send, X } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
@@ -10,6 +10,7 @@ import type { ChatConversation, ChatMessage } from "@/lib/chat";
 
 interface ConversationWithBranch extends ChatConversation {
   branch_name?: string | null;
+  unread?: boolean;
 }
 
 interface Props {
@@ -54,7 +55,7 @@ export default function AdminChatFloat({ adminName }: Props) {
       .then((d) => {
         if (!d?.conversations) return;
         setConversations(d.conversations);
-        setUnread(d.conversations.filter((c: ChatConversation) => c.status === "open").length);
+        setUnread(d.conversations.filter((c: ConversationWithBranch) => c.unread).length);
       })
       .catch(() => {});
   };
@@ -185,15 +186,16 @@ export default function AdminChatFloat({ adminName }: Props) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
-  // Clear unread when panel is opened
-  useEffect(() => {
-    if (open) setUnread(0);
-  }, [open]);
-
   const selectConversation = (id: string) => {
     setActiveId(id);
     setView("thread");
     setUnreadConvs((prev) => { const n = new Map(prev); n.delete(id); return n; });
+    // Opening marks it seen — drop its unread flag and recompute the badge.
+    setConversations((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, unread: false } : c));
+      setUnread(next.filter((c) => c.unread).length);
+      return next;
+    });
   };
 
   const sendTyping = useCallback(() => {
@@ -239,16 +241,6 @@ export default function AdminChatFloat({ adminName }: Props) {
       setSending(false);
     }
   }, [draft, activeId, sending]);
-
-  const markResolved = async () => {
-    if (!activeId) return;
-    await fetch("/api/admin/chat/resolve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId: activeId }),
-    });
-    setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, status: "resolved" } : c)));
-  };
 
   const active = conversations.find((c) => c.id === activeId) ?? null;
 
@@ -316,23 +308,13 @@ export default function AdminChatFloat({ adminName }: Props) {
                   // inbox · {conversations.length}
                 </span>
               )}
-              {view === "thread" && active && active.status !== "resolved" && (
-                <button
-                  type="button"
-                  onClick={markResolved}
-                  className="flex items-center gap-1 border border-phosphor/40 rounded px-2 py-1 font-mono text-[0.6rem] uppercase tracking-widest text-phosphor hover:bg-phosphor/10 shrink-0"
-                >
-                  <Check className="h-3 w-3" />
-                  Resolve
-                </button>
-              )}
             </div>
 
             {/* Body */}
             {view === "list" ? (
               <ul className="flex-1 overflow-y-auto divide-y divide-line">
                 {conversations.map((c) => {
-                  const isUnread = unreadConvs.has(c.id);
+                  const isUnread = unreadConvs.has(c.id) || !!c.unread;
                   return (
                     <li key={c.id}>
                       <button
@@ -349,9 +331,7 @@ export default function AdminChatFloat({ adminName }: Props) {
                               <span className={`text-sm truncate ${isUnread ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                                 {c.customer_name ?? "Anonymous"}
                               </span>
-                              {c.status === "resolved" ? (
-                                <Check className="h-3 w-3 text-phosphor shrink-0" />
-                              ) : isUnread ? (
+                              {isUnread ? (
                                 <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
                               ) : null}
                             </div>

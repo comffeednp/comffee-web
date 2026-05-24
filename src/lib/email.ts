@@ -674,3 +674,46 @@ export async function sendBalancePaidReceipt(input: BalancePaidInput) {
     text: `We received your balance payment of ${formatPHP(input.balancePhp)} for ${input.branchName} (${formatRange(input.checkIn, input.checkOut)}). Your stay is paid in full. View: ${lookupUrl}`,
   });
 }
+
+/* ---------------- unanswered chat reminder (escalation) ---------------- */
+
+export async function sendChatReminder({
+  customerName,
+  branchName,
+  lastMessage,
+  waitingLabel,
+  adminChatUrl,
+}: {
+  customerName?: string | null;
+  branchName?: string | null;
+  lastMessage?: string | null;
+  waitingLabel: string;
+  adminChatUrl: string;
+}) {
+  const recipients = (process.env.ADMIN_NOTIFICATION_EMAIL ?? "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  if (!recipients.length) return;
+
+  const who = customerName ?? "A guest";
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Unanswered chat — waiting ${escapeHtml(waitingLabel)}
+    </h1>
+    <p style="margin:0 0 16px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      <strong>${escapeHtml(who)}</strong>${branchName ? ` (${escapeHtml(branchName)})` : ""} is still waiting for a reply.
+    </p>
+    ${lastMessage ? `<p style="margin:0 0 16px;padding:12px 16px;background:#faf6ee;border:1px solid #e8dcc4;border-radius:10px;color:#1a0f06;font-size:14px;">&ldquo;${escapeHtml(lastMessage)}&rdquo;</p>` : ""}
+    <p style="margin:0;color:#8a7a68;font-size:13px;line-height:1.6;">Open the inbox to reply — these reminders stop the moment you open the conversation.</p>
+  `;
+  return sendEmail({
+    to: recipients,
+    subject: `Unanswered chat from ${who} — waiting ${waitingLabel}`,
+    html: chrome({
+      preheader: `${who} is waiting for a reply (${waitingLabel})`,
+      bodyHtml: body,
+      ctaLabel: "Open inbox",
+      ctaHref: adminChatUrl,
+    }),
+    text: `${who}${branchName ? ` (${branchName})` : ""} is waiting for a reply (${waitingLabel}). ${lastMessage ? `Last: "${lastMessage}". ` : ""}Open: ${adminChatUrl}`,
+  });
+}

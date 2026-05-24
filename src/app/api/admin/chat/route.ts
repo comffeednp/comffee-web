@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listConversations, listMessages, postAdminMessage } from "@/lib/chat";
+import { listConversations, listMessages, markConversationSeen, postAdminMessage } from "@/lib/chat";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -32,6 +32,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, conversations });
   }
 
+  // Opening a conversation marks it seen — clears unread + stops escalation emails.
+  await markConversationSeen(conversationId);
   const messages = await listMessages(conversationId);
   return NextResponse.json({ ok: true, messages });
 }

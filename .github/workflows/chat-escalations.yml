@@ -1,0 +1,26 @@
+name: Chat escalations
+
+# Emails admins about guest chats they haven't seen yet (5 min, then hourly,
+# until seen/replied). GitHub Actions because Vercel free cron is daily-only.
+#
+# Required GitHub repo secrets:
+#   SITE_URL     - e.g. https://www.comffee.org
+#   CRON_SECRET  - same value as the CRON_SECRET in Vercel env vars
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  escalate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger chat escalation sweep
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/chat-escalations" \
+            | tee out.json
+          echo
+          cat out.json | grep -q '"ok":true' || (echo "escalation failed" && exit 1)

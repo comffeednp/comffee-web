@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, BellOff, Check, Loader2, Send } from "lucide-react";
+import { Bell, BellOff, Loader2, Send } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
@@ -10,6 +10,7 @@ import type { ChatConversation, ChatMessage } from "@/lib/chat";
 
 interface ConversationWithBranch extends ChatConversation {
   branch_name?: string | null;
+  unread?: boolean;
 }
 
 interface Props {
@@ -45,7 +46,11 @@ export default function AdminChatClient({
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => {
-    if (activeId) setUnreadConvs((m) => { const n = new Map(m); n.delete(activeId); return n; });
+    if (!activeId) return;
+    // Opening a conversation marks it seen — clear its unread state locally
+    // (the GET request persists admin_last_read_at server-side).
+    setUnreadConvs((m) => { const n = new Map(m); n.delete(activeId); return n; });
+    setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unread: false } : c)));
   }, [activeId]);
 
   // Broadcast read + subscribe to customer typing when active conversation changes
@@ -217,18 +222,6 @@ export default function AdminChatClient({
     }
   }, [draft, activeId, sending]);
 
-  const markResolved = async () => {
-    if (!activeId) return;
-    await fetch("/api/admin/chat/resolve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId: activeId }),
-    });
-    setConversations((prev) =>
-      prev.map((c) => (c.id === activeId ? { ...c, status: "resolved" } : c)),
-    );
-  };
-
   // Push notifications enable/disable
   const togglePush = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -266,6 +259,7 @@ export default function AdminChatClient({
   }, []);
 
   const active = conversations.find((c) => c.id === activeId) ?? null;
+  const unreadCount = conversations.filter((c) => unreadConvs.has(c.id) || c.unread).length;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[20rem_1fr] h-[calc(100vh-22rem)] min-h-[500px]">
@@ -274,6 +268,9 @@ export default function AdminChatClient({
         <div className="px-4 py-3 border-b border-line bg-bg-soft flex items-center justify-between">
           <span className="font-mono text-[0.7rem] uppercase tracking-widest text-cream-dim">
             // {conversations.length} conversations
+            {unreadCount > 0 && (
+              <span className="ml-2 text-amber">· {unreadCount} unread</span>
+            )}
           </span>
           <button
             type="button"
@@ -291,7 +288,7 @@ export default function AdminChatClient({
         </div>
         <ul className="overflow-y-auto flex-1 divide-y divide-line">
           {conversations.map((c) => {
-            const isUnread = unreadConvs.has(c.id);
+            const isUnread = unreadConvs.has(c.id) || !!c.unread;
             return (
               <li key={c.id}>
                 <button
@@ -310,9 +307,7 @@ export default function AdminChatClient({
                     <span className={`truncate ${isUnread ? "text-cream font-semibold" : "text-cream font-medium"}`}>
                       {c.customer_name ?? "Anonymous"}
                     </span>
-                    {c.status === "resolved" ? (
-                      <Check className="h-3 w-3 text-phosphor shrink-0" />
-                    ) : isUnread ? (
+                    {isUnread ? (
                       <span className="h-2 w-2 rounded-full bg-amber animate-pulse shrink-0" />
                     ) : null}
                   </div>
@@ -378,17 +373,6 @@ export default function AdminChatClient({
                   </p>
                 </div>
               </div>
-              {active.status !== "resolved" && (
-                <button
-                  type="button"
-                  onClick={markResolved}
-                  title="Mark this conversation as resolved"
-                  className="flex items-center gap-1.5 border border-phosphor/40 rounded-md px-3 py-1.5 text-[0.7rem] font-mono uppercase tracking-widest text-phosphor hover:bg-phosphor/10"
-                >
-                  <Check className="h-3 w-3" />
-                  Mark resolved
-                </button>
-              )}
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3">

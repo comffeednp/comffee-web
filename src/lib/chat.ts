@@ -28,6 +28,8 @@ export interface ChatConversation {
   last_message_at: string;
   last_message_body: string | null;
   last_message_sender_type: string | null;
+  admin_last_read_at: string | null;
+  escalation_last_sent_at: string | null;
   created_at: string;
 }
 
@@ -279,7 +281,7 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
   return (data ?? []) as ChatMessage[];
 }
 
-export async function listConversations(): Promise<(ChatConversation & { branch_name?: string | null })[]> {
+export async function listConversations(): Promise<(ChatConversation & { branch_name?: string | null; unread: boolean })[]> {
   const supabase = getSupabaseAdmin();
   const [{ data: rows }, { data: activeIds }] = await Promise.all([
     supabase
@@ -298,15 +300,57 @@ export async function listConversations(): Promise<(ChatConversation & { branch_
     .filter((row) => hasCustomerMessage.has((row as { id: string }).id))
     .map((row) => {
       const { branches, ...rest } = row as typeof row & { branches?: { name: string } | null };
-      return { ...rest, branch_name: (branches as { name: string } | null)?.name ?? null };
-    }) as (ChatConversation & { branch_name?: string | null })[];
+      const conv = rest as unknown as ChatConversation;
+      return {
+        ...rest,
+        branch_name: (branches as { name: string } | null)?.name ?? null,
+        unread: isUnseen(conv),
+      };
+    }) as (ChatConversation & { branch_name?: string | null; unread: boolean })[];
 }
 
-export async function markResolved(conversationId: string) {
+/** Mark a conversation as seen by an admin — clears its unread/escalation state. */
+export async function markConversationSeen(conversationId: string) {
   const supabase = getSupabaseAdmin();
   await supabase
     .from("chat_conversations")
-    .update({ status: "resolved" })
+    .update({ admin_last_read_at: new Date().toISOString() })
+    .eq("id", conversationId);
+}
+
+/** Latest message is an UNSEEN customer message — i.e. waiting on the admin. */
+function isUnseen(c: ChatConversation): boolean {
+  return (
+    c.last_message_sender_type === "customer" &&
+    (!c.admin_last_read_at ||
+      new Date(c.last_message_at).getTime() > new Date(c.admin_last_read_at).getTime())
+  );
+}
+
+/** Conversations awaiting an admin reply (for the escalation cron). */
+export async function listUnseenConversations(): Promise<
+  (ChatConversation & { branch_name?: string | null })[]
+> {
+  const supabase = getSupabaseAdmin();
+  const { data: rows } = await supabase
+    .from("chat_conversations")
+    .select("*, branches(name)")
+    .eq("last_message_sender_type", "customer")
+    .order("last_message_at", { ascending: true })
+    .limit(500);
+  const list = (rows ?? []) as (ChatConversation & { branches?: { name: string } | null })[];
+  return list.filter(isUnseen).map((row) => {
+    const { branches, ...rest } = row;
+    return { ...rest, branch_name: branches?.name ?? null };
+  });
+}
+
+/** Record that an "unanswered chat" reminder was just emailed. */
+export async function markEscalationSent(conversationId: string) {
+  const supabase = getSupabaseAdmin();
+  await supabase
+    .from("chat_conversations")
+    .update({ escalation_last_sent_at: new Date().toISOString() })
     .eq("id", conversationId);
 }
 
