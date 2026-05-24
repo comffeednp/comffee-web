@@ -172,6 +172,14 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
+  const photos = input.instructionPhotos ?? [];
+  // Some branches (e.g. staffed houses) have no self check-in sheet — for those
+  // we tell the guest the key details come via chat the day before.
+  const hasCheckInSheet = photos.some((p) => /check[\s-]?in/i.test(p.label));
+  const essentialsLead = hasCheckInSheet
+    ? "self check-in &amp; check-out steps, the door PIN and where to find it, and answers to the most common questions"
+    : "check-out steps, house rules, location, and answers to the most common questions";
+
   const body = `
     <h1 style="margin:16px 0 8px;font-size:32px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
       Booking confirmed.
@@ -201,13 +209,18 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // your stay essentials
     </p>
-    ${(input.instructionPhotos?.length ?? 0) > 0
+    ${photos.length > 0
       ? `<p style="margin:0 0 12px;color:#5a4a3c;font-size:14px;line-height:1.6;">
-          Your stay essentials are <strong>attached</strong> — self check-in &amp; check-out steps, the door PIN and where to find it, and answers to the most common questions. Give them a quick read before you arrive. If anything's unclear, just reply to this email or message us — we're happy to help.
+          Your stay essentials are <strong>attached</strong> — ${essentialsLead}. Give them a quick read before you arrive. If anything's unclear, just reply to this email or message us — we're happy to help.
         </p>
         <ul style="margin:0 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.8;">
-          ${input.instructionPhotos!.map((p) => `<li>${escapeHtml(p.label)}</li>`).join("")}
-        </ul>`
+          ${photos.map((p) => `<li>${escapeHtml(p.label)}</li>`).join("")}
+        </ul>
+        ${!hasCheckInSheet
+          ? `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
+              We'll <strong>message you the day before</strong> your stay with where to pick up your key.
+            </p>`
+          : ""}`
       : `<p style="margin:0 0 16px;color:#5a4a3c;font-size:14px;line-height:1.6;">
           We'll send your check-in details and door PIN closer to your stay. If you have any questions in the meantime, just reply to this email or message us anytime.
         </p>`}
