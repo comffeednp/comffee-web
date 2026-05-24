@@ -71,7 +71,59 @@ export async function findOrCreateConversation(
     .eq("customer_session_token", sessionToken)
     .maybeSingle();
 
-  if (existing) return existing as ChatConversation;
+  if (existing) {
+    const conv = existing as ChatConversation;
+    // Returning visitor opening chat with a DIFFERENT branch/dates than the
+    // thread currently holds = a new inquiry. Refresh the thread's context,
+    // drop a divider note so both sides see the switch, and alert the admin.
+    const isNewInquiry =
+      !!branchId &&
+      (branchId !== conv.branch_id ||
+        (checkIn ?? null) !== conv.inquiry_check_in ||
+        (checkOut ?? null) !== conv.inquiry_check_out);
+    if (isNewInquiry) {
+      await supabase
+        .from("chat_conversations")
+        .update({
+          branch_id: branchId,
+          inquiry_check_in: checkIn ?? null,
+          inquiry_check_out: checkOut ?? null,
+          status: "open",
+          last_message_at: new Date().toISOString(),
+        })
+        .eq("id", conv.id);
+      conv.branch_id = branchId;
+      conv.inquiry_check_in = checkIn ?? null;
+      conv.inquiry_check_out = checkOut ?? null;
+
+      const fmt = (s: string) =>
+        new Date(s + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+      const summary = [branchName, checkIn && checkOut ? `${fmt(checkIn)} – ${fmt(checkOut)}` : null]
+        .filter(Boolean)
+        .join(" · ");
+      if (summary) {
+        const note = `New inquiry — ${summary}`;
+        await supabase.from("chat_messages").insert({
+          conversation_id: conv.id,
+          sender_type: "system",
+          body: note,
+        });
+        await supabase
+          .from("chat_conversations")
+          .update({ last_message_body: note, last_message_sender_type: "system" })
+          .eq("id", conv.id);
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+        sendNewChatInquiry({
+          customerName: conv.customer_name ?? customerName,
+          branchName,
+          checkIn,
+          checkOut,
+          adminChatUrl: `${siteUrl}/admin/chat`,
+        }).catch(() => {});
+      }
+    }
+    return conv;
+  }
 
   const { data, error } = await supabase
     .from("chat_conversations")
