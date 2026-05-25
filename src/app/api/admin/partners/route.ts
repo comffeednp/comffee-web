@@ -17,7 +17,7 @@ async function requireSuperAdminApi() {
     .eq("is_active", true)
     .maybeSingle();
   if (!admin || (admin as { role?: string }).role !== "super_admin") return null;
-  return admin as { id: string; role: string };
+  return { id: (admin as { id: string }).id, role: (admin as { role: string }).role, email: user.email ?? null };
 }
 
 export async function GET() {
@@ -33,7 +33,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!(await requireSuperAdminApi())) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const me = await requireSuperAdminApi();
+  if (!me) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   let body: { email?: string; branchId?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "invalid_json" }, { status: 400 }); }
   const email = (body.email ?? "").trim().toLowerCase();
@@ -43,7 +44,20 @@ export async function POST(request: Request) {
   const branchId = (body.branchId ?? "").trim();
   if (!branchId) return NextResponse.json({ error: "branch_required" }, { status: 400 });
 
+  // Never add your own admin email, or one that already belongs to an admin/partner.
+  if (me.email && email === me.email.toLowerCase()) {
+    return NextResponse.json({ error: "cannot_add_self", detail: "That's your own admin email — you can't add yourself as a partner." }, { status: 400 });
+  }
+
   const db = getSupabaseAdmin();
+  const { data: existingAdmin } = await db
+    .from("admin_users")
+    .select("id")
+    .ilike("email", email)
+    .maybeSingle();
+  if (existingAdmin) {
+    return NextResponse.json({ error: "already_admin", detail: "That email already belongs to an admin or partner." }, { status: 400 });
+  }
   const { data: branch } = await db.from("branches").select("id").eq("id", branchId).maybeSingle();
   if (!branch) return NextResponse.json({ error: "invalid_branch" }, { status: 400 });
   const tempPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
