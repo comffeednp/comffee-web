@@ -30,6 +30,15 @@ const SOURCE_STYLE: Record<string, { dot: string; pill: string; label: string }>
   manual_block: { dot: "bg-mocha", pill: "bg-mocha/20 text-mocha border-mocha/30", label: "Blocked" },
 };
 
+// Diagonal-slash colors — must match the client calendars (BookingCalendar /
+// AvailabilityCalendar) so the admin and customer views read the same.
+// website = red, airbnb = amber; manual_block is admin-only (mocha).
+const SLASH_STYLE: Record<string, string> = {
+  website: "bg-red-400/60",
+  airbnb: "bg-amber/70",
+  manual_block: "bg-mocha",
+};
+
 function toYMD(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -224,8 +233,7 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
             const isToday = dayStr === todayStr;
             const isPast = dayStr < todayStr;
             const events = byDay.get(dayStr) ?? [];
-            const isManualBlock = events.some(e => e.source === "manual_block");
-            const isGuestBooking = events.some(e => e.source !== "manual_block");
+            const primarySrc = events[0]?.source;
             const isBlockStartDay = dayStr === blockStart;
             const inRange = isInRange(dayStr);
             const isHoverEnd = !!blockStart && dayStr === hover && dayStr > blockStart && !byDay.has(dayStr);
@@ -248,30 +256,25 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
                 ].join(" ")}
               >
                 <div className={[
-                  "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative",
+                  "w-9 h-9 flex items-center justify-center rounded-full font-mono text-sm transition-colors z-10 relative overflow-hidden",
                   isBlockStartDay ? "bg-cream text-bg font-bold" : "",
                   isHoverEnd ? "bg-cream/15 ring-1 ring-cream/30 text-cream" : "",
                   isToday && !isBlockStartDay && !isHoverEnd ? "ring-1 ring-amber text-amber font-semibold" : "",
                   !isBlockStartDay && !isHoverEnd
                     ? isPast
                       ? "text-mocha/30"
-                      : isManualBlock
-                        ? "text-mocha/50 line-through"
-                        : isGuestBooking
-                          ? "text-cream-dim hover:bg-bg-elev"
-                          : "text-cream-dim hover:bg-bg-elev"
+                      : events.length > 0
+                        ? "text-mocha"
+                        : "text-cream-dim hover:bg-bg-elev"
                     : "",
                 ].join(" ")}>
                   {date.getDate()}
+                  {events.length > 0 && !isBlockStartDay && !isHoverEnd && (
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
+                      <span className={`block h-px w-[140%] rotate-[-45deg] ${SLASH_STYLE[primarySrc] ?? "bg-mocha"}`} />
+                    </span>
+                  )}
                 </div>
-
-                {events.length > 0 && (
-                  <div className="flex gap-0.5 flex-wrap justify-center">
-                    {[...new Set(events.map(e => e.source))].slice(0, 3).map(src => (
-                      <span key={src} className={`w-1.5 h-1.5 rounded-full ${SOURCE_STYLE[src]?.dot ?? "bg-mocha"}`} />
-                    ))}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -350,7 +353,9 @@ export default function AdminBlockCalendar({ branches, reservations }: Props) {
         <div className="border-t border-line px-4 py-2 flex items-center gap-5 flex-wrap">
           {Object.entries(SOURCE_STYLE).map(([src, s]) => (
             <div key={src} className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+              <span className="relative h-5 w-5 rounded-full border border-line-bright bg-bg overflow-hidden flex items-center justify-center shrink-0">
+                <span className={`block h-px w-[150%] rotate-[-45deg] ${SLASH_STYLE[src] ?? "bg-mocha"}`} />
+              </span>
               <span className="font-mono text-[0.6rem] text-cream-dim">{s.label}</span>
             </div>
           ))}
