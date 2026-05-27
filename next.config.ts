@@ -22,7 +22,8 @@ const supabaseHost = (() => {
  * NOTE: a strict CSP would require nonces per request and is intentionally
  * skipped here — see SECURITY.md for the rationale and what to add later.
  */
-const securityHeaders = [
+// Everything EXCEPT Permissions-Policy (that one varies per route — see below).
+const baseSecurityHeaders = [
   {
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains; preload",
@@ -30,13 +31,20 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  {
-    key: "Permissions-Policy",
-    value:
-      "camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(self), usb=()",
-  },
   { key: "X-DNS-Prefetch-Control", value: "on" },
 ];
+
+// Permissions-Policy is route-specific. Default = lock everything down for the public site.
+// The staff attendance page is the ONE exception: it needs the phone camera (face check) and
+// geolocation (geofence). An empty allowlist "geolocation=()" makes the browser refuse silently
+// WITHOUT prompting (returns PERMISSION_DENIED) — which is exactly why location was dead on the
+// attendance page. So we scope camera+geolocation=(self) to that path only; everything else stays
+// fully disabled. Both policies are sent as a single header per route (never two conflicting ones,
+// or the browser would intersect to the stricter value and re-break location).
+const PERMISSIONS_STRICT =
+  "camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(self), usb=()";
+const PERMISSIONS_ATTENDANCE =
+  "camera=(self), microphone=(), geolocation=(self), interest-cohort=(), payment=(self), usb=()";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -54,9 +62,17 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      // Base headers on every route.
+      { source: "/(.*)", headers: baseSecurityHeaders },
+      // Attendance page: camera + location allowed (face check + geofence).
       {
-        source: "/(.*)",
-        headers: securityHeaders,
+        source: "/partners/:slug/attendance",
+        headers: [{ key: "Permissions-Policy", value: PERMISSIONS_ATTENDANCE }],
+      },
+      // Everything EXCEPT the attendance page: fully locked down (negative lookahead).
+      {
+        source: "/((?!partners/[^/]+/attendance).*)",
+        headers: [{ key: "Permissions-Policy", value: PERMISSIONS_STRICT }],
       },
     ];
   },

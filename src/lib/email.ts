@@ -144,6 +144,49 @@ function receiptRow(label: string, value: string, highlight = false): string {
   </tr>`;
 }
 
+/* ---------------- cash-move approval code ---------------- */
+
+interface CashMoveCodeInput {
+  to: string;
+  type: "drop" | "pickup" | "expense";
+  staffName: string;
+  branchName: string;
+  amount: number;
+  reason: string;
+  code: string;
+}
+
+// The website's version of the POS approval email: a worker entered a cash drop/pickup/expense on the
+// clock-in page, and this emails the owner the 6-digit code to relay back to the worker (relaying the
+// code IS the approval). Mirrors the POS sendApprovalEmail so it reads the same to the owner.
+export async function sendCashMoveApprovalCode(input: CashMoveCodeInput) {
+  const typeLabel = { drop: "CASH DROP", pickup: "CASH PICKUP", expense: "EXPENSE" }[input.type];
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Approval needed: ${escapeHtml(typeLabel)}
+    </h1>
+    <p style="margin:0 0 20px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      <strong>${escapeHtml(input.staffName)}</strong> is recording a cash move at <strong>${escapeHtml(input.branchName)}</strong>. Give them the code below to approve it — or ignore this email to deny it.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Type", typeLabel)}
+      ${receiptRow("Amount", "PHP " + input.amount.toFixed(2), true)}
+      ${receiptRow("Reason", input.reason)}
+    </table>
+    <div style="margin:24px 0 8px;text-align:center;">
+      <div style="font-size:11px;color:#8a7a68;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Approval code</div>
+      <div style="display:inline-block;background:#f0faf1;border:2px solid #2e7d32;border-radius:12px;padding:14px 28px;font-size:34px;font-weight:900;letter-spacing:8px;font-family:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;color:#2e7d32;">
+        ${escapeHtml(input.code)}
+      </div>
+      <div style="font-size:12px;color:#c0392b;margin-top:10px;font-weight:600;">Do NOT share if you want to deny this.</div>
+    </div>`;
+  return sendEmail({
+    to: input.to,
+    subject: `[APPROVAL NEEDED] ${typeLabel} — ${input.staffName} — PHP ${input.amount.toFixed(2)}`,
+    html: chrome({ preheader: `Approval code for ${typeLabel}`, bodyHtml: body }),
+  });
+}
+
 /* ---------------- booking confirmation ---------------- */
 
 interface BookingEmailInput {

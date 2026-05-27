@@ -20,6 +20,8 @@ export interface Branch {
   email: string | null;
   lat: number | null;
   lng: number | null;
+  geofence_radius_m: number;
+  geofence_required: boolean;
   description_md: string | null;
   hero_image_url: string | null;
   hours_text: string | null;
@@ -117,6 +119,50 @@ export interface AdminUser {
   branch_id: string | null;
   is_active: boolean;
   created_at: string;
+}
+
+// ── Cloud attendance (see migration 0026) ────────────────────────────────────
+export type AttendanceStatus = "pending" | "approved" | "rejected" | "disabled";
+export type AttendanceClockType = "clock_in" | "clock_out";
+
+export interface BranchStaff {
+  id: string;
+  branch_id: string;
+  auth_user_id: string | null;
+  email: string;
+  name: string;
+  face_descriptor: number[] | null; // 128-d face-api vector
+  selfie_url: string | null;
+  status: AttendanceStatus;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceBinding {
+  id: string;
+  staff_id: string;
+  device_token: string;
+  user_agent: string | null;
+  bound_at: string;
+  last_seen_at: string | null;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  branch_id: string;
+  staff_id: string;
+  clock_type: AttendanceClockType;
+  recorded_at: string;
+  selfie_url: string | null;
+  face_match_score: number | null;
+  gps_lat: number | null;
+  gps_lng: number | null;
+  gps_accuracy_m: number | null;
+  distance_m: number | null;
+  verified_ip: string | null;
+  device_token: string | null;
+  covering_for_staff_id: string | null; // a clock-in: the staff this reliever is covering for (else null)
 }
 
 // Convenience: a fully hydrated branch (used by [slug] page)

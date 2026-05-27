@@ -13,7 +13,6 @@ import LivePCStations from "@/components/site/LivePCStations";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import BranchChatContext from "@/components/site/BranchChatContext";
-import StayInstructions from "@/components/site/StayInstructions";
 import {
   ArrowRight,
   Clock,
@@ -391,10 +390,8 @@ export default async function BranchDetailPage({
         </section>
       )}
 
-      {/* ============================================================
-          STAY INSTRUCTIONS (playcation only; confirmed bookings see it)
-          ============================================================ */}
-      {isPlay && <StayInstructions slug={branch.slug} />}
+      {/* Check-in instructions (door PINs etc.) are EMAIL-ONLY now — sent as attachments on a
+          confirmed booking. They are no longer shown on the website at all. */}
 
       {/* ============================================================
           FINAL CTA

@@ -131,6 +131,10 @@ export async function memberSignOutAction() {
 export async function googleSignInAction(formData: FormData) {
   const next = String(formData.get("next") ?? "/account");
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
+  // Optional: attendance passes prompt="select_account" so Google ALWAYS shows the account
+  // chooser instead of silently reusing the one signed-in account (a shared/clock-in phone
+  // must let each staffer pick THEIR account). Member login omits it → unchanged behaviour.
+  const promptParam = String(formData.get("prompt") ?? "");
 
   const h = await headers();
   const forwardedHost = h.get("x-forwarded-host");
@@ -144,9 +148,21 @@ export async function googleSignInAction(formData: FormData) {
     provider: "google",
     options: {
       redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
+      ...(promptParam ? { queryParams: { prompt: promptParam } } : {}),
     },
   });
 
   if (error || !data.url) redirect("/account/login?error=oauth_failed");
   redirect(data.url);
+}
+
+// Sign out, then return to `next` — used by the attendance page's "use a different account"
+// so a leftover session on a shared phone can be swapped without going to the member area.
+export async function switchAccountAction(formData: FormData) {
+  const next = String(formData.get("next") ?? "/");
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const supabase = await getSupabaseServer();
+  await supabase.auth.signOut();
+  revalidatePath("/", "layout");
+  redirect(safeNext);
 }
