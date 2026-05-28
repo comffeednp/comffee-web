@@ -98,17 +98,15 @@ export async function POST(
   }
   const payload = sub.payload as Payload;
 
-  // Stage 7b owner-locked rule: online reservations require GCash Business. Block the approval
-  // if the partner submitted reservations_enabled=true without gcash_type='business' — the admin
-  // would have to send it back to be corrected first. (Business has receipt anti-fraud; P2P is
-  // for in-store only.)
-  if (payload.reservations_enabled === true && payload.gcash_type !== "business") {
+  // P2P removed (2026-05-28) — any uploaded QR is treated as Business. The only requirement is
+  // that a QR exists when reservations_enabled is on; the customer's payment page renders it.
+  if (payload.reservations_enabled === true && !payload.gcash_qr_url) {
     return NextResponse.json(
       {
         ok: false,
-        error: "business_qr_required_for_reservations",
+        error: "qr_required_for_reservations",
         detail:
-          "Online reservations need a GCash Business QR. Reject this submission with a note asking the owner to either upload a Business QR or disable Online Reservations.",
+          "Online reservations need a GCash Business QR. Reject this submission with a note asking the owner to either upload a QR or disable Online Reservations.",
       },
       { status: 409 },
     );
