@@ -138,11 +138,24 @@ export async function POST(
   // ── Auto in/out: the previous record decides direction ──
   const { data: last } = await admin
     .from("attendance_records")
-    .select("clock_type")
+    .select("clock_type, recorded_at")
     .eq("staff_id", staff.id)
     .order("recorded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // Idempotency window (2026-05-29): if this staffer clocked just seconds ago, treat this request as
+  // a DUPLICATE — a double-tap, a slow-network retry, or a page reload firing the action again — and
+  // return that SAME state WITHOUT inserting a new record. This is what stops the "reloaded and got
+  // suddenly clocked OUT" bug: without it, a second press toggles clock_in → clock_out within seconds
+  // and looks like a 0-minute shift. No legitimate in→out pair happens within 30s, so this is safe.
+  if (last?.recorded_at) {
+    const sinceMs = Date.now() - new Date(last.recorded_at).getTime();
+    if (sinceMs >= 0 && sinceMs < 30_000) {
+      return NextResponse.json({ ok: true, clock_type: last.clock_type, deduped: true });
+    }
+  }
+
   const clockType = nextClockType(last?.clock_type);
 
   // Reliever: on a clock-IN the worker may flag WHO they're covering for (a sudden absence). The

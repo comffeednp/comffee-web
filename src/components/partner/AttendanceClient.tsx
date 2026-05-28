@@ -25,6 +25,19 @@ type ActivePaymentQr = {
   last_attempt_reason?: string | null;
 };
 
+// A pending QR is "dead" once it's well past its 5-minute window + grace (8 min since mint). Customers
+// can only pay via the QR the cashier showed; if no receipt ever matched by then it's stale (e.g. the
+// customer paid the static counter QR instead — owner removing that). We stop showing a dead QR so the
+// staff phone never hangs on an expired card, and a reload won't resurrect it. The POS row stays
+// 'pending' for audit but a receipt that late can't match it anyway (the POS checks the receipt's time
+// against the QR's mint time). [owner 2026-05-29]
+const QR_DEAD_MS = 8 * 60 * 1000;
+function isDeadQr(row: { created_at?: string | null } | null): boolean {
+  if (!row?.created_at) return false;
+  const ms = Date.parse(row.created_at);
+  return !Number.isNaN(ms) && Date.now() - ms > QR_DEAD_MS;
+}
+
 interface Props {
   slug: string;
   branchName: string;
@@ -383,7 +396,7 @@ export default function AttendanceClient({
       .limit(1)
       .then(({ data }: { data: ActivePaymentQr[] | null }) => {
         if (cancelled) return;
-        if (data && data[0]) setActiveQr(data[0]);
+        if (data && data[0] && !isDeadQr(data[0])) setActiveQr(data[0]); // don't resurrect a stale QR on reload
       });
 
     const channel = supabase
@@ -412,8 +425,10 @@ export default function AttendanceClient({
               setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
             }, 2600);
           } else if (row.status === "pending") {
-            // Includes a fresh last_attempt_* on a RED so the card can show the retake reason.
-            setActiveQr(row);
+            // Includes a fresh last_attempt_* on a RED so the card can show the retake reason. But if
+            // the row is already past its window+grace (stale), hide it instead of resurfacing it.
+            if (isDeadQr(row)) setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
+            else setActiveQr(row);
           } else {
             // cancelled / expired → hide immediately.
             setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
@@ -511,12 +526,19 @@ export default function AttendanceClient({
   }
 
   async function handleClock(r: LivenessResult) {
+    if (busy) return; // guard: never fire two clock requests at once (the server also dedups within 30s)
     setCapture(null);
     setBusy(true);
     setActionMsg("");
     try {
       const fd = new FormData();
-      fd.append("selfie", r.selfie, "selfie.jpg");
+      // Compress the audit selfie before upload — a raw phone photo is 3–6 MB and over the cafe's weak
+      // uplink that was the bulk of the clock-in wait. Downscale to <=1920px / JPEG ~0.85 in the
+      // browser (same path receipts use) → ~10x smaller, clock-in goes from many seconds to ~1-2s.
+      // The face descriptor is computed client-side and sent separately, so compression doesn't affect
+      // the match — the selfie is only the audit image.
+      const selfieBlob = await shrinkImageForUpload(r.selfie);
+      fd.append("selfie", selfieBlob, "selfie.jpg");
       fd.append("descriptor", JSON.stringify(r.descriptor));
       fd.append("challenges", JSON.stringify(r.challenges));
       fd.append("deviceToken", getDeviceToken());
@@ -827,6 +849,9 @@ export default function AttendanceClient({
   const qrExpiresMs = activeQr?.expires_at ? Date.parse(activeQr.expires_at) : NaN;
   const qrRemainMs = Number.isNaN(qrExpiresMs) ? null : qrExpiresMs - nowTs;
   const qrExpired = qrRemainMs != null && qrRemainMs <= 0;
+  // Past the window + ~3 min grace → the card auto-hides (live), so a never-matched QR can't hang on
+  // the staff phone. A confirmed (green) card is exempt — it shows its success beat then hides itself.
+  const qrDead = !Number.isNaN(qrExpiresMs) && nowTs > qrExpiresMs + 3 * 60 * 1000;
   const fmtCountdown = (ms: number) => {
     const s = Math.max(0, Math.floor(ms / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -844,7 +869,7 @@ export default function AttendanceClient({
           + within the 5-min window) and writes back a GREEN (confirmed) or RED (retake) result,
           which the card shows live. 5-minute countdown is display-only; a late photo of an in-window
           payment still confirms because the POS goes by the receipt's printed time. */}
-      {qrGuardsPass && activeQr && (
+      {qrGuardsPass && activeQr && (qrConfirmed || !qrDead) && (
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <div className="w-[min(94vw,26rem)] rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
             {qrConfirmed ? (

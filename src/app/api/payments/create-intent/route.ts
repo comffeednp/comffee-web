@@ -75,11 +75,33 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, slug, name, type, security_deposit_php")
+    .select("id, slug, name, type, security_deposit_php, booking_cutoff_time")
     .eq("id", v.branchId)
     .maybeSingle();
   if (!branch || branch.type !== "playcation") {
     return NextResponse.json({ error: "branch_not_bookable" }, { status: 400 });
+  }
+
+  // Server-side booking cutoff (owner 2026-05-29). A branch can auto-block SAME-DAY check-ins after a
+  // cutoff time (Anonas = 22:00 / 10 PM). The booking page applies this client-side to set the earliest
+  // selectable date, but a stale/crafted request could still POST a "today" check-in past the cutoff —
+  // which then shows up as a booking it shouldn't. Enforce it on the server too. PH is UTC+8 all year
+  // (no DST). Branches with no cutoff set (NULL) are unrestricted.
+  const cutoff = (branch as { booking_cutoff_time?: string | null }).booking_cutoff_time;
+  if (cutoff) {
+    const [ch, cm] = String(cutoff).split(":").map(Number);
+    const cutoffMin = (Number.isFinite(ch) ? ch : 22) * 60 + (Number.isFinite(cm) ? cm : 0);
+    const nowPH = new Date(Date.now() + 8 * 3600 * 1000);
+    const todayPH = nowPH.toISOString().slice(0, 10);
+    if (v.checkIn === todayPH) {
+      const nowMin = nowPH.getUTCHours() * 60 + nowPH.getUTCMinutes();
+      if (nowMin >= cutoffMin) {
+        return NextResponse.json(
+          { error: "checkin_past_cutoff", detail: `Bookings for today close at ${cutoff}. The earliest check-in is tomorrow.` },
+          { status: 400 },
+        );
+      }
+    }
   }
   const SECURITY_DEPOSIT_PHP = (branch as { security_deposit_php?: number | null }).security_deposit_php != null
     ? Number((branch as { security_deposit_php: number }).security_deposit_php)
