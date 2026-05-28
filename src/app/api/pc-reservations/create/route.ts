@@ -48,9 +48,12 @@ export async function POST(request: Request) {
   // Verify branch is a reservable type (cafe or partner_cafe) AND the owner has enabled online
   // reservations (Stage 6 toggle in the POS Reservation tab). When the toggle is off, customers
   // see "walk-in only" on the public page; this guard catches any deep-link bypass attempts.
+  // Stage 7b additionally enforces: online reservations require gcash_type='business' (receipt
+  // anti-fraud). If the branch row is somehow in an inconsistent state (toggle on but type wrong),
+  // we refuse here rather than take money the cashier can't verify.
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, type, name, reservations_enabled")
+    .select("id, type, name, reservations_enabled, gcash_type, gcash_qr_url")
     .eq("id", v.branchId)
     .maybeSingle();
   if (!branch || (branch.type !== "cafe" && branch.type !== "partner_cafe")) {
@@ -58,6 +61,9 @@ export async function POST(request: Request) {
   }
   if (!branch.reservations_enabled) {
     return NextResponse.json({ error: "reservations_disabled" }, { status: 403 });
+  }
+  if (branch.gcash_type !== "business" || !branch.gcash_qr_url) {
+    return NextResponse.json({ error: "branch_payment_not_ready" }, { status: 503 });
   }
 
   // Verify station exists + is VACANT right now

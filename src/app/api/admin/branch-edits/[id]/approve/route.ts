@@ -98,6 +98,22 @@ export async function POST(
   }
   const payload = sub.payload as Payload;
 
+  // Stage 7b owner-locked rule: online reservations require GCash Business. Block the approval
+  // if the partner submitted reservations_enabled=true without gcash_type='business' — the admin
+  // would have to send it back to be corrected first. (Business has receipt anti-fraud; P2P is
+  // for in-store only.)
+  if (payload.reservations_enabled === true && payload.gcash_type !== "business") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "business_qr_required_for_reservations",
+        detail:
+          "Online reservations need a GCash Business QR. Reject this submission with a note asking the owner to either upload a Business QR or disable Online Reservations.",
+      },
+      { status: 409 },
+    );
+  }
+
   // 1) Branches row: update existing or insert new.
   let branchId: string | null = sub.branch_id;
   if (branchId) {
