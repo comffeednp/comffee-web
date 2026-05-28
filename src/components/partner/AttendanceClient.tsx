@@ -14,6 +14,15 @@ type ActivePaymentQr = {
   amount: number | string;
   qr_image_url: string;
   status: string;
+  // 5-minute display countdown (owner 2026-05-29). expires_at = mint time + 5 min.
+  expires_at?: string | null;
+  created_at?: string | null;
+  // Green/red photo result written by the POS after it reads each uploaded photo. last_attempt_ok
+  // true = confirmed (row also flips to 'received'); false = retake, with the reason. The row stays
+  // 'pending' on a red so the QR + Take Photo button remain on screen.
+  last_attempt_at?: string | null;
+  last_attempt_ok?: boolean | null;
+  last_attempt_reason?: string | null;
 };
 
 interface Props {
@@ -151,12 +160,26 @@ export default function AttendanceClient({
   // Online payment (GCash) receipt upload — a working cashier sends receipt photos from here; the
   // POS is pushed each one and records it against their open shift.
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  // Second camera input for the full-screen QR card's "Take Photo of Receipt" button. Both inputs
+  // are now camera-only (capture="environment" → rear camera straight away; owner 2026-05-29: no
+  // gallery, no bulk). They stay SEPARATE only because they're mounted in different places — this
+  // one lives inside the QR card (shown only while a QR is active), receiptInputRef lives in the
+  // always-clocked-in panel — so each button clicks an input that is guaranteed to be on the page.
+  const receiptCameraInputRef = useRef<HTMLInputElement>(null);
   // What the NEXT upload is: kind (gcash / cash_movement) + movement type. Refs (not state) so the
   // file input's onChange reads the value set synchronously when the button was tapped (no stale closure).
   const uploadKindRef = useRef<"gcash" | "cash_movement">("gcash");
   const uploadTypeRef = useRef<"drop" | "pickup" | "expense" | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptMsg, setReceiptMsg] = useState<string>("");
+  // Green/red feedback for the QR-flow photo (owner 2026-05-29). "reading" = photo sent, waiting on
+  // the till to read it; "rejected" = the till couldn't confirm it (photoReason says why, retake);
+  // "idle" = nothing pending (or confirmed — the GREEN card takes over on status 'received').
+  const [photoPhase, setPhotoPhase] = useState<"idle" | "reading" | "rejected">("idle");
+  const [photoReason, setPhotoReason] = useState<string>("");
+  // The last_attempt_at value we've already reacted to — so we show each NEW till verdict exactly
+  // once and don't re-fire on unrelated row updates (the timer ticks, etc.).
+  const seenAttemptRef = useRef<string | null>(null);
   // Which upload button is currently working ("gcash" | "drop" | "pickup" | "expense") → that button
   // shows a spinner so the tap feels responsive; the others disable.
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
@@ -353,7 +376,7 @@ export default function AttendanceClient({
     // Initial fetch — covers the page-reload case where a pending QR already exists.
     supabase
       .from("pos_active_payment_qrs")
-      .select("id, nickname, amount, qr_image_url, status")
+      .select("id, nickname, amount, qr_image_url, status, expires_at, created_at, last_attempt_at, last_attempt_ok, last_attempt_reason")
       .eq("cashier_staff_id", staffId)
       .eq("status", "pending")
       .order("created_at", { ascending: false })
@@ -381,10 +404,18 @@ export default function AttendanceClient({
             return;
           }
           if (!row) return;
-          if (row.status === "pending") {
+          if (row.status === "received") {
+            // Confirmed — show the GREEN card for a beat so the cashier sees it landed, then hide.
+            setActiveQr(row);
+            setTimeout(() => {
+              if (cancelled) return;
+              setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
+            }, 2600);
+          } else if (row.status === "pending") {
+            // Includes a fresh last_attempt_* on a RED so the card can show the retake reason.
             setActiveQr(row);
           } else {
-            // Flipped to received / cancelled / expired → hide immediately.
+            // cancelled / expired → hide immediately.
             setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
           }
         },
@@ -396,6 +427,44 @@ export default function AttendanceClient({
       supabase.removeChannel(channel);
     };
   }, [staffId, branchId, isClockedIn]);
+
+  // A new QR (or the QR going away) → clear the local photo feedback AND reset the verdict marker to
+  // this QR's own last_attempt (null for a fresh one). Resetting matters: it stops a prior QR's
+  // marker from carrying over, and lets a pre-existing verdict on a page-reload QR still show. The
+  // verdict effect below then fires only for a genuinely NEW verdict on THIS QR.
+  useEffect(() => {
+    setPhotoPhase("idle");
+    setPhotoReason("");
+    seenAttemptRef.current = null;
+  }, [activeQr?.id]);
+
+  // React to each NEW till verdict on the active QR. ok=false → show the retake reason (the row
+  // stays 'pending', so the QR + Take Photo button remain). ok=true → the row also flips to
+  // 'received' and the GREEN card takes over, so just drop the "reading" spinner.
+  useEffect(() => {
+    const at = activeQr?.last_attempt_at ?? null;
+    if (!at || seenAttemptRef.current === at) return;
+    seenAttemptRef.current = at;
+    if (activeQr?.last_attempt_ok === false) {
+      setPhotoPhase("rejected");
+      setPhotoReason(activeQr?.last_attempt_reason || "Couldn't read it — take the photo again.");
+    } else {
+      setPhotoPhase("idle");
+    }
+  }, [activeQr?.last_attempt_at, activeQr?.last_attempt_ok, activeQr?.last_attempt_reason]);
+
+  // Safety net: "Reading…" should never spin forever. If the till hasn't sent a verdict within 25s
+  // (it normally takes 2–6s), drop back to a retake prompt so the cashier is never stuck staring at
+  // a spinner with a disabled button. A late GREEN still wins — it shows via the row's 'received'
+  // status (the green card), independent of this local phase.
+  useEffect(() => {
+    if (photoPhase !== "reading") return;
+    const t = setTimeout(() => {
+      setPhotoPhase("rejected");
+      setPhotoReason("Taking longer than usual — take the photo again.");
+    }, 25000);
+    return () => clearTimeout(t);
+  }, [photoPhase]);
 
   // Liveness overlay + clock/enroll action state.
   const [capture, setCapture] = useState<null | "enroll" | "clock">(null);
@@ -541,6 +610,13 @@ export default function AttendanceClient({
     }
     setReceiptBusy(false);
     setUploadingKey(null);
+    // GCash receipt for the live QR flow → flip to "reading": the till pulls + reads the photo (a
+    // couple seconds) and writes back GREEN (confirmed) or RED (retake, with reason). For a cash
+    // movement / bulk receipt there's no live QR to confirm, so keep the plain sent message.
+    if (kind === "gcash" && ok > 0) {
+      setPhotoPhase("reading");
+      setPhotoReason("");
+    }
     setReceiptMsg(
       ok === files.length
         ? `✓ ${ok} ${label}${ok === 1 ? "" : "s"} sent — your POS will record ${ok === 1 ? "it" : "them"}.`
@@ -743,72 +819,133 @@ export default function AttendanceClient({
   // is OFF for this branch, the inside check is skipped (matches the existing clock-in policy).
   const qrGuardsPass = !!activeQr && isClockedIn && (geofenceRequired ? inside : true);
 
+  // 5-minute QR countdown — DISPLAY ONLY. The real 5-min rule is enforced on the receipt's printed
+  // time in the POS, so a late photo of an in-window payment still confirms. At 0 the QR greys out
+  // (no new customer scans it) but the Take Photo button stays for the grace window (owner choice
+  // 2026-05-29). qrConfirmed flips on when the POS confirms → the GREEN card shows.
+  const qrConfirmed = activeQr?.status === "received";
+  const qrExpiresMs = activeQr?.expires_at ? Date.parse(activeQr.expires_at) : NaN;
+  const qrRemainMs = Number.isNaN(qrExpiresMs) ? null : qrExpiresMs - nowTs;
+  const qrExpired = qrRemainMs != null && qrRemainMs <= 0;
+  const fmtCountdown = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
   return (
     <div className="relative">
       {/* The map fills the viewport; the site Footer (from the layout) sits below. */}
       <div ref={mapDivRef} className="h-[100svh] w-full bg-bg-soft" />
 
-      {/* ── LIVE GCASH PAYMENT QR (Chunk C, 2026-05-29) ────────────────────────────────────────
-          Full-screen takeover that appears the instant the POS mints a QR for this cashier (the
-          row's INSERT arrives via Supabase Realtime, see the effect above). Shows the QR + amount
-          + the 10-letter code printed on the customer's GCash receipt. Auto-hides when the OCR
-          on the POS matches the receipt (row status flips to 'received'), when the cashier
-          cancels in the POS, or when this staffer clocks out / leaves the geofence. */}
+      {/* ── LIVE GCASH PAYMENT QR (redesigned 2026-05-29) ──────────────────────────────────────
+          Full-screen takeover that appears the instant the POS mints a QR for this cashier (INSERT
+          via Supabase Realtime). The cashier shows it to the customer, then photographs the GCash
+          success screen with the rear camera. The POS reads the photo (amount + paid-to-this-cafe
+          + within the 5-min window) and writes back a GREEN (confirmed) or RED (retake) result,
+          which the card shows live. 5-minute countdown is display-only; a late photo of an in-window
+          payment still confirms because the POS goes by the receipt's printed time. */}
       {qrGuardsPass && activeQr && (
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <div className="w-[min(94vw,26rem)] rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
-            <div className="mb-3 flex items-center justify-center gap-2 text-stone-600">
-              <QrCode className="h-4 w-4" />
-              <span className="text-xs font-bold uppercase tracking-wider">Show this to the customer</span>
-            </div>
-            {/* The QR image itself — bg-white + p-2 makes it scannable on any phone screen. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={activeQr.qr_image_url}
-              alt="GCash payment QR"
-              className="mx-auto block h-auto w-full max-w-[20rem] rounded-lg bg-white"
-            />
-            <div className="mt-4 text-center">
-              <div className="text-[0.7rem] font-bold uppercase tracking-widest text-stone-500">Amount</div>
-              <div className="font-display text-4xl font-extrabold text-amber-700">
-                ₱{Number(activeQr.amount).toFixed(2)}
+            {qrConfirmed ? (
+              /* GREEN — confirmed. Shows for ~2.6s (realtime handler), then the card hides. */
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <CheckCircle2 className="h-16 w-16 text-green-600" />
+                <div className="text-2xl font-extrabold text-green-700">Paid — confirmed!</div>
+                <div className="text-sm font-semibold text-stone-600">
+                  ₱{Number(activeQr.amount).toFixed(2)} received. You can ring up the next customer.
+                </div>
               </div>
-            </div>
-            <div className="mt-3 rounded-lg bg-stone-50 px-3 py-2 text-center">
-              <div className="text-[0.65rem] font-bold uppercase tracking-widest text-stone-500">
-                Code on receipt
-              </div>
-              <div className="mt-0.5 font-mono text-lg font-bold tracking-wider text-stone-800">
-                {activeQr.nickname}
-              </div>
-            </div>
-            {/* Required next step (owner 2026-05-29: "automatically mark as paid once the cashier takes
-                a photo and google vision confirms it"). Big amber call-to-action so the cashier knows
-                the order isn't done until they photograph the receipt. Tapping reuses the same camera
-                input as the existing GCash receipt upload flow above. */}
-            <div className="mt-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 p-3 text-center">
-              <div className="mb-2 text-[0.65rem] font-bold uppercase tracking-widest text-amber-700">
-                Required next step
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  uploadKindRef.current = "gcash"
-                  uploadTypeRef.current = null
-                  receiptInputRef.current?.click()
-                }}
-                disabled={receiptBusy}
-                title="Take a photo of the customer's GCash success screen"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow transition hover:bg-amber-700 disabled:opacity-60"
-              >
-                <Camera className="h-4 w-4" />
-                {receiptBusy ? "Uploading…" : "Take Photo of Receipt"}
-              </button>
-              <div className="mt-2 text-[0.7rem] leading-snug text-amber-900">
-                After the customer pays, photograph their GCash success screen.
-                Google Vision will match the <span className="font-mono font-bold">{activeQr.nickname}</span> code and mark the order paid automatically — this QR will then disappear.
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-center gap-2 text-stone-600">
+                  <QrCode className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Show this to the customer</span>
+                </div>
+                {/* The QR image — greys out + dims once the 5-min timer hits 0 (display only). */}
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={activeQr.qr_image_url}
+                    alt="GCash payment QR"
+                    className={`mx-auto block h-auto w-full max-w-[20rem] rounded-lg bg-white transition ${qrExpired ? "opacity-25 grayscale" : ""}`}
+                  />
+                  {qrExpired && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="rounded-full bg-stone-800/85 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                        QR expired
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Amount + 5-minute countdown. */}
+                <div className="mt-4 flex items-end justify-center gap-4 text-center">
+                  <div>
+                    <div className="text-[0.7rem] font-bold uppercase tracking-widest text-stone-500">Amount</div>
+                    <div className="font-display text-4xl font-extrabold text-amber-700">
+                      ₱{Number(activeQr.amount).toFixed(2)}
+                    </div>
+                  </div>
+                  {qrRemainMs != null && (
+                    <div>
+                      <div className="text-[0.7rem] font-bold uppercase tracking-widest text-stone-500">
+                        {qrExpired ? "Window" : "Time left"}
+                      </div>
+                      <div className={`font-mono text-2xl font-extrabold ${qrExpired ? "text-stone-400" : "text-stone-700"}`}>
+                        {qrExpired ? "0:00" : fmtCountdown(qrRemainMs)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Required next step. Camera-only input → rear camera opens straight away. */}
+                <div className="mt-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 p-3 text-center">
+                  <div className="mb-2 text-[0.65rem] font-bold uppercase tracking-widest text-amber-700">
+                    Required next step
+                  </div>
+                  <input
+                    ref={receiptCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleReceiptUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      uploadKindRef.current = "gcash"
+                      uploadTypeRef.current = null
+                      receiptCameraInputRef.current?.click()
+                    }}
+                    disabled={receiptBusy || photoPhase === "reading"}
+                    title="Take a photo of the customer's GCash success screen"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow transition hover:bg-amber-700 disabled:opacity-60"
+                  >
+                    <Camera className="h-4 w-4" />
+                    {receiptBusy ? "Sending…" : photoPhase === "rejected" ? "Take Photo Again" : "Take Photo of Receipt"}
+                  </button>
+
+                  {/* Live result of the last photo. */}
+                  {photoPhase === "reading" ? (
+                    <div className="mt-2 flex items-center justify-center gap-2 text-[0.75rem] font-semibold text-amber-900">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Reading your photo…
+                    </div>
+                  ) : photoPhase === "rejected" ? (
+                    <div className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-[0.75rem] font-semibold leading-snug text-red-700">
+                      ✗ {photoReason}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[0.7rem] leading-snug text-amber-900">
+                      After the customer pays, photograph their GCash success screen. It confirms the
+                      order automatically once the amount, time and reference are read.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1060,11 +1197,13 @@ export default function AttendanceClient({
                   receipts or cash moves to a shift; the server routes enforce this too. */}
               {isClockedIn ? (
               <div className="mt-3 border-t border-line pt-3">
+                {/* Camera-only (owner 2026-05-29: "no more bulk uploads or from gallery"). capture
+                    forces the rear camera; no `multiple` — one live shot at a time. */}
                 <input
                   ref={receiptInputRef}
                   type="file"
                   accept="image/*"
-                  multiple
+                  capture="environment"
                   className="hidden"
                   onChange={handleReceiptUpload}
                 />
@@ -1125,10 +1264,12 @@ export default function AttendanceClient({
                         }
                         className="mb-2 w-full rounded-lg border border-line bg-bg-elev px-3 py-2 text-sm text-cream outline-none"
                       />
+                      {/* Camera-only too (owner 2026-05-29: no gallery anywhere). */}
                       <input
                         ref={cashPhotoInputRef}
                         type="file"
                         accept="image/*"
+                        capture="environment"
                         className="hidden"
                         onChange={(e) => setCashPhoto(e.target.files?.[0] ?? null)}
                       />
