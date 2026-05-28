@@ -205,5 +205,21 @@ export async function POST(
       .eq("id", binding.id);
   }
 
+  // ── End-of-shift cleanup (Chunk C, 2026-05-29) ──
+  // On clock-out, auto-cancel any still-pending in-store GCash QRs scoped to this staffer so a
+  // stale QR doesn't carry over to the next shift. Best-effort: failures here don't block the
+  // clock-out, and the POS-side variance math doesn't read this table anyway.
+  if (clockType === "clock_out") {
+    await admin
+      .from("pos_active_payment_qrs")
+      .update({
+        status: "cancelled",
+        cancelled_at: now.toISOString(),
+        cancelled_reason: "cashier_clocked_out",
+      })
+      .eq("cashier_staff_id", staff.id)
+      .eq("status", "pending");
+  }
+
   return NextResponse.json({ ok: true, clock_type: clockType, distance: distanceM });
 }

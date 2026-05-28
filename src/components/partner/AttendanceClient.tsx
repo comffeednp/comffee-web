@@ -1,9 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MapPin, LocateFixed, Loader2, CheckCircle2, XCircle, Clock, ScanFace, Receipt, Camera } from "lucide-react";
+import { MapPin, LocateFixed, Loader2, CheckCircle2, XCircle, Clock, ScanFace, Receipt, Camera, QrCode } from "lucide-react";
 import type { AttendanceStatus } from "@/lib/supabase/types";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import LivenessCapture, { type LivenessResult } from "./LivenessCapture";
+
+// Live in-store payment QR pushed from the POS the moment the cashier picks GCash (or "Send GCash
+// QR" on a split). Filtered server-side by RLS (migration 0037) to this signed-in staffer only.
+type ActivePaymentQr = {
+  id: string;
+  nickname: string;
+  amount: number | string;
+  qr_image_url: string;
+  status: string;
+};
 
 interface Props {
   slug: string;
@@ -129,6 +140,14 @@ export default function AttendanceClient({
   // status poll (approved staff only); coveringFor = the picked staff id ("" = not covering anyone).
   const [coworkers, setCoworkers] = useState<{ id: string; name: string }[]>([]);
   const [coveringFor, setCoveringFor] = useState<string>("");
+
+  // ── Live in-store GCash payment QR (Chunk C) ────────────────────────────────────────────────
+  // staffId / branchId arrive from the status route; we need both to scope the Realtime channel.
+  // activeQr is set the instant the POS writes a row scoped to this staffer (or null when the row
+  // flips to received/cancelled, or when this staffer steps outside the geofence / clocks out).
+  const [staffId, setStaffId] = useState<string | null>(null);
+  const [branchId, setBranchId] = useState<string | null>(null);
+  const [activeQr, setActiveQr] = useState<ActivePaymentQr | null>(null);
   // Online payment (GCash) receipt upload — a working cashier sends receipt photos from here; the
   // POS is pushed each one and records it against their open shift.
   const receiptInputRef = useRef<HTMLInputElement>(null);
@@ -258,6 +277,8 @@ export default function AttendanceClient({
           setEnrolled(data.enrolled);
           setDeviceState(data.deviceState ?? "none");
           setCoworkers(data.coworkers ?? []);
+          setStaffId(data.staffId ?? null);
+          setBranchId(data.branchId ?? null);
         }
       } catch {
         /* transient network blip — the next tick retries */
@@ -282,6 +303,8 @@ export default function AttendanceClient({
           setClockAt(data.lastClockAt ?? null);
           setDeviceState(data.deviceState ?? "none");
           setCoworkers(data.coworkers ?? []);
+          setStaffId(data.staffId ?? null);
+          setBranchId(data.branchId ?? null);
         }
       } catch {
         /* ignore — button just defaults to Clock In */
@@ -298,6 +321,81 @@ export default function AttendanceClient({
     const id = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(id);
   }, [isClockedIn]);
+
+  // ── Live in-store GCash payment QR (Chunk C, 2026-05-29) ────────────────────────────────────
+  // The cashier picks GCash on the POS → POS writes a row to pos_active_payment_qrs (with their
+  // cashier_staff_id = this signed-in user). Supabase Realtime pushes the INSERT down here within
+  // ~1 second; we set it as activeQr and the full-screen card below reveals. The three guards
+  // (clocked in / inside geofence / is the open shift's cashier) are enforced two ways:
+  //
+  //   1. POS-side: only writes a row when the open shift's cashier matches a real branch_staff
+  //      link (cloud_staff_id). A co-worker who isn't running the till never has a row written.
+  //   2. RLS (migration 0037): authenticated user only sees rows where cashier_staff_id matches
+  //      their own branch_staff entry (by email). A clocked-in co-worker can subscribe, but the
+  //      server filters every row out — they receive nothing.
+  //
+  // Geofence + clocked-in are render-time gates (below in the JSX): if you step outside the cafe
+  // or clock out, the card hides instantly without unsubscribing — so re-entering / re-clocking
+  // shows it again the moment you do.
+  //
+  // We also do a one-time SELECT on (re)connect to catch any row that was inserted BEFORE the
+  // channel was subscribed (e.g., page reload mid-payment).
+  useEffect(() => {
+    if (!staffId || !branchId || !isClockedIn) return;
+    let cancelled = false;
+    let supabase;
+    try {
+      supabase = getSupabaseBrowser();
+    } catch {
+      return;
+    }
+
+    // Initial fetch — covers the page-reload case where a pending QR already exists.
+    supabase
+      .from("pos_active_payment_qrs")
+      .select("id, nickname, amount, qr_image_url, status")
+      .eq("cashier_staff_id", staffId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }: { data: ActivePaymentQr[] | null }) => {
+        if (cancelled) return;
+        if (data && data[0]) setActiveQr(data[0]);
+      });
+
+    const channel = supabase
+      .channel(`pos_qrs:${staffId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pos_active_payment_qrs",
+          filter: `cashier_staff_id=eq.${staffId}`,
+        },
+        (payload: { eventType: string; new: ActivePaymentQr | null; old: ActivePaymentQr | null }) => {
+          if (cancelled) return;
+          const row = payload.new;
+          if (payload.eventType === "DELETE") {
+            setActiveQr((cur) => (cur && payload.old && cur.id === payload.old.id ? null : cur));
+            return;
+          }
+          if (!row) return;
+          if (row.status === "pending") {
+            setActiveQr(row);
+          } else {
+            // Flipped to received / cancelled / expired → hide immediately.
+            setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [staffId, branchId, isClockedIn]);
 
   // Liveness overlay + clock/enroll action state.
   const [capture, setCapture] = useState<null | "enroll" | "clock">(null);
@@ -640,10 +738,56 @@ export default function AttendanceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The three guards for revealing the live GCash QR. POS already enforces "is the open shift's
+  // cashier" before writing the row. We add clocked-in + inside-geofence here. If geofenceRequired
+  // is OFF for this branch, the inside check is skipped (matches the existing clock-in policy).
+  const qrGuardsPass = !!activeQr && isClockedIn && (geofenceRequired ? inside : true);
+
   return (
     <div className="relative">
       {/* The map fills the viewport; the site Footer (from the layout) sits below. */}
       <div ref={mapDivRef} className="h-[100svh] w-full bg-bg-soft" />
+
+      {/* ── LIVE GCASH PAYMENT QR (Chunk C, 2026-05-29) ────────────────────────────────────────
+          Full-screen takeover that appears the instant the POS mints a QR for this cashier (the
+          row's INSERT arrives via Supabase Realtime, see the effect above). Shows the QR + amount
+          + the 10-letter code printed on the customer's GCash receipt. Auto-hides when the OCR
+          on the POS matches the receipt (row status flips to 'received'), when the cashier
+          cancels in the POS, or when this staffer clocks out / leaves the geofence. */}
+      {qrGuardsPass && activeQr && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+          <div className="w-[min(94vw,26rem)] rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
+            <div className="mb-3 flex items-center justify-center gap-2 text-stone-600">
+              <QrCode className="h-4 w-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Show this to the customer</span>
+            </div>
+            {/* The QR image itself — bg-white + p-2 makes it scannable on any phone screen. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={activeQr.qr_image_url}
+              alt="GCash payment QR"
+              className="mx-auto block h-auto w-full max-w-[20rem] rounded-lg bg-white"
+            />
+            <div className="mt-4 text-center">
+              <div className="text-[0.7rem] font-bold uppercase tracking-widest text-stone-500">Amount</div>
+              <div className="font-display text-4xl font-extrabold text-amber-700">
+                ₱{Number(activeQr.amount).toFixed(2)}
+              </div>
+            </div>
+            <div className="mt-3 rounded-lg bg-stone-50 px-3 py-2 text-center">
+              <div className="text-[0.65rem] font-bold uppercase tracking-widest text-stone-500">
+                Code on receipt
+              </div>
+              <div className="mt-0.5 font-mono text-lg font-bold tracking-wider text-stone-800">
+                {activeQr.nickname}
+              </div>
+              <div className="mt-1 text-[0.7rem] leading-snug text-stone-500">
+                After they pay, photograph their GCash success screen. Your POS will match this code automatically.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {phase === "loading" && (
         <div className="absolute inset-0 flex items-center justify-center bg-bg-soft">

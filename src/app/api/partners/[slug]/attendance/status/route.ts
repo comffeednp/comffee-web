@@ -113,6 +113,11 @@ export async function GET(
 
   return NextResponse.json({
     ok: true,
+    // staffId surfaced so the client can subscribe to the GCash live-QR feed filtered to its OWN
+    // entries only (instant push from the POS — see AttendanceClient's pos_active_payment_qrs
+    // channel). RLS (migration 0037) keeps a co-worker from receiving someone else's QR.
+    staffId: staff?.id ?? null,
+    branchId: branch.id,
     status: staff?.status ?? "pending",
     enrolled: !!staff?.face_descriptor,
     lastClockType,
