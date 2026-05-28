@@ -781,8 +781,32 @@ export default function AttendanceClient({
               <div className="mt-0.5 font-mono text-lg font-bold tracking-wider text-stone-800">
                 {activeQr.nickname}
               </div>
-              <div className="mt-1 text-[0.7rem] leading-snug text-stone-500">
-                After they pay, photograph their GCash success screen. Your POS will match this code automatically.
+            </div>
+            {/* Required next step (owner 2026-05-29: "automatically mark as paid once the cashier takes
+                a photo and google vision confirms it"). Big amber call-to-action so the cashier knows
+                the order isn't done until they photograph the receipt. Tapping reuses the same camera
+                input as the existing GCash receipt upload flow above. */}
+            <div className="mt-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 p-3 text-center">
+              <div className="mb-2 text-[0.65rem] font-bold uppercase tracking-widest text-amber-700">
+                Required next step
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  uploadKindRef.current = "gcash"
+                  uploadTypeRef.current = null
+                  receiptInputRef.current?.click()
+                }}
+                disabled={receiptBusy}
+                title="Take a photo of the customer's GCash success screen"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow transition hover:bg-amber-700 disabled:opacity-60"
+              >
+                <Camera className="h-4 w-4" />
+                {receiptBusy ? "Uploading…" : "Take Photo of Receipt"}
+              </button>
+              <div className="mt-2 text-[0.7rem] leading-snug text-amber-900">
+                After the customer pays, photograph their GCash success screen.
+                Google Vision will match the <span className="font-mono font-bold">{activeQr.nickname}</span> code and mark the order paid automatically — this QR will then disappear.
               </div>
             </div>
           </div>
