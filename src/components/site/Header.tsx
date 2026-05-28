@@ -8,6 +8,10 @@ import { getMemberOptional } from "@/lib/auth/require-member";
 
 const navLinks = [
   { href: "/branches", label: "Branches" },
+  // "Partner Cafes" = independent internet cafes that bought the Comffee POS as SaaS. Listed at
+  // /partners (a separate section from Comffee-brand franchises at /branches). Empty until the
+  // first partner is approved through the POS Reservation tab. [[comffee-saas-vision]]
+  { href: "/partners", label: "Partner Cafes" },
   { href: "/playcation", label: "Playcation" },
   { href: "/internet-cafe", label: "Internet Cafe" },
   { href: "/menu", label: "Menu" },

@@ -2,7 +2,11 @@
 // with `supabase gen types typescript`. For now, this is enough for the
 // public marketing site + admin CRUD.
 
-export type BranchType = "cafe" | "playcation";
+// 'cafe' = Comffee-brand franchises (Lagro, SJDM) at /branches/<slug>
+// 'playcation' = Playcation stays at /branches/<slug> (same listing, different rendering)
+// 'partner_cafe' = independent internet cafes on Comffee POS SaaS, listed at /partners/<slug>
+//                  ([[comffee-saas-vision]], migration 0032 adds the value to the DB enum).
+export type BranchType = "cafe" | "playcation" | "partner_cafe";
 export type AdminRole = "super_admin" | "branch_manager" | "staff" | "partner";
 export type ReservationSource = "website" | "airbnb" | "manual_block";
 export type ReservationStatus = "pending_hold" | "confirmed" | "cancelled" | "completed";

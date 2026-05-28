@@ -6,14 +6,17 @@ import { ArrowUpRight, MapPin } from "lucide-react";
 interface Props {
   branch: Branch;
   size?: "default" | "feature";
+  // Override the URL prefix. Default "/branches" for franchises + Playcation; partner cafes pass
+  // "/partners" since they live in their own section ([[comffee-saas-vision]]).
+  hrefBase?: string;
 }
 
-export default function BranchCard({ branch, size = "default" }: Props) {
+export default function BranchCard({ branch, size = "default", hrefBase = "/branches" }: Props) {
   const isFeature = size === "feature";
   const isPlay = branch.type === "playcation";
   return (
     <Link
-      href={`/branches/${branch.slug}`}
+      href={`${hrefBase}/${branch.slug}`}
       className="group block relative overflow-hidden rounded-xl border border-line-bright bg-bg-card transition-all hover:border-amber/60 hover:-translate-y-0.5"
     >
       {/* Image */}
