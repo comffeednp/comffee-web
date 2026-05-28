@@ -52,6 +52,7 @@ interface Payload {
   hours_text?: string | null;
   hero_image_url?: string | null;
   is_published?: boolean;
+  reservations_enabled?: boolean;
   photos?: PayloadPhoto[];
   amenities?: PayloadAmenity[];
   rates?: PayloadRate[];
@@ -110,6 +111,7 @@ export async function POST(
     if (payload.hours_text !== undefined) update.hours_text = payload.hours_text;
     if (payload.hero_image_url !== undefined) update.hero_image_url = payload.hero_image_url;
     if (payload.is_published !== undefined) update.is_published = payload.is_published;
+    if (payload.reservations_enabled !== undefined) update.reservations_enabled = payload.reservations_enabled;
     update.updated_at = new Date().toISOString();
     const { error: upErr } = await admin.from("branches").update(update).eq("id", branchId);
     if (upErr) {
@@ -134,6 +136,7 @@ export async function POST(
         hours_text: payload.hours_text ?? null,
         hero_image_url: payload.hero_image_url ?? null,
         is_published: payload.is_published ?? true,
+        reservations_enabled: payload.reservations_enabled ?? false,
       })
       .select("id")
       .single();

@@ -43,14 +43,19 @@ export async function POST(request: Request) {
 
   const supabase = getSupabaseAdmin();
 
-  // Verify branch is a cafe
+  // Verify branch is a reservable type (cafe or partner_cafe) AND the owner has enabled online
+  // reservations (Stage 6 toggle in the POS Reservation tab). When the toggle is off, customers
+  // see "walk-in only" on the public page; this guard catches any deep-link bypass attempts.
   const { data: branch } = await supabase
     .from("branches")
-    .select("id, type, name")
+    .select("id, type, name, reservations_enabled")
     .eq("id", v.branchId)
     .maybeSingle();
-  if (!branch || branch.type !== "cafe") {
+  if (!branch || (branch.type !== "cafe" && branch.type !== "partner_cafe")) {
     return NextResponse.json({ error: "branch_not_reservable" }, { status: 400 });
+  }
+  if (!branch.reservations_enabled) {
+    return NextResponse.json({ error: "reservations_disabled" }, { status: 403 });
   }
 
   // Verify station exists + is VACANT right now

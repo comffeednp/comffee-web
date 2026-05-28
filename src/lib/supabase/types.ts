@@ -35,6 +35,7 @@ export interface Branch {
   checkin_photo_url: string | null;
   checkout_photo_url: string | null;
   is_published: boolean;
+  reservations_enabled: boolean;   // Stage 6: when false, the public page hides the Reserve CTA + the reservation API rejects.
   sort_order: number;
   created_at: string;
   updated_at: string;

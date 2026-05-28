@@ -32,7 +32,10 @@ export default async function ReservePCPage({
   const { slug } = await params;
   const { pc: requestedPc } = await searchParams;
   const branch = await getBranchBySlug(slug);
-  if (!branch || branch.type !== "cafe") notFound();
+  // 404 a deep-link to /reserve-pc when the branch doesn't accept online reservations (Stage 6
+  // owner toggle). The public branch page already hides the CTA; this guards the direct-URL case.
+  if (!branch || (branch.type !== "cafe" && branch.type !== "partner_cafe")) notFound();
+  if (!branch.reservations_enabled) notFound();
 
   const [snapshot, allRates] = await Promise.all([
     getPCStationsForBranch(branch.id),

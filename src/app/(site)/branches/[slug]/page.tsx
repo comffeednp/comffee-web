@@ -61,7 +61,10 @@ export default async function BranchDetailPage({
   if (!branch) notFound();
 
   const isPlay = branch.type === "playcation";
-  // Cafes get a live-PC reservation CTA; playcations get a Playcation booking CTA
+  // Cafes get a live-PC reservation CTA; playcations get a Playcation booking CTA. For cafes, the
+  // CTA only appears when the owner has flipped reservations_enabled on in their POS Reservation
+  // tab (Stage 6). When off, we show a walk-in notice instead; the vacant-PC live view stays.
+  const canReserveOnline = isPlay || branch.reservations_enabled;
   const ctaHref = isPlay
     ? `/playcation/${branch.slug}/book`
     : `/branches/${branch.slug}/reserve-pc`;
@@ -161,11 +164,17 @@ export default async function BranchDetailPage({
             </p>
           )}
 
-          <div className="mt-10 flex flex-wrap gap-4">
-            <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
-              <Power className="h-4 w-4" />
-              {ctaLabel}
-            </Link>
+          <div className="mt-10 flex flex-wrap gap-4 items-center">
+            {canReserveOnline ? (
+              <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
+                <Power className="h-4 w-4" />
+                {ctaLabel}
+              </Link>
+            ) : (
+              <span className="key-cap" style={{ cursor: "default", borderColor: "rgba(255,255,255,0.2)" }}>
+                Walk-ins welcome — no online reservations
+              </span>
+            )}
             <a href="#walkthrough" title="Walk through this branch" className="key-cap">
               Walk through
             </a>
@@ -405,13 +414,17 @@ export default async function BranchDetailPage({
           <p className="mt-5 text-cream-dim text-lg max-w-xl mx-auto">
             {isPlay
               ? "Pick your dates. We'll have the controllers charged and the computers ready."
-              : "Walk-ins welcome. Or message us if you want to reserve a private station."}
+              : canReserveOnline
+                ? "Reserve a PC online while you're on the way. We'll have it ready."
+                : "Walk-ins welcome. This branch isn't accepting online reservations right now."}
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
-              <Power className="h-4 w-4" />
-              {ctaLabel}
-            </Link>
+            {canReserveOnline && (
+              <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
+                <Power className="h-4 w-4" />
+                {ctaLabel}
+              </Link>
+            )}
             <Link href="/branches" title="See other branches" className="key-cap">
               See other branches
               <ArrowRight className="h-3.5 w-3.5" />
