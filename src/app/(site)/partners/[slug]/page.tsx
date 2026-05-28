@@ -144,27 +144,28 @@ export default async function PartnerCafeDetailPage({
             <div className="min-w-0">
               <p className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">Location</p>
               <p className="mt-0.5 text-cream truncate">{branch.address ?? branch.city ?? "—"}</p>
-              {(branch.lat && branch.lng) ? (
-                <a
-                  href={`https://www.google.com/maps?q=${branch.lat},${branch.lng}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open this location in Google Maps"
-                  className="font-mono text-[0.65rem] text-amber hover:underline"
-                >
-                  Open in Google Maps →
-                </a>
-              ) : (branch.address || branch.city) ? (
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${branch.address ?? ""} ${branch.city ?? ""}`.trim())}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Find this location on Google Maps"
-                  className="font-mono text-[0.65rem] text-amber hover:underline"
-                >
-                  Open in Google Maps →
-                </a>
-              ) : null}
+              {(() => {
+                // Public "find us" link → open Google Maps by PLACE (cafe name + address), never raw
+                // lat/lng. The exact geofence coordinates are internal (staff clock-in); a customer
+                // wants the named place to navigate to, not a numbers pin. (owner 2026-05-30)
+                const placeQ = `${branch.name ?? ""} ${branch.address ?? ""} ${branch.city ?? ""}`.trim();
+                const href = placeQ
+                  ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeQ)}`
+                  : branch.lat && branch.lng
+                    ? `https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`
+                    : null;
+                return href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open this cafe's location in Google Maps"
+                    className="font-mono text-[0.65rem] text-amber hover:underline"
+                  >
+                    Open in Google Maps →
+                  </a>
+                ) : null;
+              })()}
             </div>
           </div>
           <FactItem icon={Clock} label="Hours" value={branch.hours_text ?? "—"} />
