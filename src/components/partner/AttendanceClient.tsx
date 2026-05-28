@@ -577,7 +577,9 @@ export default function AttendanceClient({
   // "Uploading…" hang. Downscale to <=1920px long edge + re-encode JPEG ~0.85 IN THE BROWSER before
   // sending — cuts size ~10x while keeping a GCash receipt's text crisp for the POS's Google-Vision
   // read. Falls back to the original file if the canvas path fails or doesn't actually shrink it.
-  async function shrinkImageForUpload(file: File): Promise<Blob> {
+  // Accepts a Blob (File is a Blob) — receipt uploads pass a File, the clock selfie passes a Blob.
+  // Everything used inside (type/size/createImageBitmap) is on Blob, so widening is safe.
+  async function shrinkImageForUpload(file: Blob): Promise<Blob> {
     if (!file.type.startsWith("image/")) return file;
     try {
       const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
