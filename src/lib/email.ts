@@ -799,3 +799,47 @@ export async function sendCustomerReplyReminder({
     replyTo: `bookings@comffee.org`,
   });
 }
+
+/* ---------------- branch edit submitted (cafe owner pushed page changes from POS) ---------------- */
+
+interface BranchEditSubmittedInput {
+  to: string;             // owner inbox (johnjosephtopacio@gmail.com or APPROVAL_EMAIL_TO)
+  branchName: string;     // e.g. "Lagro"
+  submittedBy: string;    // license key / machine id from the POS — audit trail
+  branchAdminUrl: string; // direct link to /admin/branches/<id> where the inline approve panel lives
+  changeSummary: string[];// short bullets of what changed (e.g. ["Updated hours", "3 new photos"])
+}
+
+// Sent when a cafe owner presses "Send for approval" in the POS Reservation tab. Lands in the
+// owner's inbox + the inline panel at /admin/branches/<id> shows the same submission with
+// one-click Approve / Reject. [[comffee-saas-vision]] Stage 4.
+export async function sendBranchEditSubmittedEmail(input: BranchEditSubmittedInput) {
+  const { to, branchName, submittedBy, branchAdminUrl, changeSummary } = input;
+  const summaryHtml = changeSummary.length
+    ? `<ul style="margin:8px 0 16px;padding-left:20px;color:#5a4a3c;font-size:14px;line-height:1.7;">${changeSummary.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
+    : "";
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:24px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Page changes submitted — ${escapeHtml(branchName)}
+    </h1>
+    <p style="margin:0 0 8px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      A cafe has submitted updates to their public page on comffee.org.
+    </p>
+    ${summaryHtml}
+    <p style="margin:8px 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
+      Submitted by <code style="background:#faf6ee;padding:2px 6px;border-radius:4px;font-size:12px;">${escapeHtml(submittedBy)}</code>. Approve or reject inline on the branch admin page.
+    </p>
+  `;
+  return sendEmail({
+    to,
+    subject: `📋 Page changes submitted — ${branchName}`,
+    html: chrome({
+      preheader: `${branchName} submitted page changes — review and approve`,
+      bodyHtml: body,
+      ctaLabel: "Review and approve",
+      ctaHref: branchAdminUrl,
+    }),
+    text: `${branchName} submitted page changes. Review: ${branchAdminUrl}`,
+    replyTo: `bookings@comffee.org`,
+  });
+}

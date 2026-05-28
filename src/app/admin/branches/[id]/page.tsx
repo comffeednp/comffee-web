@@ -23,6 +23,7 @@ import PCTierEditor from "@/components/admin/PCTierEditor";
 import AmenitiesList from "@/components/admin/AmenitiesList";
 import AddAmenityForm from "@/components/admin/AddAmenityForm";
 import RatesList from "@/components/admin/RatesList";
+import PendingBranchEditPanel from "@/components/admin/PendingBranchEditPanel";
 import { ArrowLeft, Plus, Save, Trash2, ExternalLink } from "lucide-react";
 import type {
   Branch,
@@ -44,7 +45,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
   const { ok, error } = await searchParams;
 
   const supabase = await getSupabaseServer();
-  const [branchRes, amenitiesRes, ratesRes, photosRes, stationsRes] = await Promise.all([
+  const [branchRes, amenitiesRes, ratesRes, photosRes, stationsRes, pendingRes] = await Promise.all([
     supabase.from("branches").select("*").eq("id", id).maybeSingle(),
     supabase.from("branch_amenities").select("*").eq("branch_id", id).order("sort_order"),
     supabase.from("branch_rates").select("*").eq("branch_id", id).order("sort_order"),
@@ -54,6 +55,13 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
       .select("id, station_name, is_occupied, pc_tier, last_synced_at")
       .eq("branch_id", id)
       .order("station_name"),
+    // Stage 4a: pending POS-submitted page edits — admin approves/rejects inline below.
+    supabase
+      .from("branch_edit_submissions")
+      .select("id, submitted_at, submitted_by, payload")
+      .eq("branch_id", id)
+      .eq("status", "pending")
+      .order("submitted_at", { ascending: false }),
   ]);
   const branch = branchRes.data as Branch | null;
   if (!branch) notFound();
@@ -69,6 +77,14 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
     is_occupied: boolean;
     pc_tier: string | null;
     last_synced_at: string;
+  }>;
+  // Stage 4a: pending POS-submitted page edits for this branch (typically zero — only present
+  // when an owner pressed "Send for approval" from the POS Reservation tab since the last review).
+  const pendingSubmissions = (pendingRes.data ?? []) as Array<{
+    id: string;
+    submitted_at: string;
+    submitted_by: string | null;
+    payload: Record<string, unknown>;
   }>;
 
   return (
@@ -101,6 +117,11 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
       {error && (
         <p className="mt-6 font-mono text-xs text-red-400">// {error}</p>
       )}
+
+      {/* Stage 4a: pending submissions from the POS Reservation tab — empty when nothing pending. */}
+      <div className="mt-6">
+        <PendingBranchEditPanel submissions={pendingSubmissions} />
+      </div>
 
       {/* CORE FIELDS */}
       <form id="branch-core-form" action={updateBranchAction} className="mt-10 space-y-8">
