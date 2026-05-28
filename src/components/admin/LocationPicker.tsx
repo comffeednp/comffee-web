@@ -15,6 +15,34 @@ interface Suggestion {
   lon: string;
 }
 
+// Load the Google Maps JS API once per page. Same pattern as the partner attendance page so the
+// geofencing and this picker share a single script tag if they ever land on the same page. NO
+// `loading=async` — with it google.maps.Map/Marker aren't ready synchronously after the script
+// load event and you'd have to importLibrary() everywhere; the classic load is what the rest of
+// the codebase uses.
+let gmapsPromise: Promise<void> | null = null;
+function loadGoogleMaps(): Promise<void> {
+  if (gmapsPromise) return gmapsPromise;
+  gmapsPromise = new Promise((resolve, reject) => {
+    if (typeof window !== "undefined" && (window as { google?: typeof google }).google?.maps) {
+      resolve();
+      return;
+    }
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!key) {
+      reject(new Error("Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Google Maps failed to load"));
+    document.head.appendChild(s);
+  });
+  return gmapsPromise;
+}
+
 export default function LocationPicker({ defaultLat, defaultLng }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [lat, setLat] = useState<number | null>(defaultLat ?? null);
@@ -23,9 +51,9 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const leafletRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
-  const mapInstanceRef = useRef<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +68,10 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Debounced autocomplete fetch
+  // Debounced autocomplete fetch. Kept on Nominatim (OpenStreetMap) — free, no extra GCP API
+  // billing for a feature already working cheaply. The MAP itself is now Google Maps to match
+  // the geofencing (that was the actual consistency concern). Pure lat/lng round-trips fine
+  // between the two — they're both WGS-84.
   const fetchSuggestions = useCallback((value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (value.trim().length < 3) {
@@ -66,22 +97,29 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
     }, 350);
   }, []);
 
+  // Create (or move) the draggable marker on the map and update the lat/lng state. Shared by
+  // search-suggestion-click and map-click code paths; on drag-end it re-fires to keep state
+  // in sync. 7-decimal rounding gives ~1cm precision (more than enough for a cafe pin) and
+  // keeps the hidden input values stable across re-renders.
   const placePin = useCallback((rLat: number, rLng: number) => {
     setLat(rLat);
     setLng(rLng);
-    const L = leafletRef.current;
     const map = mapInstanceRef.current;
-    if (!L || !map) return;
-    map.setView([rLat, rLng], 17);
+    if (!map) return;
+    const pos = { lat: rLat, lng: rLng };
+    map.setCenter(pos);
+    map.setZoom(17);
     if (markerRef.current) {
-      markerRef.current.setLatLng([rLat, rLng]);
+      markerRef.current.setPosition(pos);
     } else {
-      markerRef.current = L.marker([rLat, rLng], { draggable: true }).addTo(map);
-      markerRef.current.on("dragend", (e: any) => {
-        const pos = e.target.getLatLng();
-        setLat(parseFloat(pos.lat.toFixed(7)));
-        setLng(parseFloat(pos.lng.toFixed(7)));
+      const m = new google.maps.Marker({ position: pos, map, draggable: true });
+      m.addListener("dragend", () => {
+        const p = m.getPosition();
+        if (!p) return;
+        setLat(parseFloat(p.lat().toFixed(7)));
+        setLng(parseFloat(p.lng().toFixed(7)));
       });
+      markerRef.current = m;
     }
   }, []);
 
@@ -91,68 +129,81 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
     placePin(parseFloat(parseFloat(s.lat).toFixed(7)), parseFloat(parseFloat(s.lon).toFixed(7)));
   };
 
-  // Map init
+  // Map init (Google Maps). The browser-restricted NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is the same
+  // key the staff attendance page uses for geofencing — never reuse the server-side Vision
+  // key in the browser. Strict Mode in dev mounts twice, so we early-return if the map already
+  // exists on a ref to avoid a double map / leaked listeners.
   useEffect(() => {
     if (!mapRef.current) return;
-    import("leaflet").then((L) => {
-      // Guard inside .then() — both Strict Mode runs start the import in parallel;
-      // only the first one to resolve should create the map.
-      if (!mapRef.current || mapInstanceRef.current) return;
-      // Clear any leftover _leaflet_id from a previous mount cycle
-      if ((mapRef.current as any)._leaflet_id) {
-        delete (mapRef.current as any)._leaflet_id;
-      }
-      leafletRef.current = L;
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
-      const startLat = defaultLat ?? 14.5995;
-      const startLng = defaultLng ?? 120.9842;
-      const map = L.map(mapRef.current!, { center: [startLat, startLng], zoom: defaultLat ? 16 : 12 });
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
-      if (defaultLat && defaultLng) {
-        markerRef.current = L.marker([defaultLat, defaultLng], { draggable: true }).addTo(map);
-        markerRef.current.on("dragend", (e: any) => {
-          const pos = e.target.getLatLng();
-          setLat(parseFloat(pos.lat.toFixed(7)));
-          setLng(parseFloat(pos.lng.toFixed(7)));
+    let cancelled = false;
+    loadGoogleMaps()
+      .then(() => {
+        if (cancelled || !mapRef.current || mapInstanceRef.current) return;
+        const startLat = defaultLat ?? 14.5995;
+        const startLng = defaultLng ?? 120.9842;
+        const map = new google.maps.Map(mapRef.current, {
+          center: { lat: startLat, lng: startLng },
+          zoom: defaultLat ? 16 : 12,
+          // Strip the controls that don't make sense on a pin-picker (it's not a directions
+          // widget). Keep zoom + the gesture controls so the user can pan/zoom precisely.
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
         });
-      }
-      map.on("click", (e: any) => {
-        const rLat = parseFloat(e.latlng.lat.toFixed(7));
-        const rLng = parseFloat(e.latlng.lng.toFixed(7));
-        setLat(rLat);
-        setLng(rLng);
-        if (markerRef.current) {
-          markerRef.current.setLatLng([rLat, rLng]);
-        } else {
-          markerRef.current = L.marker([rLat, rLng], { draggable: true }).addTo(map);
-          markerRef.current.on("dragend", (ev: any) => {
-            const pos = ev.target.getLatLng();
-            setLat(parseFloat(pos.lat.toFixed(7)));
-            setLng(parseFloat(pos.lng.toFixed(7)));
+        mapInstanceRef.current = map;
+        if (defaultLat && defaultLng) {
+          const m = new google.maps.Marker({
+            position: { lat: defaultLat, lng: defaultLng },
+            map,
+            draggable: true,
           });
+          m.addListener("dragend", () => {
+            const p = m.getPosition();
+            if (!p) return;
+            setLat(parseFloat(p.lat().toFixed(7)));
+            setLng(parseFloat(p.lng().toFixed(7)));
+          });
+          markerRef.current = m;
         }
+        map.addListener("click", (e: google.maps.MapMouseEvent) => {
+          if (!e.latLng) return;
+          const rLat = parseFloat(e.latLng.lat().toFixed(7));
+          const rLng = parseFloat(e.latLng.lng().toFixed(7));
+          setLat(rLat);
+          setLng(rLng);
+          if (markerRef.current) {
+            markerRef.current.setPosition({ lat: rLat, lng: rLng });
+          } else {
+            const m = new google.maps.Marker({ position: { lat: rLat, lng: rLng }, map, draggable: true });
+            m.addListener("dragend", () => {
+              const p = m.getPosition();
+              if (!p) return;
+              setLat(parseFloat(p.lat().toFixed(7)));
+              setLng(parseFloat(p.lng().toFixed(7)));
+            });
+            markerRef.current = m;
+          }
+        });
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setLoadError(err.message || "Map failed to load");
       });
-      mapInstanceRef.current = map;
-    });
     return () => {
-      mapInstanceRef.current?.remove();
+      cancelled = true;
+      // Google Maps has no explicit destroy; clearing the marker + dropping refs lets React
+      // tear down the DOM cleanly. The map instance itself is GC'd when its DOM node unmounts.
+      markerRef.current?.setMap(null);
+      markerRef.current = null;
       mapInstanceRef.current = null;
-      if (mapRef.current) delete (mapRef.current as any)._leaflet_id;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="space-y-3">
       <input type="hidden" name="lat" value={lat ?? ""} />
       <input type="hidden" name="lng" value={lng ?? ""} />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
       {/* Search with autocomplete */}
       <div ref={wrapperRef} className="relative">
@@ -196,7 +247,17 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
         )}
       </div>
 
-      <div ref={mapRef} className="w-full rounded-lg overflow-hidden border border-line-bright" style={{ height: 320, position: "relative", zIndex: 0 }} />
+      <div
+        ref={mapRef}
+        className="w-full rounded-lg overflow-hidden border border-line-bright"
+        style={{ height: 320, position: "relative", zIndex: 0 }}
+      >
+        {loadError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-soft text-xs text-red-400 p-4 text-center">
+            Map failed to load: {loadError}
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-3">
         <MapPin className="h-3.5 w-3.5 text-amber shrink-0" />
@@ -208,7 +269,7 @@ export default function LocationPicker({ defaultLat, defaultLng }: Props) {
         {lat && lng && (
           <button
             type="button"
-            onClick={() => { setLat(null); setLng(null); markerRef.current?.remove(); markerRef.current = null; }}
+            onClick={() => { setLat(null); setLng(null); markerRef.current?.setMap(null); markerRef.current = null; }}
             title="Clear selected location"
             className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha hover:text-red-400 ml-auto"
           >
