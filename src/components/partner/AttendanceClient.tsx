@@ -1223,22 +1223,27 @@ export default function AttendanceClient({
                 <div className="mt-2">
                   <div className="flex items-center gap-1.5">
                     <span className="shrink-0 text-[0.7rem] text-mocha">Cash move:</span>
-                    {(["drop", "pickup", "expense"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        disabled={cashBusy}
-                        onClick={() => openCashForm(t)}
-                        title={`Record a cash ${t}`}
-                        className={`flex-1 rounded-lg px-2 py-1.5 text-[0.7rem] font-bold capitalize transition active:brightness-95 disabled:opacity-60 ${
-                          cashType === t
-                            ? "bg-amber text-bg"
-                            : "border border-line-bright bg-bg-card text-cream hover:bg-bg-elev"
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {(["drop", "pickup", "expense"] as const).map((t) => {
+                      // Distinct, clearly-tappable colored buttons (owner 2026-05-29): drop = blue,
+                      // pickup = green, expense = red. The picked one brightens and gets a ring.
+                      const c = {
+                        drop:    { on: "bg-blue-600 ring-2 ring-blue-300",   off: "bg-blue-600/85 hover:bg-blue-600" },
+                        pickup:  { on: "bg-green-600 ring-2 ring-green-300", off: "bg-green-600/85 hover:bg-green-600" },
+                        expense: { on: "bg-red-600 ring-2 ring-red-300",     off: "bg-red-600/85 hover:bg-red-600" },
+                      }[t];
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={cashBusy}
+                          onClick={() => openCashForm(t)}
+                          title={`Record a cash ${t}`}
+                          className={`flex-1 rounded-lg px-2 py-2.5 text-xs font-bold capitalize text-white shadow-sm transition active:brightness-95 disabled:opacity-60 ${cashType === t ? c.on : c.off}`}
+                        >
+                          {t}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {cashType && cashStep === "form" && (
