@@ -36,6 +36,9 @@ export interface Branch {
   checkout_photo_url: string | null;
   is_published: boolean;
   reservations_enabled: boolean;   // Stage 6: when false, the public page hides the Reserve CTA + the reservation API rejects.
+  gcash_qr_url: string | null;     // Stage 7a: partner's static GCash QR image URL (customer scans to pay).
+  gcash_qr_path: string | null;    // storage path; useful for replace/delete.
+  gcash_type: string | null;       // 'p2p' default; 'business' is TBA.
   sort_order: number;
   created_at: string;
   updated_at: string;

@@ -214,6 +214,9 @@ export default function ReservePCClient({
         }
         setReservationId(data.reservationId);
         setStep("done");
+        // Stage 7a: navigate to the payment-instructions page (GCash QR + 5-min countdown).
+        // The done-step UI remains as a brief fallback if the router push is slow.
+        router.push(`/branches/${branch.slug}/reserve-pc/confirmed/${data.reservationId}`);
       } catch (e) {
         setStep("error");
         setErrorMsg(e instanceof Error ? e.message : "network error");

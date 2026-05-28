@@ -17,7 +17,9 @@ const schema = z.object({
   quantity: z.number().int().min(1).max(12).optional(),
 });
 
-const GRACE_MINUTES = 30;
+const GRACE_MINUTES = 30;          // existing arrival window (after payment is verified)
+const PAYMENT_HOLD_MINUTES = 5;    // Stage 7a: window for customer to pay via GCash QR
+                                   // (any "now-only" booking auto-cancels if not claim_paid in 5 min)
 
 export async function POST(request: Request) {
   const guarded = await guardMutating(request, {
@@ -130,6 +132,10 @@ export async function POST(request: Request) {
   const startIso = now.toISOString();
   const endIso = new Date(now.getTime() + totalMinutes * 60 * 1000).toISOString();
   const mustHonorBy = new Date(now.getTime() + GRACE_MINUTES * 60 * 1000).toISOString();
+  // Stage 7a: 5-minute payment hold. After this expires without 'claim_paid', a background sweep
+  // (or check-on-read) flips status='expired'. Computed alongside must_honor_by so a single insert
+  // captures both windows up front.
+  const paymentHoldExpiresAt = new Date(now.getTime() + PAYMENT_HOLD_MINUTES * 60 * 1000).toISOString();
 
   const { data: created, error: insertErr } = await supabase
     .from("pc_reservations")
@@ -148,6 +154,8 @@ export async function POST(request: Request) {
       duration_minutes: totalMinutes,
       must_honor_by: mustHonorBy,
       status: "pending",
+      payment_status: "unpaid",
+      payment_hold_expires_at: paymentHoldExpiresAt,
     })
     .select("id")
     .single();
