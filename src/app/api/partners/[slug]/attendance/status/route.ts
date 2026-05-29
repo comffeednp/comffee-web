@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getBranchPaymentDisplay } from "@/lib/branch-payment-config";
 
 // Live status poll. The attendance page reads status ONCE on load, so after a POS admin
 // approves a staffer the page would otherwise stay on "waiting for approval" until a manual
@@ -30,6 +31,14 @@ export async function GET(
   if (!branch) {
     return NextResponse.json({ ok: false, error: "branch_not_found" }, { status: 404 });
   }
+
+  // Which online-payment method this branch is on, so the clock-in page can make the receipt
+  // upload mode-aware (PayMongo confirms by QR → no receipt photo; GCash-personal → photo from
+  // camera OR gallery; unset → default camera photo). The METHOD is NOT a secret — getBranchPaymentDisplay
+  // returns the safe subset (no PayMongo keys). No config row (owner hasn't set up online payments)
+  // → treat as '' (default behavior), so an un-configured branch is never worse off than today.
+  const paymentDisplay = await getBranchPaymentDisplay(branch.id);
+  const onlinePaymentMethod = paymentDisplay?.onlinePaymentMethod ?? "";
 
   const { data: staff } = await admin
     .from("branch_staff")
@@ -124,5 +133,7 @@ export async function GET(
     lastClockAt,
     deviceState,
     coworkers,
+    // '' | 'gcash_personal' | 'paymongo' — drives the receipt-upload mode on the clock-in page.
+    onlinePaymentMethod,
   });
 }

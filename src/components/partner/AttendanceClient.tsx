@@ -170,6 +170,17 @@ export default function AttendanceClient({
   const [staffId, setStaffId] = useState<string | null>(null);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [activeQr, setActiveQr] = useState<ActivePaymentQr | null>(null);
+  // Branch's active online-payment method, read from the status poll. Drives the receipt-upload mode:
+  //   'paymongo'       → PayMongo confirms each payment by its OWN realtime QR flow, so there is NO
+  //                      receipt photo to take → HIDE both photo-upload buttons (QR card + home).
+  //                      The QR image + its realtime confirm path stay fully intact — only the
+  //                      Take-Photo button is hidden.
+  //   'gcash_personal' → staff photograph the customer's GCash receipt → SHOW the home upload, and
+  //                      allow camera OR gallery (owner 2026-05-29 "allow both" → drop capture=).
+  //   '' / null / unknown → DEFAULT to today's behavior (upload visible, camera) so an un-configured
+  //                      branch is never worse off. Fail-safe.
+  // Starts '' so the default (camera, visible) holds until the first status read lands.
+  const [onlinePaymentMethod, setOnlinePaymentMethod] = useState<string>("");
   // Online payment (GCash) receipt upload — a working cashier sends receipt photos from here; the
   // POS is pushed each one and records it against their open shift.
   const receiptInputRef = useRef<HTMLInputElement>(null);
@@ -315,6 +326,7 @@ export default function AttendanceClient({
           setCoworkers(data.coworkers ?? []);
           setStaffId(data.staffId ?? null);
           setBranchId(data.branchId ?? null);
+          setOnlinePaymentMethod(data.onlinePaymentMethod ?? "");
         }
       } catch {
         /* transient network blip — the next tick retries */
@@ -341,6 +353,7 @@ export default function AttendanceClient({
           setCoworkers(data.coworkers ?? []);
           setStaffId(data.staffId ?? null);
           setBranchId(data.branchId ?? null);
+          setOnlinePaymentMethod(data.onlinePaymentMethod ?? "");
         }
       } catch {
         /* ignore — button just defaults to Clock In */
@@ -418,12 +431,11 @@ export default function AttendanceClient({
           }
           if (!row) return;
           if (row.status === "received") {
-            // Confirmed — show the GREEN card for a beat so the cashier sees it landed, then hide.
+            // Confirmed — show the GREEN "Payment received!" card and KEEP it up (no auto-hide / no
+            // countdown, owner 2026-05-30). The cashier dismisses it with the ✕ when ready. A received
+            // row is never re-fetched on reload (the initial fetch filters status='pending'), so once
+            // ✕'d it stays gone.
             setActiveQr(row);
-            setTimeout(() => {
-              if (cancelled) return;
-              setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
-            }, 2600);
           } else if (row.status === "pending") {
             // Includes a fresh last_attempt_* on a RED so the card can show the retake reason. But if
             // the row is already past its window+grace (stale), hide it instead of resurfacing it.
@@ -843,6 +855,15 @@ export default function AttendanceClient({
   // is OFF for this branch, the inside check is skipped (matches the existing clock-in policy).
   const qrGuardsPass = !!activeQr && isClockedIn && (geofenceRequired ? inside : true);
 
+  // Receipt-upload mode (owner 2026-05-30): the receipt photo upload — BOTH the QR-card "Take Photo"
+  // button and the home "Online Payment Receipts" button — shows ONLY when this branch's method is
+  // GCash-Personal (P2P). Under PayMongo there is no customer photo to take (the DIY QR auto-confirms by
+  // the POS watching PayMongo), and an unset branch has no online payments — so gcash_personal is the
+  // ONLY case that shows it. gcash_personal ALSO allows the gallery + MULTIPLE photos (drop capture=,
+  // add `multiple`) because a walk-in may hand over several receipts; handleReceiptUpload loops them all.
+  const showReceiptPhoto = onlinePaymentMethod === "gcash_personal";
+  const allowGalleryReceipt = onlinePaymentMethod === "gcash_personal";
+
   // 5-minute QR countdown — DISPLAY ONLY. The real 5-min rule is enforced on the receipt's printed
   // time in the POS, so a late photo of an in-window payment still confirms. At 0 the QR greys out
   // (no new customer scans it) but the Take Photo button stays for the grace window (owner choice
@@ -852,7 +873,8 @@ export default function AttendanceClient({
   const qrRemainMs = Number.isNaN(qrExpiresMs) ? null : qrExpiresMs - nowTs;
   const qrExpired = qrRemainMs != null && qrRemainMs <= 0;
   // Past the window + ~3 min grace → the card auto-hides (live), so a never-matched QR can't hang on
-  // the staff phone. A confirmed (green) card is exempt — it shows its success beat then hides itself.
+  // the staff phone. A confirmed (green) card is exempt — it stays up until the cashier taps ✕ (no
+  // countdown, owner 2026-05-30).
   const qrDead = !Number.isNaN(qrExpiresMs) && nowTs > qrExpiresMs + 3 * 60 * 1000;
   const fmtCountdown = (ms: number) => {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -875,10 +897,18 @@ export default function AttendanceClient({
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <div className="w-[min(94vw,26rem)] rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
             {qrConfirmed ? (
-              /* GREEN — confirmed. Shows for ~2.6s (realtime handler), then the card hides. */
-              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+              /* GREEN — confirmed. Stays up until the cashier taps ✕ (no countdown, owner 2026-05-30). */
+              <div className="relative flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <button
+                  type="button"
+                  onClick={() => setActiveQr(null)}
+                  title="Close"
+                  className="absolute -right-1 -top-1 flex h-9 w-9 items-center justify-center rounded-full bg-stone-100 text-stone-500 transition hover:bg-stone-200"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
                 <CheckCircle2 className="h-16 w-16 text-green-600" />
-                <div className="text-2xl font-extrabold text-green-700">Paid — confirmed!</div>
+                <div className="text-2xl font-extrabold text-green-700">Payment received!</div>
                 <div className="text-sm font-semibold text-stone-600">
                   ₱{Number(activeQr.amount).toFixed(2)} received. You can ring up the next customer.
                 </div>
@@ -926,7 +956,12 @@ export default function AttendanceClient({
                   )}
                 </div>
 
-                {/* Required next step. Camera-only input → rear camera opens straight away. */}
+                {/* Required next step — the receipt photo. HIDDEN under PayMongo: there the customer
+                    pays by scanning the QR above and PayMongo's webhook confirms it via the SAME
+                    realtime row that flips this card green, so there's no receipt to photograph.
+                    We hide ONLY this box; the QR image, countdown and confirm path above are untouched.
+                    GCash-personal / unset → shown (camera; this in-card input stays camera-only). */}
+                {showReceiptPhoto && (
                 <div className="mt-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 p-3 text-center">
                   <div className="mb-2 text-[0.65rem] font-bold uppercase tracking-widest text-amber-700">
                     Required next step
@@ -971,6 +1006,7 @@ export default function AttendanceClient({
                     </div>
                   )}
                 </div>
+                )}
               </>
             )}
           </div>
@@ -1224,13 +1260,20 @@ export default function AttendanceClient({
                   receipts or cash moves to a shift; the server routes enforce this too. */}
               {isClockedIn ? (
               <div className="mt-3 border-t border-line pt-3">
-                {/* Camera-only (owner 2026-05-29: "no more bulk uploads or from gallery"). capture
-                    forces the rear camera; no `multiple` — one live shot at a time. */}
+                {/* Home receipt upload — shown ONLY for GCash-Personal (see showReceiptPhoto above).
+                    capture="environment" is DROPPED (so the OS offers camera OR gallery) and `multiple`
+                    is ON so a walk-in's several receipts upload in one go (owner 2026-05-30 —
+                    handleReceiptUpload already loops over every selected file). PayMongo + unset branches
+                    hide this entirely. Anti-burst still applies: the receiptBusy guard + serial upload
+                    loop + the server-side rate limit. */}
+                {showReceiptPhoto && (
+                <>
                 <input
                   ref={receiptInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
+                  capture={allowGalleryReceipt ? undefined : "environment"}
+                  multiple={allowGalleryReceipt || undefined}
                   className="hidden"
                   onChange={handleReceiptUpload}
                 />
@@ -1238,12 +1281,14 @@ export default function AttendanceClient({
                   type="button"
                   disabled={receiptBusy}
                   onClick={() => { uploadKindRef.current = "gcash"; uploadTypeRef.current = null; receiptInputRef.current?.click(); }}
-                  title="Upload a GCash / online payment receipt"
+                  title={allowGalleryReceipt ? "Upload a GCash / online payment receipt (camera or gallery)" : "Upload a GCash / online payment receipt"}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber px-4 py-2.5 text-sm font-bold text-bg transition hover:brightness-110 active:brightness-95 disabled:opacity-60"
                 >
                   {uploadingKey === "gcash" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
                   Online Payment Receipts
                 </button>
+                </>
+                )}
                 {/* Cash move: enter the type + amount + reason (+ optional photo) here, get the owner's
                     code, and the POS pulls + records it. Replaces the in-POS cash buttons. Compact so
                     the map stays visible. */}
