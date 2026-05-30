@@ -3,46 +3,31 @@ import Link from "next/link";
 import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import {
-  updateBranchAction,
-  deleteBranchAction,
-  addAmenityAction,
-  updateAmenityAction,
-  deleteAmenityAction,
-  addRateAction,
-  updateRateAction,
-  deleteRateAction,
-  addPhotosAction,
-  deletePhotoAction,
-  reorderPhotosAction,
-  uploadInstructionPhotosAction,
-  deleteInstructionPhotoAction,
-} from "../../_actions/branches";
+import { uploadInstructionPhotosAction, deleteInstructionPhotoAction } from "../../_actions/branches";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
-import BranchCoreFields from "@/components/admin/BranchCoreFields";
-import ImageUpload from "@/components/admin/ImageUpload";
 import PCTierEditor from "@/components/admin/PCTierEditor";
-import AmenitiesList from "@/components/admin/AmenitiesList";
-import AddAmenityForm from "@/components/admin/AddAmenityForm";
-import RatesList from "@/components/admin/RatesList";
 import PendingBranchEditPanel from "@/components/admin/PendingBranchEditPanel";
-import BranchPhotosManager from "@/components/admin/BranchPhotosManager";
-import { ArrowLeft, Plus, Save, Trash2, ExternalLink } from "lucide-react";
-import type {
-  Branch,
-  BranchAmenity,
-  BranchPhoto,
-  BranchRate,
-} from "@/lib/supabase/types";
+import { ArrowLeft, Plus, Trash2, ExternalLink } from "lucide-react";
+import { formatPHP } from "@/lib/utils";
+import type { Branch, BranchAmenity, BranchPhoto, BranchRate } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
+
+// VIEW + APPROVE ONLY (owner 2026-05-30: "the website look should only be edited thru the POS, not the
+// website admin, to avoid duplication"). This page used to be a full editor that DUPLICATED the POS
+// Reservation tab's branch-edit form. The public-look editing (core fields, photos, rates, amenities)
+// is removed here — those are now POS-only (edit on the POS → Send for approval → Approve below). What
+// stays: the Approve/Reject panel for incoming POS submissions; a READ-ONLY view of the current branch;
+// and two OPERATIONAL settings the POS does NOT handle (PC-station tiers + private guest instruction
+// photos), which would be uneditable anywhere if removed. Connected: the POS submit flow
+// (admin-dashboard.html) is the single editing surface; the public page reads photos[0] as the header.
 
 interface Props {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ ok?: string; error?: string }>;
 }
 
-export default async function EditBranchPage({ params, searchParams }: Props) {
+export default async function ViewBranchPage({ params, searchParams }: Props) {
   await requireFullAdmin();
   const { id } = await params;
   const { ok, error } = await searchParams;
@@ -52,8 +37,7 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
   // already locked to admins (requireFullAdmin above), and branch_edit_submissions' row-security
   // blocks the anon+session connection used for the public-facing tables — so reading the pending
   // list with `supabase` returned ZERO even when rows existed, leaving the approval panel silently
-  // empty (owner-reported 2026-05-30: 7 pending in the data, none shown). Approve/Reject already use
-  // service role, so seeing the list was the only broken link.
+  // empty (owner-reported 2026-05-30). Approve/Reject already use service role too.
   const admin = getSupabaseAdmin();
   const [branchRes, amenitiesRes, ratesRes, photosRes, stationsRes, pendingRes] = await Promise.all([
     supabase.from("branches").select("*").eq("id", id).maybeSingle(),
@@ -65,8 +49,6 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
       .select("id, station_name, is_occupied, pc_tier, last_synced_at")
       .eq("branch_id", id)
       .order("station_name"),
-    // Stage 4a: pending POS-submitted page edits — admin approves/rejects inline below.
-    // Uses `admin` (service role), NOT `supabase` — see note above.
     admin
       .from("branch_edit_submissions")
       .select("id, submitted_at, submitted_by, payload")
@@ -89,8 +71,6 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
     pc_tier: string | null;
     last_synced_at: string;
   }>;
-  // Stage 4a: pending POS-submitted page edits for this branch (typically zero — only present
-  // when an owner pressed "Send for approval" from the POS Reservation tab since the last review).
   const pendingSubmissions = (pendingRes.data ?? []) as Array<{
     id: string;
     submitted_at: string;
@@ -116,10 +96,21 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
           href={`/branches/${branch.slug}`}
           target="_blank"
           rel="noreferrer"
+          title="Open this branch's public page in a new tab"
           className="font-mono text-xs uppercase tracking-widest text-amber hover:underline inline-flex items-center gap-1.5 mt-3"
         >
           View on site <ExternalLink className="h-3 w-3" />
         </a>
+      </div>
+
+      {/* VIEW + APPROVE ONLY — editing the public look lives on the POS now. */}
+      <div className="mt-6 p-4 border border-amber/40 bg-amber/5 rounded-lg">
+        <p className="font-mono text-[0.7rem] uppercase tracking-widest text-amber">// view &amp; approve only</p>
+        <p className="mt-2 text-sm text-cream-dim">
+          The public look (name, photos, rates, amenities) is edited on the <b>POS</b> — Reservation tab →
+          make your changes → <b>Send for approval</b>. Submissions show below for you to Approve or Reject.
+          Editing was removed here so there&apos;s only one place to change things.
+        </p>
       </div>
 
       {ok && (
@@ -129,131 +120,112 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
         <p className="mt-6 font-mono text-xs text-red-400">// {error}</p>
       )}
 
-      {/* Stage 4a: pending submissions from the POS Reservation tab — empty when nothing pending. */}
+      {/* APPROVE / REJECT incoming POS submissions */}
       <div className="mt-6">
         <PendingBranchEditPanel submissions={pendingSubmissions} />
       </div>
 
-      {/* CORE FIELDS */}
-      <form id="branch-core-form" action={updateBranchAction} className="mt-10 space-y-8">
-        <BranchCoreFields branch={branch} />
-      </form>
-
-      {/* AMENITIES */}
-      <Section id="amenities" title="Amenities" subtitle={`${amenities.length} listed`}>
-        <AmenitiesList
-          amenities={amenities}
-          branchId={branch.id}
-          updateAction={updateAmenityAction}
-          deleteAction={deleteAmenityAction}
-        />
-
-        <AddAmenityForm
-          branchId={branch.id}
-          nextOrder={amenities.length}
-          addAction={addAmenityAction}
-        />
-      </Section>
-
-      {/* RATES */}
-      <Section id="rates" title="Rates" subtitle={`${rates.length} listed`}>
-        <RatesList
-          rates={rates}
-          branchId={branch.id}
-          isPlaycation={branch.type === "playcation"}
-          updateAction={updateRateAction}
-          deleteAction={deleteRateAction}
-        />
-        <form action={addRateAction} className="mt-5 space-y-3">
-          <input type="hidden" name="branch_id" value={branch.id} />
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_2fr_auto]">
-            <input name="category" placeholder="category" className="admin-input" defaultValue={branch.type === "playcation" ? "playcation" : "internet"} />
-            <input name="label" placeholder="Label *" required className="admin-input" />
-            <input name="price_php" type="number" step="0.01" placeholder="price" required className="admin-input" />
-            <input name="unit" placeholder="unit" defaultValue={branch.type === "playcation" ? "night" : "hour"} className="admin-input" />
-            <input name="description" placeholder="Description" className="admin-input" />
-            <button type="submit" title="Add this rate to the branch" className="key-cap !py-2 !px-3">
-              <Plus className="h-4 w-4" />
-              Add
-            </button>
+      {/* CURRENT INFO — read-only */}
+      <Section id="info" title="Current info" subtitle="read-only · edit on POS">
+        <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
+          <ReadRow label="Name" value={branch.name} />
+          <ReadRow label="Type" value={branch.type} />
+          <ReadRow label="Tagline" value={branch.tagline} />
+          <ReadRow label="Address" value={[branch.address, branch.city].filter(Boolean).join(", ")} />
+          <ReadRow label="Phone" value={branch.phone} />
+          <ReadRow label="Email" value={branch.email} />
+          <ReadRow label="Hours" value={branch.hours_text} />
+          <ReadRow label="Published" value={branch.is_published ? "Yes — live on site" : "No — hidden"} />
+        </dl>
+        {branch.description_md && (
+          <div className="mt-5">
+            <p className="terminal-label">description</p>
+            <p className="mt-1 text-sm text-cream-dim whitespace-pre-wrap">{branch.description_md}</p>
           </div>
-          {/* Check-in/out time = Playcation (overnight stay) only. Internet-cafe rates are hourly, so
-              these are hidden for cafe branches (owner 2026-05-30: "cafe ≠ playcation"). */}
-          {branch.type === "playcation" && (
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
-                <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" className="admin-input" />
-              </div>
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
-                <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" className="admin-input" />
-              </div>
-            </div>
-          )}
-          {branch.type === "playcation" && (
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// max pax included in base rate</p>
-                <input name="max_pax" type="number" min="1" placeholder="e.g. 2 (blank = no limit)" className="admin-input" />
-              </div>
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// max guests allowed (hard cap)</p>
-                <input name="max_guests" type="number" min="1" placeholder="e.g. 4 (blank = no limit)" className="admin-input" />
-              </div>
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// extra fee per additional pax (₱)</p>
-                <input name="extra_pax_fee_php" type="number" step="0.01" min="0" placeholder="e.g. 300 per extra guest" className="admin-input" />
-              </div>
-            </div>
-          )}
-        </form>
+        )}
       </Section>
 
-      {/* PHOTOS */}
+      {/* PHOTOS — read-only (first = front/header) */}
       <Section id="photos" title="Photos" subtitle={`${photos.length} in gallery`}>
-        {/* Drag-to-reorder gallery. The FIRST photo is the public front/header photo (owner 2026-05-30).
-            key on the id-order so a successful save remounts with the canonical server order. */}
-        <BranchPhotosManager
-          key={photos.map((p) => p.id).join(",")}
-          photos={photos}
-          branchId={branch.id}
-          reorderAction={reorderPhotosAction}
-          deleteAction={deletePhotoAction}
-        />
-        <form action={addPhotosAction} className="mt-5 space-y-3 p-5 border border-line rounded-lg bg-bg">
-          <input type="hidden" name="branch_id" value={branch.id} />
-          <input type="hidden" name="sort_order_start" value={photos.length} />
-          <ImageUpload
-            name="public_url"
-            folder={`branches/${branch.slug}`}
-            multiple
-          />
-          <button type="submit" title="Upload and add photos to this branch" className="key-cap !py-2 !px-3">
-            <Plus className="h-4 w-4" />
-            Add photos
-          </button>
-        </form>
+        {photos.length === 0 ? (
+          <p className="font-mono text-xs text-mocha">// no photos yet — add them on the POS</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {photos.map((p, i) => (
+              <div
+                key={p.id}
+                className={`relative border rounded-md overflow-hidden bg-bg ${
+                  i === 0 ? "border-amber ring-1 ring-amber/50" : "border-line"
+                }`}
+              >
+                {p.public_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.public_url} alt={p.caption ?? ""} className="w-full aspect-[4/3] object-cover" />
+                )}
+                {i === 0 && (
+                  <div className="absolute top-2 left-2 bg-amber text-black font-mono text-[0.6rem] font-bold uppercase tracking-widest px-2 py-1 rounded">
+                    ★ Front photo
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </Section>
 
-      {/* PC STATIONS — only show for cafe branches */}
+      {/* RATES — read-only */}
+      <Section id="rates" title="Rates" subtitle={`${rates.length} listed`}>
+        {rates.length === 0 ? (
+          <p className="font-mono text-xs text-mocha">// no rates yet</p>
+        ) : (
+          <ul className="space-y-2">
+            {rates.map((r) => (
+              <li key={r.id} className="border border-line rounded-md bg-bg p-3">
+                <div className="text-cream font-medium">{r.label}</div>
+                <div className="font-mono text-xs text-mocha">
+                  {r.category} · {formatPHP(r.price_php)}/{r.unit}
+                  {r.max_pax != null && <> · up to {r.max_pax} pax</>}
+                  {r.max_guests != null && <> · max {r.max_guests} guests</>}
+                  {branch.type === "playcation" && (r.check_in_time || r.check_out_time) && (
+                    <> · {r.check_in_time ?? "—"} → {r.check_out_time ?? "—"}</>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {/* AMENITIES — read-only */}
+      <Section id="amenities" title="Amenities" subtitle={`${amenities.length} listed`}>
+        {amenities.length === 0 ? (
+          <p className="font-mono text-xs text-mocha">// none listed</p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {amenities.map((a) => (
+              <li key={a.id} className="border border-line rounded-md bg-bg p-3">
+                <div className="text-cream text-sm font-medium">{a.label}</div>
+                {a.description && <div className="text-xs text-cream-dim mt-0.5">{a.description}</div>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {/* PC STATIONS — operational (NOT public look); the POS doesn't set tiers, so kept editable here. */}
       {branch.type === "cafe" && (
-        <Section
-          id="pc-stations"
-          title="PC stations"
-          subtitle={`${pcStations.length} synced from PanCafe`}
-        >
+        <Section id="pc-stations" title="PC stations" subtitle={`${pcStations.length} synced · operational`}>
           <p className="mb-4 text-sm text-cream-dim">
-            Tag each station as Regular or VIP so the reservation form shows the right rates. Run the <code className="text-amber">pancafe-sync</code> script on the cafe server if no stations appear here.
+            Operational setting (not the public look). Tag each station Regular or VIP so the reservation form shows the right rates. Run the <code className="text-amber">pancafe-sync</code> script on the cafe server if no stations appear.
           </p>
           <PCTierEditor branchId={branch.id} stations={pcStations} />
         </Section>
       )}
 
-      {/* GUEST INSTRUCTIONS */}
-      <Section id="instructions" title="Guest instructions" subtitle="private — sent to confirmed bookings">
+      {/* GUEST INSTRUCTIONS — operational/private (NOT public look); POS doesn't handle these. */}
+      <Section id="instructions" title="Guest instructions" subtitle="private · operational">
         <p className="mb-6 text-sm text-cream-dim">
-          Upload the check-in, house-rules, and FAQ sheets for this branch. They&apos;re attached to the booking-confirmation email and shown on the branch page only to guests with a confirmed booking. Door PINs stay private — these are never public. Add as many as you need.
+          Operational setting (not the public look). Upload the check-in, house-rules, and FAQ sheets — attached to the booking-confirmation email and shown only to guests with a confirmed booking. Door PINs stay private.
         </p>
 
         {instructionPhotos.length > 0 ? (
@@ -296,52 +268,16 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
           </button>
         </form>
       </Section>
-
-      {/* SAVE */}
-      <div className="mt-16 pt-10 border-t border-line flex items-center gap-3">
-        <button type="submit" form="branch-core-form" title="Save all branch changes" className="key-cap key-cap-primary">
-          <Save className="h-4 w-4" />
-          Save changes
-        </button>
-      </div>
-
-      {/* DANGER ZONE */}
-      <div className="mt-8 p-6 border border-red-900/50 rounded-xl bg-red-950/10">
-        <p className="font-mono text-[0.7rem] uppercase tracking-widest text-red-400">// danger zone</p>
-        <p className="mt-3 text-sm text-cream-dim">
-          Delete this branch and everything attached (amenities, photos, rates). This is permanent.
-        </p>
-        <form action={deleteBranchAction} className="mt-4">
-          <input type="hidden" name="id" value={branch.id} />
-          <button
-            type="submit"
-            title="Permanently delete this branch and all its data"
-            className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete branch
-          </button>
-        </form>
-      </div>
-
-      <style>{`
-        .admin-input {
-          width: 100%;
-          background: var(--color-bg);
-          border: 1px solid var(--color-line-bright);
-          border-radius: 0.5rem;
-          padding: 0.625rem 0.875rem;
-          color: var(--color-cream);
-          font-family: var(--font-sans);
-          font-size: 0.9rem;
-        }
-        .admin-input:focus {
-          outline: none;
-          border-color: var(--color-amber);
-          box-shadow: 0 0 0 1px rgba(255,181,71,0.4);
-        }
-      `}</style>
     </section>
+  );
+}
+
+function ReadRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <dt className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">{label}</dt>
+      <dd className="text-cream-dim mt-0.5 break-words">{value ? value : "—"}</dd>
+    </div>
   );
 }
 
