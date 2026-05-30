@@ -70,7 +70,10 @@ export default async function BranchDetailPage({
   // enough — the active method must be 'paymongo'. The vacant-PC live view stays regardless.
   // Read the per-branch config server-side via the service role (it holds secrets — never client).
   const paymentConfig = isPlay ? null : await getBranchPaymentConfig(branch.id);
-  const canReserveOnline = isPlay || isPaymongoReservationActive(paymentConfig);
+  // The CTA also requires the owner's "Accept online reservations" master switch (reservations_enabled).
+  // Unchecking it hides the Reserve button so customers never reach a reserve page that would 404
+  // (owner 2026-05-30). The PayMongo + Bookings-QR setup is still required too.
+  const canReserveOnline = isPlay || (isPaymongoReservationActive(paymentConfig) && !!branch.reservations_enabled);
   const ctaHref = isPlay
     ? `/playcation/${branch.slug}/book`
     : `/branches/${branch.slug}/reserve-pc`;

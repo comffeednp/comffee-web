@@ -54,7 +54,10 @@ export default async function ReservePCPage({
   // config with the service role (it holds secrets) but only use the method flag + the non-secret
   // display subset below.
   const paymentConfig = await getBranchPaymentConfig(branch.id);
-  if (!isPaymongoReservationActive(paymentConfig)) notFound();
+  // Require BOTH the PayMongo/Bookings-QR setup AND the owner's "Accept online reservations" switch.
+  // The branch-page Reserve button is hidden for the same reason, so a normal visitor never lands here
+  // when it's off — a direct link still 404s (owner 2026-05-30).
+  if (!isPaymongoReservationActive(paymentConfig) || !branch.reservations_enabled) notFound();
   const display = await getBranchPaymentDisplay(branch.id);
 
   // Google sign-in is REQUIRED to reserve (flowchart §F/§G/§K). Read the session (anon client +
