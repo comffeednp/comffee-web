@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   updateBranchAction,
   deleteBranchAction,
@@ -45,6 +46,13 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
   const { ok, error } = await searchParams;
 
   const supabase = await getSupabaseServer();
+  // Pending POS submissions are read with the FULL-ACCESS connection (service role). The page is
+  // already locked to admins (requireFullAdmin above), and branch_edit_submissions' row-security
+  // blocks the anon+session connection used for the public-facing tables — so reading the pending
+  // list with `supabase` returned ZERO even when rows existed, leaving the approval panel silently
+  // empty (owner-reported 2026-05-30: 7 pending in the data, none shown). Approve/Reject already use
+  // service role, so seeing the list was the only broken link.
+  const admin = getSupabaseAdmin();
   const [branchRes, amenitiesRes, ratesRes, photosRes, stationsRes, pendingRes] = await Promise.all([
     supabase.from("branches").select("*").eq("id", id).maybeSingle(),
     supabase.from("branch_amenities").select("*").eq("branch_id", id).order("sort_order"),
@@ -56,7 +64,8 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
       .eq("branch_id", id)
       .order("station_name"),
     // Stage 4a: pending POS-submitted page edits — admin approves/rejects inline below.
-    supabase
+    // Uses `admin` (service role), NOT `supabase` — see note above.
+    admin
       .from("branch_edit_submissions")
       .select("id, submitted_at, submitted_by, payload")
       .eq("branch_id", id)

@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
     branchName = `[NEW] ${proposedSlug}`;
   }
 
+  // Only the LATEST request may be pending — never a stack. The owner was pressing "Send for
+  // approval" repeatedly and each press INSERTed a new row → he had 7 identical pending entries.
+  // A fresh submit OVERWRITES the previous pending one for the same target: delete the old pending
+  // row(s) first, then insert the new one. Deleted (not kept as history) because these are
+  // re-submittable full-form snapshots and the owner explicitly wants the old ones gone, replaced
+  // by the newest. Approved/rejected rows are untouched — only 'pending' is superseded.
+  if (branchId) {
+    await admin.from("branch_edit_submissions").delete().eq("branch_id", branchId).eq("status", "pending");
+  } else if (proposedSlug) {
+    await admin.from("branch_edit_submissions").delete().eq("proposed_slug", proposedSlug).eq("status", "pending");
+  }
+
   const { data: inserted, error: insErr } = await admin
     .from("branch_edit_submissions")
     .insert({
