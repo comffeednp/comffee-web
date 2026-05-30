@@ -10,8 +10,19 @@ import crypto from "node:crypto";
 
 const API_BASE = "https://api.paymongo.com/v1";
 
-function authHeader(): string {
-  const key = process.env.PAYMONGO_SECRET_KEY;
+/**
+ * Build the Basic-auth header for a PayMongo call.
+ *
+ * `secretKey` is optional: when omitted we fall back to the platform env key
+ * (process.env.PAYMONGO_SECRET_KEY). This keeps the EXISTING Playcation
+ * booking / order / top-up flows working unchanged — they call without a key.
+ * The per-branch cafe-reservation path passes the OWNER'S PayMongo secret key
+ * (read server-side from branch_payment_config) so each cafe charges into its
+ * own PayMongo account. The key is always server-only; it is never logged or
+ * returned to the caller.
+ */
+function authHeader(secretKey?: string): string {
+  const key = secretKey ?? process.env.PAYMONGO_SECRET_KEY;
   if (!key) {
     throw new Error("PAYMONGO_SECRET_KEY not configured");
   }
@@ -28,6 +39,10 @@ export interface CreatePaymentLinkInput {
   description: string;
   remarks?: string;
   redirectUrl?: string;    // where to send the customer after payment
+  // Optional per-branch PayMongo secret key. Omit → uses the platform env key
+  // (existing Playcation/order/top-up flows). The cafe-reservation path passes
+  // the cafe owner's own key so the charge lands in their PayMongo account.
+  secretKey?: string;
 }
 
 export interface PaymentLink {
@@ -45,7 +60,7 @@ export async function createPaymentLink(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: authHeader(),
+      Authorization: authHeader(input.secretKey),
     },
     body: JSON.stringify({
       data: {

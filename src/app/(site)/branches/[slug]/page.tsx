@@ -5,6 +5,7 @@ import { marked } from "marked";
 import { getAllBranchSlugs, getBranchBySlug } from "@/lib/branches";
 import { getPCStationsForBranch } from "@/lib/pc-stations";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getBranchPaymentConfig, isPaymongoReservationActive } from "@/lib/branch-payment-config";
 import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
 import AmenityIcon from "@/components/site/AmenityIcon";
@@ -62,9 +63,14 @@ export default async function BranchDetailPage({
 
   const isPlay = branch.type === "playcation";
   // Cafes get a live-PC reservation CTA; playcations get a Playcation booking CTA. For cafes, the
-  // CTA only appears when the owner has flipped reservations_enabled on in their POS Reservation
-  // tab (Stage 6). When off, we show a walk-in notice instead; the vacant-PC live view stays.
-  const canReserveOnline = isPlay || branch.reservations_enabled;
+  // CTA appears ONLY when the owner has set up PayMongo as their active online-payment method
+  // (Online Payments & Reservations — Chunk 5). Online reservations are a PayMongo-only feature:
+  // GCash-Personal cafes and cafes with no method picked show NOTHING about reserving (the old
+  // "walk-in only" sentence is removed, per flowchart §A). reservations_enabled alone is no longer
+  // enough — the active method must be 'paymongo'. The vacant-PC live view stays regardless.
+  // Read the per-branch config server-side via the service role (it holds secrets — never client).
+  const paymentConfig = isPlay ? null : await getBranchPaymentConfig(branch.id);
+  const canReserveOnline = isPlay || isPaymongoReservationActive(paymentConfig);
   const ctaHref = isPlay
     ? `/playcation/${branch.slug}/book`
     : `/branches/${branch.slug}/reserve-pc`;
@@ -165,15 +171,14 @@ export default async function BranchDetailPage({
           )}
 
           <div className="mt-10 flex flex-wrap gap-4 items-center">
-            {canReserveOnline ? (
+            {/* Reserve CTA shows only when online reservations are available (PayMongo active for
+                cafes, or a Playcation branch). When unavailable we render NOTHING about reserving —
+                no "walk-in only" notice (flowchart §A). */}
+            {canReserveOnline && (
               <Link href={ctaHref} title={ctaLabel} className="key-cap key-cap-primary">
                 <Power className="h-4 w-4" />
                 {ctaLabel}
               </Link>
-            ) : (
-              <span className="key-cap" style={{ cursor: "default", borderColor: "rgba(255,255,255,0.2)" }}>
-                Walk-ins welcome — no online reservations
-              </span>
             )}
             <a href="#walkthrough" title="Walk through this branch" className="key-cap">
               Walk through
@@ -415,11 +420,13 @@ export default async function BranchDetailPage({
             See you at <span className="text-amber text-glow-amber">{branch.name}</span>?
           </h2>
           <p className="mt-5 text-cream-dim text-lg max-w-xl mx-auto">
+            {/* When online reservations aren't available we say NOTHING about reserving (flowchart
+                §A) — just a neutral "drop by" line. No "not accepting reservations" wording. */}
             {isPlay
               ? "Pick your dates. We'll have the controllers charged and the computers ready."
               : canReserveOnline
                 ? "Reserve a PC online while you're on the way. We'll have it ready."
-                : "Walk-ins welcome. This branch isn't accepting online reservations right now."}
+                : "Drop by — the coffee's hot and the PCs are ready."}
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             {canReserveOnline && (

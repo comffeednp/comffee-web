@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useEffect, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -52,6 +51,14 @@ interface Props {
   rates: Rate[];
   requestedPc: string | null;
   requestedTier: string | null;
+  // Online-payment additions (Chunk 5/6). Flat reservation fee, the signed-in Google email
+  // (prefills the name + travels to the create API), and the per-branch reservation rules + the
+  // members-only bonus DISPLAY settings (display only — PanCafe applies the real bonus).
+  reservationFeePhp: number;
+  signedInEmail: string | null;
+  minHours: number;
+  minTopup: number;
+  bonus: { type: string; value: number; threshold: number };
 }
 
 type Mode = "walk_in" | "member";
@@ -62,8 +69,12 @@ export default function ReservePCClient({
   stations: initialStations,
   rates,
   requestedPc,
+  reservationFeePhp,
+  signedInEmail,
+  minHours,
+  minTopup,
+  bonus,
 }: Props) {
-  const router = useRouter();
   const [step, setStep] = useState<Step>("pick");
   const [mode, setMode] = useState<Mode>("walk_in");
   const [stations, setStations] = useState<Station[]>(initialStations);
@@ -128,6 +139,10 @@ export default function ReservePCClient({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [memberNumber, setMemberNumber] = useState("");
+  // Member-mode online-reservation fields (Chunk 6).
+  const [memberTopup, setMemberTopup] = useState(""); // peso string; must be >= minTopup
+  const [memberFirstName, setMemberFirstName] = useState("");
+  const [memberLastName, setMemberLastName] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reservationId, setReservationId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -138,6 +153,16 @@ export default function ReservePCClient({
     const id = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  // Prefill the name from the signed-in Google account (editable). Only seeds an empty field so we
+  // never clobber what the customer typed.
+  useEffect(() => {
+    if (signedInEmail && !name) {
+      const guess = signedInEmail.split("@")[0]?.replace(/[._]+/g, " ").trim();
+      if (guess) setName(guess.replace(/\b\w/g, (c) => c.toUpperCase()));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedInEmail]);
 
   // Which PC is selected + its tier
   const selectedStation = useMemo(
@@ -177,14 +202,46 @@ export default function ReservePCClient({
 
   const vacantStations = stations.filter((s) => !s.isOccupied);
 
+  // Walk-in must book at least `minHours` of time. Compare the booked minutes against the minimum.
+  // (Applies to every rate type — a 3-hour pack already clears a 1-hour minimum.)
+  const bookedHours = totalMinutes / 60;
+  const walkInMeetsMinHours = mode !== "walk_in" || !selectedRate || bookedHours >= minHours;
+
+  // Member top-up parsed + min-top-up gate (the wall against prank reserving, flowchart §G).
+  const topupNum = Number(memberTopup);
+  const topupValid = Number.isFinite(topupNum) && topupNum > 0;
+  const memberMeetsMinTopup = mode !== "member" || (topupValid && topupNum >= minTopup);
+
+  // Members-only bonus to SHOW (display only — PanCafe applies the real bonus). null = nothing to show.
+  const displayBonus = useMemo(() => {
+    if (mode !== "member") return null;
+    if (!topupValid || topupNum <= 0) return null;
+    if (!bonus.value || bonus.value <= 0) return null;
+    if (bonus.threshold > 0 && topupNum < bonus.threshold) return null;
+    const raw = bonus.type === "fixed" ? bonus.value : (topupNum * bonus.value) / 100;
+    const bonusPhp = Math.round(raw);
+    if (bonusPhp <= 0) return null;
+    return { bonusPhp, totalPhp: Math.round(topupNum) + bonusPhp };
+  }, [mode, topupValid, topupNum, bonus]);
+
+  // What the customer pays at PayMongo = flat fee + (walk-in PC time | member top-up).
+  const payNowPhp =
+    reservationFeePhp + (mode === "walk_in" ? totalPhp : topupValid ? topupNum : 0);
+
   const canSubmit = useMemo(() => {
     if (!stationName) return false;
     if (!name.trim()) return false;
-    if (mode === "member" && !memberNumber.trim()) return false;
-    if (mode === "walk_in" && !selectedRate) return false;
-    if (mode === "walk_in" && selectedRate && !isRateAvailableNow(selectedRate)) return false;
+    if (mode === "member") {
+      if (!memberNumber.trim()) return false;
+      if (!memberMeetsMinTopup) return false;
+    }
+    if (mode === "walk_in") {
+      if (!selectedRate) return false;
+      if (!isRateAvailableNow(selectedRate)) return false;
+      if (!walkInMeetsMinHours) return false;
+    }
     return true;
-  }, [stationName, name, mode, memberNumber, selectedRate]);
+  }, [stationName, name, mode, memberNumber, selectedRate, memberMeetsMinTopup, walkInMeetsMinHours]);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -202,6 +259,9 @@ export default function ReservePCClient({
             customerPhone: phone.trim(),
             customerType: mode,
             memberNumber: mode === "member" ? memberNumber.trim() : "",
+            memberTopup: mode === "member" && topupValid ? topupNum : undefined,
+            memberFirstName: mode === "member" ? memberFirstName.trim() : "",
+            memberLastName: mode === "member" ? memberLastName.trim() : "",
             rateId: mode === "walk_in" ? rateId : "",
             quantity: mode === "walk_in" ? quantity : 1,
           }),
@@ -213,10 +273,15 @@ export default function ReservePCClient({
           return;
         }
         setReservationId(data.reservationId);
-        setStep("done");
-        // Stage 7a: navigate to the payment-instructions page (GCash QR + 5-min countdown).
-        // The done-step UI remains as a brief fallback if the router push is slow.
-        router.push(`/branches/${branch.slug}/reserve-pc/confirmed/${data.reservationId}`);
+        // DIY-QR flow (2026-05-30): no external checkout. Go to the confirmed page, which runs the pay
+        // queue → shows the Bookings QR → and flips to "Reserved! + code" the instant the POS matches
+        // the payment on PayMongo.
+        if (data.reservationId) {
+          window.location.href = `/branches/${branch.slug}/reserve-pc/confirmed/${data.reservationId}`;
+          return;
+        }
+        setStep("error");
+        setErrorMsg("could not start the reservation");
       } catch (e) {
         setStep("error");
         setErrorMsg(e instanceof Error ? e.message : "network error");
@@ -434,24 +499,94 @@ export default function ReservePCClient({
                       </span>
                     </div>
                   )}
+
+                  {/* Minimum-hours wall (flowchart §F). Show why the button is blocked. */}
+                  {selectedRate && !walkInMeetsMinHours && (
+                    <p className="mt-3 font-mono text-xs text-amber">
+                      // this branch needs at least {minHours} hour{minHours === 1 ? "" : "s"} booked online — pick a longer package or add hours.
+                    </p>
+                  )}
                 </section>
               )}
 
-              {/* ---------- MEMBER NUMBER (member mode only) ---------- */}
+              {/* ---------- MEMBER (member mode only): number + top-up + optional name ---------- */}
               {mode === "member" && (
-                <section>
-                  <p className="terminal-label">// member_number</p>
-                  <input
-                    type="text"
-                    value={memberNumber}
-                    onChange={(e) => setMemberNumber(e.target.value)}
-                    className="reserve-input mt-3"
-                    placeholder="Your PanCafe member number"
-                    autoComplete="off"
-                  />
-                  <p className="mt-2 text-[0.7rem] text-mocha">
-                    // the cashier will verify this when you arrive. your rate is whatever your member account has set.
-                  </p>
+                <section className="space-y-6">
+                  <div>
+                    <p className="terminal-label">// member_number</p>
+                    <input
+                      type="text"
+                      value={memberNumber}
+                      onChange={(e) => setMemberNumber(e.target.value)}
+                      className="reserve-input mt-3"
+                      placeholder="Your PanCafe member number"
+                      autoComplete="off"
+                    />
+                    <p className="mt-2 text-[0.7rem] text-mocha">
+                      // the cashier will verify this when you arrive.
+                    </p>
+                  </div>
+
+                  {/* Top-up amount — must clear the branch minimum (the wall against prank reserving). */}
+                  <div>
+                    <p className="terminal-label">// top_up_amount</p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="font-mono text-amber font-bold text-lg">₱</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={minTopup || 1}
+                        step="1"
+                        value={memberTopup}
+                        onChange={(e) => setMemberTopup(e.target.value)}
+                        className="reserve-input"
+                        placeholder={minTopup > 0 ? `${minTopup} or more` : "amount to load"}
+                        autoComplete="off"
+                      />
+                    </div>
+                    {minTopup > 0 && (
+                      <p className="mt-2 font-mono text-[0.7rem] text-mocha">
+                        // minimum top-up online is {formatPHP(minTopup)}.
+                      </p>
+                    )}
+                    {memberTopup !== "" && !memberMeetsMinTopup && (
+                      <p className="mt-1 font-mono text-xs text-amber">
+                        // top up at least {formatPHP(minTopup)} to reserve online.
+                      </p>
+                    )}
+                    {/* Bonus DISPLAY only — PanCafe applies the real bonus when the cashier loads it. */}
+                    {displayBonus && (
+                      <p className="mt-2 font-mono text-xs text-phosphor">
+                        // top up {formatPHP(topupNum)} → get {formatPHP(displayBonus.totalPhp)} (includes {formatPHP(displayBonus.bonusPhp)} bonus). the cashier loads your bonus on arrival.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Optional first/last name — shown to the cashier to confirm who you are (flowchart §G). */}
+                  <div>
+                    <p className="terminal-label">// your_name_optional</p>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                      <input
+                        type="text"
+                        value={memberFirstName}
+                        onChange={(e) => setMemberFirstName(e.target.value)}
+                        className="reserve-input"
+                        placeholder="First name (optional)"
+                        autoComplete="off"
+                      />
+                      <input
+                        type="text"
+                        value={memberLastName}
+                        onChange={(e) => setMemberLastName(e.target.value)}
+                        className="reserve-input"
+                        placeholder="Last name (optional)"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <p className="mt-2 text-[0.7rem] text-mocha">
+                      // helps the cashier confirm it&apos;s you when you arrive.
+                    </p>
+                  </div>
                 </section>
               )}
 
@@ -487,6 +622,26 @@ export default function ReservePCClient({
                 </div>
               </section>
 
+              {/* ---------- FEE BREAKDOWN (always shown before paying, flowchart §E) ---------- */}
+              <div className="rounded-lg border border-line-bright bg-bg p-4 font-mono text-sm">
+                <div className="flex items-center justify-between text-cream-dim">
+                  <span>
+                    {mode === "walk_in" ? "PC time" : "Top-up"}
+                  </span>
+                  <span className="text-cream">
+                    {formatPHP(mode === "walk_in" ? totalPhp : topupValid ? topupNum : 0)}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-cream-dim">
+                  <span>Reservation fee</span>
+                  <span className="text-cream">{formatPHP(reservationFeePhp)}</span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-line flex items-center justify-between">
+                  <span className="text-phosphor uppercase tracking-widest text-[0.7rem]">Pay now online</span>
+                  <span className="text-amber font-bold text-base">{formatPHP(payNowPhp)}</span>
+                </div>
+              </div>
+
               {errorMsg && (
                 <p className="font-mono text-xs text-red-400">// {errorMsg}</p>
               )}
@@ -495,13 +650,11 @@ export default function ReservePCClient({
                 type="button"
                 onClick={handleSubmit}
                 disabled={!canSubmit}
-                title="Submit PC station reservation"
+                title="Pay online to reserve this station"
                 className="key-cap key-cap-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Power className="h-4 w-4" />
-                {mode === "member"
-                  ? `Reserve ${stationName || "station"} as member`
-                  : `Reserve ${stationName || "station"}${totalPhp > 0 ? ` for ${formatPHP(totalPhp)}` : ""}`}
+                {`Pay ${formatPHP(payNowPhp)} to reserve ${stationName || "station"}`}
               </button>
             </motion.div>
           )}
@@ -521,48 +674,33 @@ export default function ReservePCClient({
                 </div>
               </div>
               <p className="mt-8 font-mono text-sm text-phosphor">
-                // CLAIMING {stationName}…
+                // RESERVING YOUR STATION…
               </p>
             </motion.div>
           )}
 
-          {/* ---------- DONE ---------- */}
+          {/* ---------- DONE (brief fallback while the browser redirects to PayMongo) ---------- */}
+          {/* The PC is NOT held until payment lands, so we never say "reserved" here — we only show
+              this if window.location.href to the PayMongo checkout is slow. */}
           {step === "done" && (
             <motion.div
               key="done"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="py-12 text-center"
+              className="py-16 text-center"
             >
-              <div className="mx-auto h-20 w-20 rounded-full border-2 border-phosphor flex items-center justify-center glow-phosphor">
-                <Check className="h-10 w-10 text-phosphor" strokeWidth={3} />
+              <div className="flex justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-amber" />
               </div>
-              <p className="mt-8 terminal-label">// reserved</p>
-              <h3 className="mt-2 font-display text-3xl font-bold text-cream">
-                {stationName} is yours.
-              </h3>
-              <p className="mt-3 text-cream-dim max-w-md mx-auto">
-                Walk to the cafe and tell the cashier your name.
-                <br />
-                <span className="font-mono text-[0.7rem] text-amber">
-                  ⚠ You have 30 minutes to arrive before the reservation expires.
-                </span>
+              <p className="mt-6 font-mono text-sm text-phosphor">// RESERVING YOUR STATION…</p>
+              <p className="mt-2 text-cream-dim max-w-md mx-auto text-sm">
+                Hang on — opening the secure payment page for {stationName}.
               </p>
               {reservationId && (
                 <p className="mt-4 font-mono text-[0.65rem] text-mocha break-all">
                   // ref: {reservationId}
                 </p>
               )}
-              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => router.push(`/branches/${branch.slug}`)}
-                  title={`Back to ${branch.name}`}
-                  className="key-cap"
-                >
-                  Back to branch
-                </button>
-              </div>
             </motion.div>
           )}
 
@@ -606,17 +744,25 @@ export default function ReservePCClient({
               <>
                 <SummaryRow label="rate" value={selectedRate.label} />
                 <SummaryRow label="duration" value={`${totalMinutes} min`} />
-                <SummaryRow label="total" value={formatPHP(totalPhp)} accent />
+                <SummaryRow label="PC time" value={formatPHP(totalPhp)} />
               </>
             )}
             {mode === "member" && memberNumber && (
               <SummaryRow label="member" value={`#${memberNumber}`} />
             )}
+            {mode === "member" && topupValid && (
+              <SummaryRow label="top-up" value={formatPHP(topupNum)} />
+            )}
+            {mode === "member" && displayBonus && (
+              <SummaryRow label="you get" value={formatPHP(displayBonus.totalPhp)} />
+            )}
+            <SummaryRow label="reservation fee" value={formatPHP(reservationFeePhp)} />
+            <SummaryRow label="pay now" value={formatPHP(payNowPhp)} accent />
           </div>
 
           <div className="pt-4 border-t border-line flex items-start gap-2 text-[0.7rem] font-mono uppercase tracking-widest text-mocha">
             <Clock className="h-3 w-3 mt-0.5 text-phosphor" />
-            <span>30-minute grace window from the moment you reserve</span>
+            <span>10-minute grace window to arrive once you&apos;ve paid</span>
           </div>
         </div>
       </aside>

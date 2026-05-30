@@ -27,6 +27,11 @@ export interface BranchPaymentConfig {
   bonus_type: string; // 'percent' | 'fixed'
   bonus_value: number;
   bonus_threshold: number;
+  // DIY-QR online reservations (0041): the owner's uploaded "Bookings" QR Ph, synced from the POS.
+  // booking_qr_tlv is the raw EMVCo string the website builds each booking's dynamic QR from; the
+  // code_id is what the POS's PayMongo automatch keys on. NOT secret (it's drawn into the scanned QR).
+  booking_qr_tlv: string | null;
+  booking_qr_codeid: string | null;
   updated_at: string;
 }
 
@@ -53,7 +58,7 @@ export async function getBranchPaymentConfig(
     const { data } = await admin
       .from("branch_payment_config")
       .select(
-        "branch_id, online_payment_method, paymongo_secret_key, paymongo_webhook_secret, fee_per_100, reservation_min_hours, reservation_min_topup, bonus_type, bonus_value, bonus_threshold, updated_at",
+        "branch_id, online_payment_method, paymongo_secret_key, paymongo_webhook_secret, fee_per_100, reservation_min_hours, reservation_min_topup, bonus_type, bonus_value, bonus_threshold, booking_qr_tlv, booking_qr_codeid, updated_at",
       )
       .eq("branch_id", branchId)
       .maybeSingle();
@@ -65,22 +70,16 @@ export async function getBranchPaymentConfig(
 }
 
 /**
- * True only when this branch is FULLY ready to take online PayMongo reservations.
+ * True only when this branch is ready to take online DIY-QR reservations.
  *
- * Requires all three, not just the method being 'paymongo':
- *   1. online_payment_method === 'paymongo'
- *   2. a PayMongo secret key      — needed to CREATE the hosted checkout (the create route also
- *                                    re-checks this and 503s, kept as belt-and-suspenders)
- *   3. a PayMongo WEBHOOK secret  — needed to CONFIRM the payment
+ * Requires: online_payment_method === 'paymongo' AND a synced Bookings QR (booking_qr_tlv).
  *
- * WHY the webhook secret gates "active" (added 2026-05-30): a paid reservation is only ever confirmed
- * by PayMongo's webhook (webhooks/paymongo/route.ts), which verifies the callback against THIS branch's
- * stored webhook secret. With no webhook secret the signature check fails (401) and the row is never
- * marked paid — the customer would be charged with NO confirmed booking and no POS pop-up. So we refuse
- * to even OFFER reservations (branch page CTA + the create-route gate both call this) until the owner
- * has saved the webhook secret in POS Settings → Online Payments; the moment it syncs up, reservations
- * light up on their own. NOTE: counter-PayMongo at the register is unaffected — it confirms by POS-side
- * polling of the Payment Link, not by this webhook, so hiding reservations never touches counter sales.
+ * WHY just those two (DIY-QR rewrite, 2026-05-30): the website no longer talks to PayMongo for
+ * reservations. The customer scans the branch's uploaded Bookings QR (the website builds it from
+ * booking_qr_tlv), and the POS — which already holds the PayMongo key — watches PayMongo's payments
+ * list and flips the matched booking to payment_status='paid'. The website only needs to (a) be on the
+ * paymongo method and (b) have the Bookings QR to draw. The PayMongo secret + webhook secret are NO
+ * longer required here (the dropped Payment-Link/webhook path needed them; the DIY path doesn't).
  */
 export function isPaymongoReservationActive(
   config: BranchPaymentConfig | null,
@@ -88,8 +87,7 @@ export function isPaymongoReservationActive(
   return (
     !!config &&
     config.online_payment_method === "paymongo" &&
-    !!config.paymongo_secret_key &&
-    !!config.paymongo_webhook_secret
+    !!config.booking_qr_tlv
   );
 }
 

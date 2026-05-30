@@ -39,23 +39,31 @@ interface WebhookPayload {
 }
 
 /**
- * PayMongo webhook handler — handles reservations + orders + refunds.
+ * PayMongo webhook handler — handles Playcation reservations + balance + orders + top-ups +
+ * refunds (verified with the platform env secret), AND per-branch cafe PC reservations (verified
+ * with the BRANCH's own webhook secret).
  *
  *  - Verifies HMAC signature (constant-time compare)
  *  - Idempotent via paymongo_webhook_events unique constraint
  *  - On payment.paid: captures the payment.id, marks the parent row paid,
- *    and fires the customer confirmation email
+ *    and fires the customer confirmation email (where applicable)
  *  - On refund events: marks the corresponding refund row succeeded
+ *
+ * SIGNATURE VERIFICATION — two secrets:
+ * The original flows all sign with the single platform env secret PAYMONGO_WEBHOOK_SECRET. Cafe
+ * PC reservations are paid into the OWNER's PayMongo account, so PayMongo signs THOSE webhooks with
+ * the owner's webhook secret (stored per-branch in branch_payment_config). We therefore try the env
+ * secret FIRST (covers every existing flow, unchanged); only if that fails do we look up the cafe
+ * reservation this event refers to (by the Payment Link id), fetch its branch's webhook secret, and
+ * try that. This keeps the existing path byte-for-byte identical and adds the per-branch path as a
+ * pure fallback. We must parse the body BEFORE verifying because the per-branch secret lookup needs
+ * the Payment Link id from the payload — parsing untrusted JSON is safe; we just don't ACT on it
+ * until a signature check passes.
  */
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("paymongo-signature");
-  const secret = process.env.PAYMONGO_WEBHOOK_SECRET;
-
-  if (!verifyWebhookSignature(rawBody, signature, secret)) {
-    console.error("paymongo webhook: bad signature");
-    return NextResponse.json({ error: "bad_signature" }, { status: 401 });
-  }
+  const envSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
 
   let payload: WebhookPayload;
   try {
@@ -74,6 +82,39 @@ export async function POST(request: Request) {
   }
 
   const supabase = getSupabaseAdmin();
+
+  // 1) Try the platform env secret (covers all existing flows — unchanged behaviour).
+  let verified = verifyWebhookSignature(rawBody, signature, envSecret);
+
+  // 2) Fallback for per-branch cafe reservations: find the reservation this event refers to (by the
+  //    Payment Link id), fetch its branch's webhook secret, and verify against that. Only runs when
+  //    the env secret didn't match, so it never weakens the existing path.
+  let cafeReservationId: string | null = null;
+  if (!verified && linkOrPaymentId) {
+    const { data: pcr } = await supabase
+      .from("pc_reservations")
+      .select("id, branch_id")
+      .eq("paymongo_intent_id", linkOrPaymentId)
+      .maybeSingle();
+    if (pcr) {
+      cafeReservationId = pcr.id as string;
+      const { data: cfg } = await supabase
+        .from("branch_payment_config")
+        .select("paymongo_webhook_secret")
+        .eq("branch_id", pcr.branch_id)
+        .maybeSingle();
+      const branchSecret = (cfg as { paymongo_webhook_secret?: string | null } | null)
+        ?.paymongo_webhook_secret;
+      if (branchSecret) {
+        verified = verifyWebhookSignature(rawBody, signature, branchSecret);
+      }
+    }
+  }
+
+  if (!verified) {
+    console.error("paymongo webhook: bad signature");
+    return NextResponse.json({ error: "bad_signature" }, { status: 401 });
+  }
 
   // Idempotency check
   const { error: insertErr } = await supabase
@@ -112,9 +153,9 @@ export async function POST(request: Request) {
     actualPaymentId = inner.attributes.payments[0]?.data?.id ?? null;
   }
 
-  // Find which entity this payment belongs to — reservation (initial payment),
-  // a reservation balance payment, an order, or a wallet top-up.
-  const [reservation, balanceRes, order, topupRes] = await Promise.all([
+  // Find which entity this payment belongs to — Playcation reservation (initial payment), a
+  // reservation balance payment, an order, a wallet top-up, or a per-branch cafe PC reservation.
+  const [reservation, balanceRes, order, topupRes, pcReservation] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -130,9 +171,72 @@ export async function POST(request: Request) {
         return null;
       }
     })(),
+    (async () => {
+      // Prefer the row we already resolved during per-branch signature verification; else look it
+      // up by the Payment Link id.
+      try {
+        const { data } = await supabase
+          .from("pc_reservations")
+          .select("id, branch_id, status, payment_status, reservation_code")
+          .eq(cafeReservationId ? "id" : "paymongo_intent_id", cafeReservationId ?? linkOrPaymentId)
+          .maybeSingle();
+        return data;
+      } catch {
+        return null;
+      }
+    })(),
   ]);
 
   try {
+    // Per-branch cafe PC reservation (Chunk 6). On paid: mark it paid + ensure a reservation_code,
+    // leaving status='pending' so the POS — which polls pc_reservations for newly-paid rows at its
+    // branch — picks it up and the cashier can find it by code on arrival. We DELIBERATELY do NOT
+    // compute or apply any member bonus / balance here: PanCafe applies the real bonus when the
+    // cashier loads the paid top-up (flowchart §G/§K). On failed/expired: release the held station.
+    if (pcReservation) {
+      switch (eventType) {
+        case "link.payment.paid":
+        case "payment.paid": {
+          const update: Record<string, unknown> = {
+            payment_status: "paid",
+            paymongo_payment_id: actualPaymentId ?? null,
+          };
+          // reservation_code is normally set at create time; backfill if somehow missing so the
+          // cashier always has a code to look up.
+          if (!pcReservation.reservation_code) {
+            const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            let code = "";
+            for (let i = 0; i < 6; i++) {
+              code += alphabet[Math.floor(Math.random() * alphabet.length)];
+            }
+            update.reservation_code = code;
+          }
+          await supabase
+            .from("pc_reservations")
+            // Guard: only flip a still-unpaid/pending row (idempotent against duplicate webhooks).
+            .update(update)
+            .eq("id", pcReservation.id)
+            .neq("payment_status", "paid");
+          break;
+        }
+        case "link.payment.failed":
+        case "payment.failed": {
+          // Payment didn't go through → release the seat so it returns to the vacant list.
+          await supabase
+            .from("pc_reservations")
+            .update({
+              status: "cancelled",
+              payment_status: "failed",
+              cancelled_at: new Date().toISOString(),
+            })
+            .eq("id", pcReservation.id)
+            .eq("status", "pending");
+          break;
+        }
+      }
+      return NextResponse.json({ ok: true, kind: "pc_reservation" });
+    }
+
     if (reservation) {
       switch (eventType) {
         case "link.payment.paid":

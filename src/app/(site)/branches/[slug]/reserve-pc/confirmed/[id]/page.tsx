@@ -5,12 +5,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import PaymentClient from "./PaymentClient";
 import { ArrowLeft, MapPin } from "lucide-react";
 
-// Stage 7a: customer-facing payment-instructions page. The flow is now-only — by the time the
-// customer sees this, a PC is held in their name for 5 minutes (payment_hold_expires_at).
-// They scan the partner's GCash QR + send the exact amount + press "I paid" → the partner's POS
-// verifies via existing OCR matching. If 5 min passes without claim_paid, the row stays at
-// status='pending', payment_status='unpaid', past expiry — POS-side sweep will mark it expired.
-// [[comffee-saas-vision]] Stage 7a.
+// DIY-QR reservation confirm page (2026-05-30). The customer lands here right after booking. The live
+// state — queued (waiting for the same-amount pay slot) / awaiting (scan the Bookings QR) / paid (show
+// the code) / expired — is driven entirely by PaymentClient polling /pay-status; this server wrapper
+// just authorizes by reservation id (unguessable UUID, short-lived) and renders the shell.
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +18,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string; id: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  return { title: `Pay to confirm — ${slug}`, robots: { index: false } };
+  return { title: `Reserve a PC — ${slug}`, robots: { index: false } };
 }
 
 export default async function ConfirmedPCReservationPage({
@@ -31,51 +29,29 @@ export default async function ConfirmedPCReservationPage({
   const { slug, id } = await params;
   const admin = getSupabaseAdmin();
 
-  // Fetch reservation + branch in parallel. We use the admin client because this page renders
-  // sensitive payment instructions tied to one reservation — we authorize by reservation ID
-  // (the customer holds the URL after creating); the URL is hard to guess (UUID) and short-lived
-  // (5 min payment + 30 min arrival).
   const { data: r } = await admin
     .from("pc_reservations")
-    .select(
-      "id, branch_id, station_name, customer_name, customer_phone, total_php, status, payment_status, payment_hold_expires_at, reserved_for_start, must_honor_by, created_at",
-    )
+    .select("id, branch_id, station_name, customer_name, total_php, status, payment_status")
     .eq("id", id)
     .maybeSingle();
   if (!r) notFound();
 
   const { data: branch } = await admin
     .from("branches")
-    .select("id, slug, name, type, gcash_qr_url, gcash_type, address, city")
+    .select("id, slug, name, address")
     .eq("id", r.branch_id)
     .maybeSingle();
   if (!branch || branch.slug !== slug) notFound();
 
-  // Auto-expire on read: if the payment window passed and the customer hasn't pressed "I paid",
-  // flip status to 'expired' so the station is released. A separate POS-side sweep also handles
-  // this in case nobody reloads the page (Stage 7b).
-  const nowMs = Date.now();
-  const holdMs = r.payment_hold_expires_at ? new Date(r.payment_hold_expires_at).getTime() : null;
-  let effectivePaymentStatus = r.payment_status as string;
-  let effectiveStatus = r.status as string;
-  if (
-    holdMs &&
-    holdMs < nowMs &&
-    effectivePaymentStatus === "unpaid" &&
-    effectiveStatus === "pending"
-  ) {
-    await admin
-      .from("pc_reservations")
-      .update({ status: "expired", cancelled_at: new Date().toISOString() })
-      .eq("id", id)
-      .eq("status", "pending")
-      .eq("payment_status", "unpaid");
-    effectiveStatus = "expired";
-  }
-
-  const expired = effectiveStatus === "expired" || effectiveStatus === "cancelled";
-  const verified = effectivePaymentStatus === "verified";
-  const claimed = effectivePaymentStatus === "claim_paid";
+  const ps = r.payment_status as string;
+  const isExpired = ps === "expired" || r.status === "expired" || r.status === "cancelled";
+  const title = ps === "paid" ? "Reserved!" : isExpired ? "Reservation expired" : "Pay to confirm.";
+  const subtitle =
+    ps === "paid"
+      ? "You're all set — your code is below."
+      : isExpired
+        ? "The payment window ended. Start over if you still want a PC."
+        : "Scan the QR with your payment app to lock in your station — it confirms on its own.";
 
   return (
     <>
@@ -92,25 +68,9 @@ export default async function ConfirmedPCReservationPage({
           <div className="mt-6 max-w-3xl">
             <p className="terminal-label">/reserve-pc/confirmed</p>
             <h1 className="mt-3 font-display text-4xl md:text-5xl font-bold leading-[0.95] tracking-tight text-cream">
-              {expired
-                ? "Reservation expired."
-                : verified
-                  ? "Payment verified — see you soon."
-                  : claimed
-                    ? "Got it — waiting on the cafe to verify."
-                    : "Pay to confirm."}
+              {title}
             </h1>
-            <p className="mt-3 text-cream-dim text-lg">
-              {expired ? (
-                <>This 5-minute hold ended without payment. The station is back in the live vacant list — feel free to start over.</>
-              ) : verified ? (
-                <>You're good. Walk in within 30 minutes; the cafe is expecting you.</>
-              ) : claimed ? (
-                <>The cafe will spot your GCash receipt and lock in your station within a few seconds.</>
-              ) : (
-                <>Scan the GCash QR below and send <strong className="text-amber">₱{Number(r.total_php ?? 0).toFixed(2)}</strong>. Then tap <strong>I paid</strong>.</>
-              )}
-            </p>
+            <p className="mt-3 text-cream-dim text-lg">{subtitle}</p>
             <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-cream-dim font-mono">
               <span>Station <strong className="text-cream">{r.station_name}</strong></span>
               <span>·</span>
@@ -134,11 +94,8 @@ export default async function ConfirmedPCReservationPage({
           reservationId={r.id}
           branchSlug={branch.slug}
           totalPhp={Number(r.total_php ?? 0)}
-          gcashQrUrl={branch.gcash_qr_url}
-          gcashType={branch.gcash_type}
-          paymentHoldExpiresAt={r.payment_hold_expires_at}
-          initialPaymentStatus={effectivePaymentStatus}
-          initialStatus={effectiveStatus}
+          stationName={r.station_name as string}
+          initialPaymentStatus={ps}
         />
       </section>
     </>
