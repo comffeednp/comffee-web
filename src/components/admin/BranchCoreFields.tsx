@@ -96,7 +96,7 @@ export default function BranchCoreFields({ branch }: Props) {
         <input name="hours_text" defaultValue={branch?.hours_text ?? ""} className="admin-input" />
       </Field>
 
-      <Field label="Hero image" hint="Upload an image (compressed client-side) or paste a URL">
+      <Field label="Backup front photo" hint="Used only if this branch has NO gallery photos. Normally your FIRST gallery photo (Photos section below) is the front/header image.">
         <ImageUpload
           name="hero_image_url"
           defaultValue={branch?.hero_image_url ?? ""}

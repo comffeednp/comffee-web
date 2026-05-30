@@ -14,6 +14,7 @@ import {
   deleteRateAction,
   addPhotosAction,
   deletePhotoAction,
+  reorderPhotosAction,
   uploadInstructionPhotosAction,
   deleteInstructionPhotoAction,
 } from "../../_actions/branches";
@@ -25,6 +26,7 @@ import AmenitiesList from "@/components/admin/AmenitiesList";
 import AddAmenityForm from "@/components/admin/AddAmenityForm";
 import RatesList from "@/components/admin/RatesList";
 import PendingBranchEditPanel from "@/components/admin/PendingBranchEditPanel";
+import BranchPhotosManager from "@/components/admin/BranchPhotosManager";
 import { ArrowLeft, Plus, Save, Trash2, ExternalLink } from "lucide-react";
 import type {
   Branch,
@@ -175,16 +177,20 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
               Add
             </button>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
-              <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" className="admin-input" />
+          {/* Check-in/out time = Playcation (overnight stay) only. Internet-cafe rates are hourly, so
+              these are hidden for cafe branches (owner 2026-05-30: "cafe ≠ playcation"). */}
+          {branch.type === "playcation" && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
+                <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" className="admin-input" />
+              </div>
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
+                <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" className="admin-input" />
+              </div>
             </div>
-            <div>
-              <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
-              <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" className="admin-input" />
-            </div>
-          </div>
+          )}
           {branch.type === "playcation" && (
             <div className="grid gap-3 md:grid-cols-3">
               <div>
@@ -206,28 +212,15 @@ export default async function EditBranchPage({ params, searchParams }: Props) {
 
       {/* PHOTOS */}
       <Section id="photos" title="Photos" subtitle={`${photos.length} in gallery`}>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {photos.map((p) => (
-            <div key={p.id} className="relative group border border-line rounded-md overflow-hidden bg-bg">
-              {p.public_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.public_url} alt={p.caption ?? ""} className="w-full aspect-[4/3] object-cover" />
-              )}
-              <div className="p-3">
-                <p className="text-xs text-cream truncate">{p.caption ?? "—"}</p>
-                <p className="font-mono text-[0.65rem] text-mocha">order: {p.sort_order}</p>
-              </div>
-              <form action={deletePhotoAction} className="absolute top-2 right-2">
-                <input type="hidden" name="id" value={p.id} />
-                <input type="hidden" name="branch_id" value={branch.id} />
-                <button className="bg-bg/80 backdrop-blur p-1.5 rounded text-red-400 hover:text-red-300" aria-label="Delete">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </form>
-            </div>
-          ))}
-          {photos.length === 0 && <p className="font-mono text-xs text-mocha col-span-full">// no photos yet</p>}
-        </div>
+        {/* Drag-to-reorder gallery. The FIRST photo is the public front/header photo (owner 2026-05-30).
+            key on the id-order so a successful save remounts with the canonical server order. */}
+        <BranchPhotosManager
+          key={photos.map((p) => p.id).join(",")}
+          photos={photos}
+          branchId={branch.id}
+          reorderAction={reorderPhotosAction}
+          deleteAction={deletePhotoAction}
+        />
         <form action={addPhotosAction} className="mt-5 space-y-3 p-5 border border-line rounded-lg bg-bg">
           <input type="hidden" name="branch_id" value={branch.id} />
           <input type="hidden" name="sort_order_start" value={photos.length} />

@@ -271,6 +271,29 @@ export async function deletePhotoAction(formData: FormData) {
   revalidatePath("/branches");
 }
 
+// Drag-to-reorder the gallery. sort_order = position in the list, so index 0 is the public
+// front/header photo (the public branch page uses photos[0] for its hero, OG image, and schema
+// image). Owner 2026-05-30: "first photo = front photo." Per-id updates — a branch has a handful of
+// photos, so a simple update-each is fine; scoped to branchId so a stray id can't touch another branch.
+export async function reorderPhotosAction(
+  branchId: string,
+  orderedIds: string[],
+): Promise<{ error?: string }> {
+  await requireEditor();
+  const supabase = await getSupabaseServer();
+  if (!branchId || !orderedIds.length) return {};
+  const results = await Promise.all(
+    orderedIds.map((id, i) =>
+      supabase.from("branch_photos").update({ sort_order: i }).eq("id", id).eq("branch_id", branchId),
+    ),
+  );
+  const firstErr = results.find((r) => r.error);
+  if (firstErr?.error) return { error: firstErr.error.message };
+  revalidatePath(`/admin/branches/${branchId}`);
+  revalidatePath("/branches");
+  return {};
+}
+
 /* ---------- instruction photos (private bucket, sent to confirmed guests) ---------- */
 const INSTRUCTION_EXTS = ["jpg", "jpeg", "png", "webp"];
 

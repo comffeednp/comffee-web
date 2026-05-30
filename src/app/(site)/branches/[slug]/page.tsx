@@ -41,13 +41,14 @@ export async function generateMetadata({
   const { slug } = await params;
   const branch = await getBranchBySlug(slug);
   if (!branch) return { title: "Branch not found" };
+  const heroSrc = branch.photos?.[0]?.public_url ?? branch.hero_image_url;
   return {
     title: branch.name,
     description: branch.tagline ?? undefined,
     openGraph: {
       title: branch.name,
       description: branch.tagline ?? undefined,
-      images: branch.hero_image_url ? [branch.hero_image_url] : undefined,
+      images: heroSrc ? [heroSrc] : undefined,
     },
   };
 }
@@ -74,6 +75,11 @@ export default async function BranchDetailPage({
   // Unchecking it hides the Reserve button so customers never reach a reserve page that would 404
   // (owner 2026-05-30). The PayMongo + Bookings-QR setup is still required too.
   const canReserveOnline = isPlay || (isPaymongoReservationActive(paymentConfig) && !!branch.reservations_enabled);
+
+  // Front/header photo = the FIRST gallery photo (owner 2026-05-30: drag-to-front sets the header).
+  // Falls back to the manually-set "backup front photo" (hero_image_url) only when the branch has no
+  // photos at all. The admin drag-reorder writes sort_order, so photos[0] is whatever was dragged first.
+  const heroSrc = branch.photos?.[0]?.public_url ?? branch.hero_image_url;
   const ctaHref = isPlay
     ? `/playcation/${branch.slug}/book`
     : `/branches/${branch.slug}/reserve-pc`;
@@ -128,7 +134,7 @@ export default async function BranchDetailPage({
     },
     telephone: branch.phone,
     email: branch.email,
-    image: branch.hero_image_url,
+    image: heroSrc,
   };
 
   return (
@@ -142,7 +148,7 @@ export default async function BranchDetailPage({
       {/* ============================================================
           HERO
           ============================================================ */}
-      <HeroParallax src={branch.hero_image_url} alt={branch.name} height="screen">
+      <HeroParallax src={heroSrc} alt={branch.name} height="screen">
         <div className="max-w-5xl">
           <div className="flex flex-wrap items-center gap-3 mb-8">
             <span className={`status-chip ${isPlay ? "status-chip-amber" : ""}`}>

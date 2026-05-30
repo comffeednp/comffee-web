@@ -56,7 +56,7 @@ export default function RatesList({ rates, branchId, isPlaycation, updateAction,
                   <> · up to {r.max_pax} pax{r.extra_pax_fee_php != null && `, +${formatPHP(r.extra_pax_fee_php)}/extra pax`}</>
                 )}
                 {r.max_guests != null && <> · max {r.max_guests} guests</>}
-                {(r.check_in_time || r.check_out_time) && (
+                {isPlaycation && (r.check_in_time || r.check_out_time) && (
                   <> · {r.check_in_time ?? "—"} → {r.check_out_time ?? "—"}</>
                 )}
               </div>
@@ -108,16 +108,20 @@ export default function RatesList({ rates, branchId, isPlaycation, updateAction,
                   <input name="description" defaultValue={r.description ?? ""} className="admin-input" />
                 </div>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
-                  <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" defaultValue={r.check_in_time ?? ""} className="admin-input" />
+              {/* Check-in/out time is a Playcation (overnight stay) concept — hidden for internet
+                  cafe branches, where rates are hourly (owner 2026-05-30: "cafe ≠ playcation"). */}
+              {isPlaycation && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-in time (24h, e.g. 14:00)</p>
+                    <input name="check_in_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="14:00" defaultValue={r.check_in_time ?? ""} className="admin-input" />
+                  </div>
+                  <div>
+                    <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
+                    <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" defaultValue={r.check_out_time ?? ""} className="admin-input" />
+                  </div>
                 </div>
-                <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-widest text-phosphor mb-1">// check-out time (24h, e.g. 12:00)</p>
-                  <input name="check_out_time" type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="12:00" defaultValue={r.check_out_time ?? ""} className="admin-input" />
-                </div>
-              </div>
+              )}
               {isPlaycation && (
                 <div className="grid gap-3 md:grid-cols-4">
                   <div>
