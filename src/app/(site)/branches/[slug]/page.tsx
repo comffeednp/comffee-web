@@ -289,6 +289,7 @@ export default async function BranchDetailPage({
           branchSlug={branch.slug}
           initialStations={pcSnapshot.stations}
           initialSyncedAt={pcSnapshot.lastSyncedAt}
+          canReserve={canReserveOnline}
         />
       )}
 

@@ -5,6 +5,9 @@ import type { PCStation } from "@/lib/pc-stations";
 interface Props {
   stations: PCStation[];
   branchSlug: string;
+  // When false (owner's "accept online reservations" switch is off), vacant tiles are NOT clickable
+  // reserve links — they just show "vacant" like the grid view does (2026-05-30).
+  canReserve: boolean;
 }
 
 const SECTION_ORDER = ["regular", "vip", "console"] as const;
@@ -33,7 +36,7 @@ function buildSections(stations: PCStation[]): { label: string; tier: string; st
 
 const COLS_BY_TIER: Record<string, number> = { regular: 5, vip: 5, console: 2, "": 5 };
 
-export default function PCFloorMap({ stations, branchSlug }: Props) {
+export default function PCFloorMap({ stations, branchSlug, canReserve }: Props) {
   const sections = buildSections(stations);
 
   return (
@@ -61,7 +64,7 @@ export default function PCFloorMap({ stations, branchSlug }: Props) {
                     style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
                   >
                     {row.map((s) => (
-                      <MapTile key={s.id} station={s} branchSlug={branchSlug} />
+                      <MapTile key={s.id} station={s} branchSlug={branchSlug} canReserve={canReserve} />
                     ))}
                   </div>
                 </div>
@@ -97,7 +100,7 @@ function LegendDot({ color, label }: { color: "phosphor" | "amber"; label: strin
   );
 }
 
-function MapTile({ station, branchSlug }: { station: PCStation; branchSlug: string }) {
+function MapTile({ station, branchSlug, canReserve }: { station: PCStation; branchSlug: string; canReserve: boolean }) {
   const occupied = station.is_occupied;
   const isConsole = station.pc_tier === "console";
   const Icon = isConsole ? Gamepad2 : Monitor;
@@ -138,11 +141,14 @@ function MapTile({ station, branchSlug }: { station: PCStation; branchSlug: stri
     </div>
   );
 
-  if (occupied) return inner;
+  // Occupied tiles, and ALL tiles when reservations are switched off, are non-clickable — the tile
+  // already prints "vacant"/"in use". Only a vacant tile WITH reservations on becomes a reserve link.
+  if (occupied || !canReserve) return inner;
 
   return (
     <Link
       href={`/branches/${branchSlug}/reserve-pc?pc=${encodeURIComponent(station.station_name)}`}
+      title="Reserve this PC"
       className="block"
     >
       {inner}

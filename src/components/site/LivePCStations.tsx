@@ -21,6 +21,10 @@ interface Props {
   branchSlug: string;
   initialStations: PCStation[];
   initialSyncedAt: string | null;
+  // Mirrors the branch page's canReserveOnline. When false, the per-vacant-PC "Reserve" link is
+  // hidden so the board just reports availability — the owner's "accept online reservations" switch
+  // now controls BOTH the main CTA and these per-station links (2026-05-30).
+  canReserve: boolean;
 }
 
 /**
@@ -33,6 +37,7 @@ export default function LivePCStations({
   branchSlug,
   initialStations,
   initialSyncedAt,
+  canReserve,
 }: Props) {
   const [stations, setStations] = useState<PCStation[]>(initialStations);
   const [syncedAt, setSyncedAt] = useState<string | null>(initialSyncedAt);
@@ -211,7 +216,7 @@ export default function LivePCStations({
 
         {/* Grid / Floor map */}
         {view === "map" ? (
-          <PCFloorMap stations={stations} branchSlug={branchSlug} />
+          <PCFloorMap stations={stations} branchSlug={branchSlug} canReserve={canReserve} />
         ) : (
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             <AnimatePresence mode="popLayout">
@@ -220,6 +225,7 @@ export default function LivePCStations({
                   key={station.id}
                   station={station}
                   branchSlug={branchSlug}
+                  canReserve={canReserve}
                 />
               ))}
             </AnimatePresence>
@@ -254,9 +260,11 @@ function CountdownTimer({ endsAt }: { endsAt: string }) {
 function StationCard({
   station,
   branchSlug,
+  canReserve,
 }: {
   station: PCStation;
   branchSlug: string;
+  canReserve: boolean;
 }) {
   const occupied = station.is_occupied;
   return (
@@ -310,14 +318,23 @@ function StationCard({
               </p>
             ) : null}
           </div>
-        ) : (
+        ) : canReserve ? (
+          // Per-PC reserve link ONLY when reservations are switched on. This per-station link was the
+          // one place that ignored the owner's switch, so vacant PCs showed a Reserve button even with
+          // reservations off (owner-reported 2026-05-30). When off, fall through to a plain "vacant"
+          // label below — no link, so it just reports availability and can't 404 into the reserve page.
           <Link
             href={`/branches/${branchSlug}/reserve-pc?pc=${encodeURIComponent(station.station_name)}`}
+            title="Reserve this PC"
             className="block text-center font-mono text-[0.65rem] uppercase tracking-widest text-phosphor border border-phosphor/40 rounded px-2 py-1.5 hover:bg-phosphor/10 transition"
           >
             <Power className="inline h-3 w-3 mr-1" />
             Reserve
           </Link>
+        ) : (
+          <p className="font-mono text-[0.6rem] uppercase tracking-widest text-phosphor">
+            // vacant
+          </p>
         )}
       </div>
     </motion.div>
