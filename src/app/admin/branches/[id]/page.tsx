@@ -3,11 +3,9 @@ import Link from "next/link";
 import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadInstructionPhotosAction, deleteInstructionPhotoAction } from "../../_actions/branches";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
-import PCTierEditor from "@/components/admin/PCTierEditor";
 import PendingBranchEditPanel from "@/components/admin/PendingBranchEditPanel";
-import { ArrowLeft, Plus, Trash2, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import type { Branch, BranchAmenity, BranchPhoto, BranchRate } from "@/lib/supabase/types";
 
@@ -17,10 +15,13 @@ export const dynamic = "force-dynamic";
 // website admin, to avoid duplication"). This page used to be a full editor that DUPLICATED the POS
 // Reservation tab's branch-edit form. The public-look editing (core fields, photos, rates, amenities)
 // is removed here — those are now POS-only (edit on the POS → Send for approval → Approve below). What
-// stays: the Approve/Reject panel for incoming POS submissions; a READ-ONLY view of the current branch;
-// and two OPERATIONAL settings the POS does NOT handle (PC-station tiers + private guest instruction
-// photos), which would be uneditable anywhere if removed. Connected: the POS submit flow
-// (admin-dashboard.html) is the single editing surface; the public page reads photos[0] as the header.
+// stays: the Approve/Reject panel for incoming POS submissions, and a fully READ-ONLY view of the
+// branch (info, photos, rates, amenities, PC-station tiers, and any private instruction sheets). NO
+// editing forms at all (owner 2026-05-31: removed the leftover guest-instruction UPLOAD form + the
+// PC-tier editor too — "view + approve only" means zero edit/upload forms here). PC-tier editing +
+// instruction-sheet uploads are not on the admin anymore; add them to the POS if/when needed.
+// Connected: the POS submit flow (admin-dashboard.html) is the single editing surface; the public page
+// reads photos[0] as the header.
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -212,62 +213,47 @@ export default async function ViewBranchPage({ params, searchParams }: Props) {
         )}
       </Section>
 
-      {/* PC STATIONS — operational (NOT public look); the POS doesn't set tiers, so kept editable here. */}
+      {/* PC STATIONS — read-only (editor removed 2026-05-31: view + approve only). Shows each synced
+          station's Regular/VIP tier; tier changes, if ever needed, would move to the POS. */}
       {branch.type === "cafe" && (
-        <Section id="pc-stations" title="PC stations" subtitle={`${pcStations.length} synced · operational`}>
-          <p className="mb-4 text-sm text-cream-dim">
-            Operational setting (not the public look). Tag each station Regular or VIP so the reservation form shows the right rates. Run the <code className="text-amber">pancafe-sync</code> script on the cafe server if no stations appear.
-          </p>
-          <PCTierEditor branchId={branch.id} stations={pcStations} />
+        <Section id="pc-stations" title="PC stations" subtitle={`${pcStations.length} synced · read-only`}>
+          {pcStations.length === 0 ? (
+            <p className="font-mono text-xs text-mocha">// no stations synced yet</p>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {pcStations.map((s) => (
+                <li key={s.id} className="border border-line rounded-md bg-bg px-3 py-2 flex items-center justify-between">
+                  <span className="text-cream text-sm font-medium">{s.station_name}</span>
+                  <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">{s.pc_tier ?? "regular"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
       )}
 
-      {/* GUEST INSTRUCTIONS — operational/private (NOT public look); POS doesn't handle these. */}
-      <Section id="instructions" title="Guest instructions" subtitle="private · operational">
-        <p className="mb-6 text-sm text-cream-dim">
-          Operational setting (not the public look). Upload the check-in, house-rules, and FAQ sheets — attached to the booking-confirmation email and shown only to guests with a confirmed booking. Door PINs stay private.
-        </p>
-
-        {instructionPhotos.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 mb-8">
+      {/* GUEST INSTRUCTIONS — read-only private sheets. Upload + delete removed 2026-05-31 (view +
+          approve only). Hidden entirely when there are none (e.g. cafe branches like Lagro). */}
+      {instructionPhotos.length > 0 && (
+        <Section id="instructions" title="Guest instructions" subtitle="private · read-only">
+          <p className="mb-6 text-sm text-cream-dim">
+            Private sheets attached to confirmed bookings (door PINs etc.). Read-only here.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
             {instructionPhotos.map((p) => (
               <div key={p.path} className="border border-line-bright bg-bg rounded-xl overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.signedUrl} alt={p.label} className="w-full h-auto block" />
-                <div className="flex items-center justify-between px-3 py-2 gap-2">
+                <div className="px-3 py-2">
                   <span className="font-mono text-[0.65rem] uppercase tracking-widest text-cream-dim truncate">
                     {p.label}
                   </span>
-                  <form action={deleteInstructionPhotoAction}>
-                    <input type="hidden" name="branch_id" value={branch.id} />
-                    <input type="hidden" name="path" value={p.path} />
-                    <button type="submit" title={`Remove ${p.label}`} className="text-red-400 hover:text-red-300">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </form>
                 </div>
               </div>
             ))}
           </div>
-        ) : (
-          <p className="mb-8 font-mono text-xs text-mocha">// no instruction photos yet</p>
-        )}
-
-        <form action={uploadInstructionPhotosAction} className="space-y-4">
-          <input type="hidden" name="branch_id" value={branch.id} />
-          <input
-            type="file"
-            name="files"
-            multiple
-            accept="image/*,.heic,.heif"
-            className="block text-sm text-cream-dim file:mr-4 file:rounded file:border-0 file:bg-amber file:px-4 file:py-2 file:text-bg file:font-mono file:text-xs"
-          />
-          <button type="submit" title="Upload instruction photos" className="key-cap key-cap-primary">
-            <Plus className="h-4 w-4" />
-            Upload photos
-          </button>
-        </form>
-      </Section>
+        </Section>
+      )}
     </section>
   );
 }
