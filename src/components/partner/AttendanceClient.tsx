@@ -38,6 +38,10 @@ function isDeadQr(row: { created_at?: string | null } | null): boolean {
   return !Number.isNaN(ms) && Date.now() - ms > QR_DEAD_MS;
 }
 
+// The columns the live-QR card needs. One place so the poll and the realtime re-read stay in sync.
+const QR_SELECT =
+  "id, nickname, amount, qr_image_url, status, expires_at, created_at, last_attempt_at, last_attempt_ok, last_attempt_reason";
+
 interface Props {
   slug: string;
   branchName: string;
@@ -48,6 +52,10 @@ interface Props {
   email: string;
   status: AttendanceStatus;
   enrolled: boolean;
+  // Latest clock punch read server-side so the button is correct on the FIRST paint (no "Clock In"
+  // flash for an already-clocked-in staffer). null = no punch yet → defaults to Clock In.
+  initialClockType?: string | null;
+  initialClockAt?: string | null;
 }
 
 // Per-phone identifier for device binding. Created once, kept in localStorage; the
@@ -118,6 +126,8 @@ export default function AttendanceClient({
   email,
   status: initialStatus,
   enrolled: initialEnrolled,
+  initialClockType,
+  initialClockAt,
 }: Props) {
   // Live status/enrolled (start from the server's first read, then kept fresh by polling so
   // a POS-admin approval flips the page to clock-in WITHOUT a manual reload).
@@ -151,8 +161,8 @@ export default function AttendanceClient({
   // Clock state for the button + live timer. clockType = the last record's direction;
   // 'clock_in' means they're currently ON shift → button says "Clock Out" + a running timer
   // counting up from clockAt. Otherwise the button says "Clock In".
-  const [clockType, setClockType] = useState<string | null>(null);
-  const [clockAt, setClockAt] = useState<string | null>(null);
+  const [clockType, setClockType] = useState<string | null>(initialClockType ?? null);
+  const [clockAt, setClockAt] = useState<string | null>(initialClockAt ?? null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const isClockedIn = clockType === "clock_in";
   // Whether THIS phone is the registered one. null = still checking; "this" = ok to clock;
@@ -371,47 +381,78 @@ export default function AttendanceClient({
     return () => clearInterval(id);
   }, [isClockedIn]);
 
-  // ── Live in-store GCash payment QR (Chunk C, 2026-05-29) ────────────────────────────────────
-  // The cashier picks GCash on the POS → POS writes a row to pos_active_payment_qrs (with their
-  // cashier_staff_id = this signed-in user). Supabase Realtime pushes the INSERT down here within
-  // ~1 second; we set it as activeQr and the full-screen card below reveals. The three guards
-  // (clocked in / inside geofence / is the open shift's cashier) are enforced two ways:
+  // ── Live in-store GCash payment QR (Chunk C, 2026-05-29; reliability fix 2026-05-31) ─────────
+  // The cashier picks GCash on the POS → the POS writes one entry to pos_active_payment_qrs scoped to
+  // THIS signed-in cashier. The full-screen card below reveals it so the customer can scan.
   //
-  //   1. POS-side: only writes a row when the open shift's cashier matches a real branch_staff
-  //      link (cloud_staff_id). A co-worker who isn't running the till never has a row written.
-  //   2. RLS (migration 0037): authenticated user only sees rows where cashier_staff_id matches
-  //      their own branch_staff entry (by email). A clocked-in co-worker can subscribe, but the
-  //      server filters every row out — they receive nothing.
+  // WHY WE POLL (the bug this fixes): that entry is private — RLS (migration 0037) only lets the
+  // owning, signed-in staffer read their own rows. Supabase Realtime ("live push") respects RLS, but
+  // its socket isn't reliably carrying this page's Google sign-in (and the cafe's weak uplink drops
+  // the socket), so the push silently never arrived — the QR only showed after a MANUAL RELOAD. A
+  // reload re-reads the table directly with the sign-in attached, which is exactly why a reload always
+  // worked. Same root cause hid a cancel until reload. Fix: poll the till directly every 3s — the SAME
+  // read a reload does — so the QR appears, updates, and clears on its own. Realtime is kept purely as
+  // an instant "nudge to re-read" for when it does come through; ALL the decision logic lives in one
+  // place (refreshActiveQr) so the two paths can never disagree.
   //
-  // Geofence + clocked-in are render-time gates (below in the JSX): if you step outside the cafe
-  // or clock out, the card hides instantly without unsubscribing — so re-entering / re-clocking
-  // shows it again the moment you do.
-  //
-  // We also do a one-time SELECT on (re)connect to catch any row that was inserted BEFORE the
-  // channel was subscribed (e.g., page reload mid-payment).
-  useEffect(() => {
-    if (!staffId || !branchId || !isClockedIn) return;
-    let cancelled = false;
+  // Clocked-in + inside-geofence stay render-time gates (below in the JSX): step outside or clock out
+  // and the card hides without unsubscribing, so it returns the moment you do.
+  const refreshActiveQr = useCallback(async () => {
+    if (!staffId) return;
     let supabase;
     try {
       supabase = getSupabaseBrowser();
     } catch {
       return;
     }
-
-    // Initial fetch — covers the page-reload case where a pending QR already exists.
-    supabase
+    const { data } = await supabase
       .from("pos_active_payment_qrs")
-      .select("id, nickname, amount, qr_image_url, status, expires_at, created_at, last_attempt_at, last_attempt_ok, last_attempt_reason")
+      .select(QR_SELECT)
       .eq("cashier_staff_id", staffId)
-      .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .then(({ data }: { data: ActivePaymentQr[] | null }) => {
-        if (cancelled) return;
-        if (data && data[0] && !isDeadQr(data[0])) setActiveQr(data[0]); // don't resurrect a stale QR on reload
-      });
+      .limit(1);
+    const row = (data?.[0] ?? null) as ActivePaymentQr | null;
+    setActiveQr((cur) => {
+      // A just-cancelled card is greying out on its own 3-second timer (owner 2026-05-31) — leave it
+      // alone, and don't let a freshly-minted next QR jump in mid-grey; that one surfaces the instant
+      // the timer clears this card.
+      if (cur?.status === "cancelled") return cur;
+      if (!row) {
+        // Nothing live on the till → drop a pending card we were showing (cancelled/expired/deleted).
+        // A confirmed (green) card stays until the cashier taps ✕.
+        return cur?.status === "pending" ? null : cur;
+      }
+      if (cur && cur.id === row.id) {
+        // The entry we already track → reflect a real change only: pending→received flips to the green
+        // card; pending→cancelled flips to the grey card; a new photo verdict updates the retake reason.
+        return cur.status !== row.status || cur.last_attempt_at !== row.last_attempt_at ? row : cur;
+      }
+      // A different (newer) entry, or nothing shown yet → only ever surface a brand-new PENDING QR.
+      // Never resurface an old received/cancelled/expired entry on a fresh open (matches the reload,
+      // which only looked at pending entries).
+      return row.status === "pending" && !isDeadQr(row) ? row : cur;
+    });
+  }, [staffId]);
 
+  // Reliable floor: re-read the till every 3s while clocked in (and once immediately on connect, so a
+  // reopen shows the current QR without waiting a full interval).
+  useEffect(() => {
+    if (!staffId || !branchId || !isClockedIn) return;
+    refreshActiveQr();
+    const id = setInterval(refreshActiveQr, 3000);
+    return () => clearInterval(id);
+  }, [staffId, branchId, isClockedIn, refreshActiveQr]);
+
+  // Instant nudge: when the live push DOES come through, re-read immediately (sub-second) instead of
+  // waiting for the next 3s poll. Any change to one of this cashier's entries triggers one re-read.
+  useEffect(() => {
+    if (!staffId || !branchId || !isClockedIn) return;
+    let supabase;
+    try {
+      supabase = getSupabaseBrowser();
+    } catch {
+      return;
+    }
     const channel = supabase
       .channel(`pos_qrs:${staffId}`)
       .on(
@@ -422,38 +463,43 @@ export default function AttendanceClient({
           table: "pos_active_payment_qrs",
           filter: `cashier_staff_id=eq.${staffId}`,
         },
-        (payload: { eventType: string; new: ActivePaymentQr | null; old: ActivePaymentQr | null }) => {
-          if (cancelled) return;
-          const row = payload.new;
-          if (payload.eventType === "DELETE") {
-            setActiveQr((cur) => (cur && payload.old && cur.id === payload.old.id ? null : cur));
-            return;
-          }
-          if (!row) return;
-          if (row.status === "received") {
-            // Confirmed — show the GREEN "Payment received!" card and KEEP it up (no auto-hide / no
-            // countdown, owner 2026-05-30). The cashier dismisses it with the ✕ when ready. A received
-            // row is never re-fetched on reload (the initial fetch filters status='pending'), so once
-            // ✕'d it stays gone.
-            setActiveQr(row);
-          } else if (row.status === "pending") {
-            // Includes a fresh last_attempt_* on a RED so the card can show the retake reason. But if
-            // the row is already past its window+grace (stale), hide it instead of resurfacing it.
-            if (isDeadQr(row)) setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
-            else setActiveQr(row);
-          } else {
-            // cancelled / expired → hide immediately.
-            setActiveQr((cur) => (cur && cur.id === row.id ? null : cur));
-          }
+        () => {
+          refreshActiveQr();
         },
       )
       .subscribe();
-
     return () => {
-      cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [staffId, branchId, isClockedIn]);
+  }, [staffId, branchId, isClockedIn, refreshActiveQr]);
+
+  // Cancelled QR: grey it out for ~3s (owner 2026-05-31) then the card clears on its own so the
+  // full-screen overlay doesn't sit over the map. If the cashier minted a REPLACEMENT QR during the
+  // grey, show it the instant the old one vanishes (owner 2026-05-31); otherwise just clear. We read
+  // fresh here (not the poll's snapshot) and only replace the card if it's STILL the same cancelled
+  // one — so this can never race the poll into resurrecting or double-swapping.
+  useEffect(() => {
+    if (activeQr?.status !== "cancelled") return;
+    const cancelledId = activeQr.id;
+    const t = setTimeout(async () => {
+      let next: ActivePaymentQr | null = null;
+      try {
+        const supabase = getSupabaseBrowser();
+        const { data } = await supabase
+          .from("pos_active_payment_qrs")
+          .select(QR_SELECT)
+          .eq("cashier_staff_id", staffId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const row = (data?.[0] ?? null) as ActivePaymentQr | null;
+        if (row && row.id !== cancelledId && row.status === "pending" && !isDeadQr(row)) next = row;
+      } catch {
+        /* clear anyway — never leave the overlay stuck on the cancelled card */
+      }
+      setActiveQr((cur) => (cur?.id === cancelledId ? next : cur));
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [activeQr?.id, activeQr?.status, staffId]);
 
   // A new QR (or the QR going away) → clear the local photo feedback AND reset the verdict marker to
   // this QR's own last_attempt (null for a fresh one). Resetting matters: it stops a prior QR's
@@ -869,6 +915,9 @@ export default function AttendanceClient({
   // (no new customer scans it) but the Take Photo button stays for the grace window (owner choice
   // 2026-05-29). qrConfirmed flips on when the POS confirms → the GREEN card shows.
   const qrConfirmed = activeQr?.status === "received";
+  // Cancelled by the cashier → a greyed, disabled "Cancelled" card for ~3s (the effect above clears
+  // it), so the cashier sees it was voided rather than the QR just blinking away.
+  const qrCancelled = activeQr?.status === "cancelled";
   const qrExpiresMs = activeQr?.expires_at ? Date.parse(activeQr.expires_at) : NaN;
   const qrRemainMs = Number.isNaN(qrExpiresMs) ? null : qrExpiresMs - nowTs;
   const qrExpired = qrRemainMs != null && qrRemainMs <= 0;
@@ -893,7 +942,7 @@ export default function AttendanceClient({
           + within the 5-min window) and writes back a GREEN (confirmed) or RED (retake) result,
           which the card shows live. 5-minute countdown is display-only; a late photo of an in-window
           payment still confirms because the POS goes by the receipt's printed time. */}
-      {qrGuardsPass && activeQr && (qrConfirmed || !qrDead) && (
+      {qrGuardsPass && activeQr && (qrConfirmed || qrCancelled || !qrDead) && (
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <div className="w-[min(94vw,26rem)] rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
             {qrConfirmed ? (
@@ -912,6 +961,22 @@ export default function AttendanceClient({
                 <div className="text-sm font-semibold text-stone-600">
                   ₱{Number(activeQr.amount).toFixed(2)} received. You can ring up the next customer.
                 </div>
+              </div>
+            ) : qrCancelled ? (
+              /* Cancelled — greyed + disabled, clears itself after ~3s (owner 2026-05-31). No
+                 Take-Photo button here, so nothing can be uploaded against a voided payment. */
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={activeQr.qr_image_url}
+                  alt="Cancelled GCash payment QR"
+                  className="mx-auto block h-auto w-full max-w-[14rem] rounded-lg opacity-20 grayscale"
+                />
+                <div className="flex items-center gap-2 text-stone-500">
+                  <XCircle className="h-6 w-6" />
+                  <span className="text-xl font-extrabold uppercase tracking-wide">Cancelled</span>
+                </div>
+                <div className="text-sm font-semibold text-stone-500">This payment was cancelled.</div>
               </div>
             ) : (
               <>

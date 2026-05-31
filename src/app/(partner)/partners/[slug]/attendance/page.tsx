@@ -171,6 +171,25 @@ export default async function AttendancePage({
     enrolled = false;
   }
 
+  // Latest clock punch (if any) so the Clock In / Clock Out button is correct on the FIRST paint —
+  // without this the client only learns the shift state a couple seconds AFTER load, so an already-
+  // clocked-in staffer briefly sees "Clock In". Read fresh server-side (force-dynamic), the same
+  // source the live status poll uses. A brand-new self-registered staffer (no row yet) has no
+  // punches → stays null → button defaults to "Clock In", which is right for them.
+  let initialClockType: string | null = null;
+  let initialClockAt: string | null = null;
+  if (staff?.id) {
+    const { data: lastPunch } = await admin
+      .from("attendance_records")
+      .select("clock_type, recorded_at")
+      .eq("staff_id", staff.id)
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    initialClockType = lastPunch?.clock_type ?? null;
+    initialClockAt = lastPunch?.recorded_at ?? null;
+  }
+
   return (
     <AttendanceClient
       slug={branch.slug}
@@ -182,6 +201,8 @@ export default async function AttendancePage({
       email={email}
       status={status}
       enrolled={enrolled}
+      initialClockType={initialClockType}
+      initialClockAt={initialClockAt}
     />
   );
 }
