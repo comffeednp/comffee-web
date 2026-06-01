@@ -118,6 +118,11 @@ export interface CheckoutSession {
   id: string;
   checkout_url: string;
   status: string;
+  // The Payment Intent id (pi_...) backing this checkout. CRITICAL for confirming the booking: the
+  // paid webhook (payment.paid) carries this pi_ at data.attributes.data.attributes.payment_intent_id,
+  // NOT the cs_ id — so we store this and match the webhook on it. (Proven 2026-06-01: a real paid
+  // booking's webhook pi_ == the checkout session's payment_intent.id.)
+  payment_intent_id: string | null;
 }
 
 /**
@@ -165,12 +170,20 @@ export async function createCheckoutSession(
   }
 
   const json = (await res.json()) as {
-    data: { id: string; attributes: { checkout_url: string; status: string } };
+    data: {
+      id: string;
+      attributes: {
+        checkout_url: string;
+        status: string;
+        payment_intent?: { id?: string } | null;
+      };
+    };
   };
   return {
     id: json.data.id,
     checkout_url: json.data.attributes.checkout_url,
     status: json.data.attributes.status,
+    payment_intent_id: json.data.attributes.payment_intent?.id ?? null,
   };
 }
 

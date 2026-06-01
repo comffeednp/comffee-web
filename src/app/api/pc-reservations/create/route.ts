@@ -123,7 +123,10 @@ export async function POST(request: Request) {
   // checkout would lock the PC forever — the owner hit exactly this on a back-button retry. We give an
   // unpaid hold a SHORT window to finish paying, then free the seat. PAID rows are never touched (real
   // bookings); only pending+unpaid rows older than the window are expired.
-  const UNPAID_HOLD_MINUTES = 5;
+  // 20 min, not 5 (owner hit it 2026-06-01): 5 min expired bookings WHILE the customer was still paying
+  // on GCash. 20 min is plenty to open GCash, scan, and confirm, while still freeing an abandoned seat.
+  // MUST match pay-status/route.ts's UNPAID_HOLD_MINUTES.
+  const UNPAID_HOLD_MINUTES = 20;
   const staleBefore = new Date(Date.now() - UNPAID_HOLD_MINUTES * 60 * 1000).toISOString();
   await supabase
     .from("pc_reservations")
@@ -283,7 +286,11 @@ export async function POST(request: Request) {
     });
     await supabase
       .from("pc_reservations")
-      .update({ paymongo_intent_id: checkout.id })
+      .update({
+        paymongo_intent_id: checkout.id, // cs_ — kept for reference / dashboard lookup
+        // pi_ — the id the PAID webhook actually carries; this is what confirms the booking.
+        paymongo_payment_intent_id: checkout.payment_intent_id,
+      })
       .eq("id", created.id);
 
     // The client opens checkout.checkoutUrl (PayMongo hosted page) and lands on the confirmed page after.

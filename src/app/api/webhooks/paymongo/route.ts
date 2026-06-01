@@ -32,6 +32,9 @@ interface WebhookPayload {
           payments?: Array<{ data?: { id?: string } }>;
           payment_id?: string;
           amount?: number;
+          // On a payment.paid event the inner object IS the payment; it carries the Payment Intent id.
+          // This is the reliable key for a cafe PC booking (we store pi_ on the reservation).
+          payment_intent_id?: string;
         };
       };
     };
@@ -76,6 +79,10 @@ export async function POST(request: Request) {
   const eventType = payload.data?.attributes?.type;
   const inner = payload.data?.attributes?.data;
   const linkOrPaymentId = inner?.id;
+  // The Payment Intent id (pi_) carried on a payment.paid event. THIS is how a cafe PC booking is
+  // matched — we store the pi_ on the reservation at checkout-create time (the cs_/pay_ ids don't
+  // match what the webhook carries). Proven 2026-06-01.
+  const paymentIntentId = inner?.attributes?.payment_intent_id ?? null;
 
   if (!eventId) {
     return NextResponse.json({ error: "no_event_id" }, { status: 400 });
@@ -95,12 +102,26 @@ export async function POST(request: Request) {
   //    → the booking would never confirm (the silent-money-failure to watch for). The live test settles
   //    it; if it differs, also match by the cs_ id carried elsewhere in the payload.
   let cafeReservationId: string | null = null;
-  if (!verified && linkOrPaymentId) {
-    const { data: pcr } = await supabase
-      .from("pc_reservations")
-      .select("id, branch_id")
-      .eq("paymongo_intent_id", linkOrPaymentId)
-      .maybeSingle();
+  if (!verified && (paymentIntentId || linkOrPaymentId)) {
+    // Match a cafe booking by the pi_ FIRST (what payment.paid carries), then fall back to the cs_/link
+    // id (covers any other shape). This is what lets us reach the branch's webhook secret to verify.
+    let pcr: { id: string; branch_id: string } | null = null;
+    if (paymentIntentId) {
+      const { data } = await supabase
+        .from("pc_reservations")
+        .select("id, branch_id")
+        .eq("paymongo_payment_intent_id", paymentIntentId)
+        .maybeSingle();
+      pcr = (data as { id: string; branch_id: string } | null) ?? null;
+    }
+    if (!pcr && linkOrPaymentId) {
+      const { data } = await supabase
+        .from("pc_reservations")
+        .select("id, branch_id")
+        .eq("paymongo_intent_id", linkOrPaymentId)
+        .maybeSingle();
+      pcr = (data as { id: string; branch_id: string } | null) ?? null;
+    }
     if (pcr) {
       cafeReservationId = pcr.id as string;
       const { data: cfg } = await supabase
@@ -177,15 +198,35 @@ export async function POST(request: Request) {
       }
     })(),
     (async () => {
-      // Prefer the row we already resolved during per-branch signature verification; else look it
-      // up by the Payment Link id.
+      // Resolve the cafe booking by, in order: the row already found during signature verification →
+      // the pi_ (what payment.paid carries; the reliable key) → the cs_/link id (fallback). The pi_
+      // path is THE fix for "paid bookings never confirmed" (we matched the wrong id before).
       try {
-        const { data } = await supabase
-          .from("pc_reservations")
-          .select("id, branch_id, status, payment_status, reservation_code")
-          .eq(cafeReservationId ? "id" : "paymongo_intent_id", cafeReservationId ?? linkOrPaymentId)
-          .maybeSingle();
-        return data;
+        if (cafeReservationId) {
+          const { data } = await supabase
+            .from("pc_reservations")
+            .select("id, branch_id, status, payment_status, reservation_code")
+            .eq("id", cafeReservationId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        if (paymentIntentId) {
+          const { data } = await supabase
+            .from("pc_reservations")
+            .select("id, branch_id, status, payment_status, reservation_code")
+            .eq("paymongo_payment_intent_id", paymentIntentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        if (linkOrPaymentId) {
+          const { data } = await supabase
+            .from("pc_reservations")
+            .select("id, branch_id, status, payment_status, reservation_code")
+            .eq("paymongo_intent_id", linkOrPaymentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        return null;
       } catch {
         return null;
       }
@@ -224,12 +265,25 @@ export async function POST(request: Request) {
             }
             update.reservation_code = code;
           }
-          await supabase
+          // Guard: only confirm a booking that is STILL pending + unpaid. This (a) is idempotent against
+          // duplicate webhooks, and (b) does NOT resurrect an EXPIRED booking whose seat already
+          // auto-released (owner 2026-06-01: a payment that lands after expiry must not silently revive
+          // the booking onto a possibly-taken seat). A late payment therefore stays unmatched here — it's
+          // a paid-but-no-live-booking case to handle separately (auto-refund / flag — the "seat-race"
+          // step we deferred). With the 20-min hold this is rare; until then it surfaces as an unmatched
+          // PayMongo payment rather than a wrong confirmation.
+          const { data: confirmed } = await supabase
             .from("pc_reservations")
-            // Guard: only flip a still-unpaid/pending row (idempotent against duplicate webhooks).
             .update(update)
             .eq("id", pcReservation.id)
-            .neq("payment_status", "paid");
+            .eq("status", "pending")
+            .eq("payment_status", "unpaid")
+            .select("id");
+          if (!confirmed || confirmed.length === 0) {
+            console.warn(
+              `[paymongo webhook] paid event for pc_reservation ${pcReservation.id} but it was not pending+unpaid (status=${pcReservation.status}, payment_status=${pcReservation.payment_status}) — NOT confirmed; likely paid-after-expiry, needs refund/review`,
+            );
+          }
           break;
         }
         case "checkout_session.payment.failed":

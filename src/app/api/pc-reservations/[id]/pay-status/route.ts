@@ -48,7 +48,7 @@ export async function GET(
   // keep the seat held until someone ELSE tries to book it. Expiring here frees the seat on the
   // customer's own polling and flips their page to the "rebook" screen. Race-safe: the .eq guards only
   // flip a row that's still pending+unpaid (a webhook that just marked it paid wins).
-  const UNPAID_HOLD_MINUTES = 5;
+  const UNPAID_HOLD_MINUTES = 20; // MUST match create/route.ts (was 5 — expired customers mid-payment)
   if (
     payStatus === "unpaid" &&
     r.status === "pending" &&
