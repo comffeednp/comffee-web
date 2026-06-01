@@ -18,9 +18,12 @@ const supabaseHost = (() => {
  * - Referrer-Policy strict-origin-when-cross-origin: leak no path info to other sites
  * - Permissions-Policy: disables camera/microphone/geolocation/FLoC by default
  * - X-DNS-Prefetch-Control on: small perf win
- *
- * NOTE: a strict CSP would require nonces per request and is intentionally
- * skipped here — see SECURITY.md for the rationale and what to add later.
+ * - Content-Security-Policy: only the three directives that are safe to ENFORCE
+ *   without per-request nonces — they block plugin/object injection, <base>-tag
+ *   hijacking, and clickjacking, and break nothing on a normal SPA. A full
+ *   script-src/connect-src CSP needs nonce middleware (see SECURITY.md) and is
+ *   the planned follow-up — do NOT add default-src/script-src here without it or
+ *   Google Maps, Supabase, fonts, and Next's inline bootstrap will all break.
  */
 // Everything EXCEPT Permissions-Policy (that one varies per route — see below).
 const baseSecurityHeaders = [
@@ -32,6 +35,10 @@ const baseSecurityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
+  {
+    key: "Content-Security-Policy",
+    value: "base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
+  },
 ];
 
 // Permissions-Policy is route-specific. Default = lock everything down for the public site.

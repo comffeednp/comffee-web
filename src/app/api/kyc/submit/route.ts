@@ -1,7 +1,20 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { originAllowed, rateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
+
+// This endpoint necessarily uses the service-role client (writes to a PRIVATE
+// bucket) and calls a BILLED Google Vision API — and the booking flow that uses
+// it is open to not-logged-in guests. So it cannot require auth, but it MUST be
+// bounded: same-origin only, IP rate-limited, total + per-file size capped, and
+// image/PDF MIME only. The storage folder is SERVER-generated (never the caller's
+// memberId) so no one can write into another booking's folder or traverse paths.
+const MAX_TOTAL_BYTES = 30 * 1024 * 1024; // whole multipart payload (3 files + fields)
+const MAX_FILE_BYTES = 12 * 1024 * 1024; // per file
+const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const DOC_TYPES = new Set([...IMAGE_TYPES, "application/pdf"]); // id/billing may be a PDF
 
 const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 const VISION_URL = "https://vision.googleapis.com/v1/images:annotate";
@@ -125,6 +138,17 @@ async function verifyBilling(buffer: Buffer, contentType: string): Promise<strin
 }
 
 export async function POST(request: Request) {
+  // ── Abuse guards (run before reading the body) ──
+  if (!originAllowed(request)) {
+    return NextResponse.json({ error: "bad_origin" }, { status: 403 });
+  }
+  const limited = rateLimit(request, "kyc-submit", 6, 60_000); // 6 submits/min/IP
+  if (limited) return limited;
+  const declaredLen = Number(request.headers.get("content-length") ?? 0);
+  if (declaredLen > MAX_TOTAL_BYTES) {
+    return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
+  }
+
   const supabase = getSupabaseAdmin();
 
   let formData: FormData;
@@ -143,6 +167,21 @@ export async function POST(request: Request) {
 
   if (!memberId || !selfie || !idDoc || !billingDoc) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+
+  // Per-file size + MIME validation (before any buffering or Vision call).
+  const fileChecks: Array<{ label: "selfie" | "id" | "billing"; file: File; allowed: Set<string> }> = [
+    { label: "selfie", file: selfie, allowed: IMAGE_TYPES },
+    { label: "id", file: idDoc, allowed: DOC_TYPES },
+    { label: "billing", file: billingDoc, allowed: DOC_TYPES },
+  ];
+  for (const { label, file, allowed } of fileChecks) {
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: `${label} file is too large (max 12 MB).`, failedStep: label }, { status: 413 });
+    }
+    if (!allowed.has((file.type || "").toLowerCase())) {
+      return NextResponse.json({ error: `Unsupported file type for ${label}. Upload a JPG, PNG${allowed.has("application/pdf") ? ", or PDF" : ""}.`, failedStep: label }, { status: 415 });
+    }
   }
 
   const toBuffer = async (file: File) => Buffer.from(await file.arrayBuffer());
@@ -170,13 +209,17 @@ export async function POST(request: Request) {
 
   await supabase.storage.createBucket("kyc-documents", { public: false }).catch(() => {});
 
-  const ts = Date.now();
-  const prefix = `${memberId}/${ts}`;
+  // Server-generated folder. The caller-supplied memberId is sanitized to a flat
+  // label only (no path separators / traversal) and a random UUID guarantees the
+  // path is unguessable and collision-free — a caller can never target or
+  // overwrite another booking's documents.
+  const safeMember = (memberId || "guest").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "guest";
+  const prefix = `${safeMember}/${randomUUID()}`;
 
   const [selfieRes, idRes, billingRes] = await Promise.all([
-    supabase.storage.from("kyc-documents").upload(`${prefix}/selfie.jpg`, selfieBuffer, { contentType: "image/jpeg", upsert: true }),
-    supabase.storage.from("kyc-documents").upload(`${prefix}/id.jpg`, idBuffer, { contentType: idDoc.type || "image/jpeg", upsert: true }),
-    supabase.storage.from("kyc-documents").upload(`${prefix}/billing.jpg`, billingBuffer, { contentType: billingDoc.type || "image/jpeg", upsert: true }),
+    supabase.storage.from("kyc-documents").upload(`${prefix}/selfie.jpg`, selfieBuffer, { contentType: "image/jpeg", upsert: false }),
+    supabase.storage.from("kyc-documents").upload(`${prefix}/id.jpg`, idBuffer, { contentType: idDoc.type || "image/jpeg", upsert: false }),
+    supabase.storage.from("kyc-documents").upload(`${prefix}/billing.jpg`, billingBuffer, { contentType: billingDoc.type || "image/jpeg", upsert: false }),
   ]);
 
   if (selfieRes.error || idRes.error || billingRes.error) {

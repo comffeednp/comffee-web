@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { checkCronAuth } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 
@@ -20,18 +21,10 @@ async function handleSweep() {
   return { ok: true, released: (data ?? []).length };
 }
 
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const provided =
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-    new URL(request.url).searchParams.get("secret");
-  return provided === secret;
-}
-
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = checkCronAuth(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.reason ?? "unauthorized" }, { status: auth.status });
   }
   return NextResponse.json(await handleSweep());
 }
