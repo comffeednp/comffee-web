@@ -1,11 +1,30 @@
 /**
  * Shared Airbnb iCal sync logic — called both by the cron route handler
  * and directly from admin server actions (to avoid HTTP round-trips + auth issues).
+ *
+ * MODEL: Airbnb owns its own nights, so we MIRROR its feed — on feed = blocked,
+ * gone = freed. The hard part is that Airbnb's export is flaky: it now and then
+ * returns a truncated or empty list. Two guards stop a single bad fetch from
+ * freeing real bookings (which stranded 7 Imus nights, found + fixed 2026-06-02):
+ *
+ *   FLOW: fetch feed → (glitch guard) → insert/update/resurrect present nights
+ *         → (2-check debounce) free nights gone twice in a row → save feed memory
+ *
+ *   1. glitch guard   — an empty feed, or one >50% smaller than the last clean
+ *                       run, is treated as a fetch glitch: we free NOTHING and
+ *                       don't advance the miss memory.
+ *   2. 2-check debounce — a night must be missing on TWO consecutive runs before
+ *                         we free it. `missing_uids` carries the first-miss set.
+ *
+ * Returning nights are resurrected by delete-then-insert, NOT a status flip: a
+ * DB rule forbids un-cancelling a reservation (it protects WEBSITE bookings,
+ * which this sync must never touch). All changes here are Airbnb-scoped.
  */
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { parseICal } from "@/lib/ical";
+import { planCancellations } from "@/lib/airbnb-reconcile";
 
 export interface SyncResult {
   ok: boolean;
@@ -17,6 +36,7 @@ export interface SyncResult {
     upserted: number;
     cancelled: number;
     failed?: number;
+    glitch?: boolean;
     error?: string;
   }>;
 }
@@ -24,7 +44,11 @@ export interface SyncResult {
 export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
   const supabase = getSupabaseAdmin();
 
-  let q = supabase.from("airbnb_calendars").select("id, branch_id, ical_url, label, branch:branches(slug)");
+  let q = supabase
+    .from("airbnb_calendars")
+    .select(
+      "id, branch_id, ical_url, label, last_event_count, missing_uids, branch:branches(slug)",
+    );
   if (calendarId) q = q.eq("id", calendarId) as typeof q;
 
   const { data: calendars, error: calErr } = await q;
@@ -53,7 +77,8 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
       const text = await res.text();
       const events = parseICal(text);
 
-      // Include cancelled rows so we don't re-import UIDs that admin already cancelled
+      // Load every airbnb-sourced night for this branch, INCLUDING cancelled —
+      // we resurrect a cancelled night when its UID returns to the feed.
       const { data: existing } = await supabase
         .from("reservations")
         .select("id, ical_uid, status")
@@ -76,19 +101,36 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
       for (const ev of events) {
         seenUids.add(ev.uid);
         // Each event is independent — one bad row (e.g. an Airbnb date that
-        // overlaps an existing website booking and trips the no-overlap
-        // constraint) must not stop the rest of the calendar from importing.
+        // overlaps a website booking and trips the no-overlap constraint) must
+        // not stop the rest of the calendar from importing.
         try {
           const row = existingByUid.get(ev.uid);
-          if (row) {
-            // Admin already cancelled this — don't re-import from Airbnb
-            if (row.status === "cancelled") continue;
+          if (row && row.status !== "cancelled") {
+            // Already active — just refresh dates/label.
             const { error: upErr } = await supabase
               .from("reservations")
               .update({ check_in: ev.start, check_out: ev.end, guest_name: ev.summary })
               .eq("id", row.id);
             if (upErr) throw new Error(upErr.message);
+          } else if (row && row.status === "cancelled") {
+            // The night is back on Airbnb but we'd previously freed it. The DB
+            // forbids un-cancelling (that rule guards WEBSITE bookings), so we
+            // delete the stale freed entry and re-add it as a fresh confirmed
+            // Airbnb block — the same move that repaired Imus by hand.
+            const { error: delErr } = await supabase.from("reservations").delete().eq("id", row.id);
+            if (delErr) throw new Error(delErr.message);
+            const { error: insErr } = await supabase.from("reservations").insert({
+              branch_id: cal.branch_id,
+              source: "airbnb",
+              status: "confirmed",
+              check_in: ev.start,
+              check_out: ev.end,
+              guest_name: ev.summary || "Airbnb guest",
+              ical_uid: ev.uid,
+            });
+            if (insErr) throw new Error(insErr.message);
           } else {
+            // Brand-new Airbnb night.
             const { error: insErr } = await supabase.from("reservations").insert({
               branch_id: cal.branch_id,
               source: "airbnb",
@@ -107,28 +149,48 @@ export async function runAirbnbSync(calendarId?: string): Promise<SyncResult> {
         }
       }
 
+      // Freeing step — glitch guard + 2-check debounce (see planCancellations).
+      const plan = planCancellations(
+        seenUids,
+        (existing ?? []).map((r) => ({ ical_uid: r.ical_uid as string, status: r.status as string })),
+        (cal.missing_uids as string[] | null) ?? [],
+        cal.last_event_count as number | null,
+        events.length,
+      );
+
       let cancelled = 0;
-      for (const [uid, row] of existingByUid) {
-        // Only cancel rows that disappeared from Airbnb AND aren't already cancelled
-        if (!seenUids.has(uid) && row.status !== "cancelled") {
-          await supabase.from("reservations").update({ status: "cancelled" }).eq("id", row.id);
-          cancelled++;
-        }
+      for (const uid of plan.toCancel) {
+        const row = existingByUid.get(uid);
+        if (!row) continue;
+        await supabase.from("reservations").update({ status: "cancelled" }).eq("id", row.id);
+        cancelled++;
       }
 
-      // Record a partial-failure note so the admin can see something went wrong,
-      // without failing the whole sync (the events that did import are kept).
-      const syncNote = failed > 0 ? `${failed} event(s) failed: ${firstEventError}` : null;
+      // Record a partial-failure note so the admin sees something went wrong,
+      // without failing the whole sync (events that did import are kept).
+      const syncNote = plan.glitch
+        ? `feed looked truncated (${events.length} vs ${cal.last_event_count}); kept existing blocks`
+        : failed > 0
+          ? `${failed} event(s) failed: ${firstEventError}`
+          : null;
+
       await supabase
         .from("airbnb_calendars")
-        .update({ last_synced_at: new Date().toISOString(), last_sync_error: syncNote })
+        .update({
+          last_synced_at: new Date().toISOString(),
+          last_sync_error: syncNote,
+          missing_uids: plan.nextMissing,
+          // Only trust the count from a clean run, so a glitch can't become the
+          // baseline the next glitch-check compares against.
+          ...(plan.nextCount !== null ? { last_event_count: plan.nextCount } : {}),
+        })
         .eq("id", cal.id);
 
       const branchRaw = cal.branch as { slug: string } | { slug: string }[] | null;
       const branchSlug = Array.isArray(branchRaw) ? branchRaw[0]?.slug : branchRaw?.slug;
       if (branchSlug) revalidatePath(`/branches/${branchSlug}`);
 
-      results.push({ calendar_id: cal.id, upserted, cancelled, failed });
+      results.push({ calendar_id: cal.id, upserted, cancelled, failed, glitch: plan.glitch });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown";
       await supabase
