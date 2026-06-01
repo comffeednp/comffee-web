@@ -30,7 +30,7 @@ export async function GET(
   const { data: r } = await admin
     .from("pc_reservations")
     .select(
-      "id, total_php, payment_status, reservation_code, station_name, customer_email",
+      "id, total_php, payment_status, reservation_code, station_name, customer_email, status, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -41,7 +41,28 @@ export async function GET(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const payStatus = r.payment_status as string;
+  let payStatus = r.payment_status as string;
+
+  // Self-expire a stale UNPAID hold (bug fix 2026-06-01, must match create-route's UNPAID_HOLD_MINUTES).
+  // Without this, a customer who never finishes paying would see "Waiting for your payment…" forever AND
+  // keep the seat held until someone ELSE tries to book it. Expiring here frees the seat on the
+  // customer's own polling and flips their page to the "rebook" screen. Race-safe: the .eq guards only
+  // flip a row that's still pending+unpaid (a webhook that just marked it paid wins).
+  const UNPAID_HOLD_MINUTES = 5;
+  if (
+    payStatus === "unpaid" &&
+    r.status === "pending" &&
+    r.created_at &&
+    Date.now() - new Date(r.created_at as string).getTime() > UNPAID_HOLD_MINUTES * 60 * 1000
+  ) {
+    await admin
+      .from("pc_reservations")
+      .update({ status: "expired", payment_status: "expired" })
+      .eq("id", r.id)
+      .eq("status", "pending")
+      .eq("payment_status", "unpaid");
+    payStatus = "expired";
+  }
 
   return NextResponse.json({
     ok: true,

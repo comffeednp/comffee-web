@@ -117,14 +117,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "station_occupied" }, { status: 409 });
   }
 
-  // No other live hold on this station (anyone queued/awaiting/paid-pending counts).
+  // Release stale UNPAID holds first (bug fix 2026-06-01): a customer who reached PayMongo checkout but
+  // didn't finish paying leaves a pending+unpaid row holding this seat. With the hosted Checkout flow
+  // there's no pay-queue to expire it (the old DIY-QR queue did that), so without this an abandoned
+  // checkout would lock the PC forever — the owner hit exactly this on a back-button retry. We give an
+  // unpaid hold a SHORT window to finish paying, then free the seat. PAID rows are never touched (real
+  // bookings); only pending+unpaid rows older than the window are expired.
+  const UNPAID_HOLD_MINUTES = 5;
+  const staleBefore = new Date(Date.now() - UNPAID_HOLD_MINUTES * 60 * 1000).toISOString();
+  await supabase
+    .from("pc_reservations")
+    .update({ status: "expired", payment_status: "expired" })
+    .eq("branch_id", v.branchId)
+    .eq("station_name", v.stationName)
+    .eq("status", "pending")
+    .eq("payment_status", "unpaid")
+    .lt("created_at", staleBefore);
+
+  // No other LIVE hold on this station. A paid+pending booking (real, awaiting arrival) always blocks;
+  // an unpaid+pending one blocks only while still inside its pay window (older ones were just expired
+  // above, so they no longer match here). acknowledged = already seated, also blocks.
   const { data: existingHold } = await supabase
     .from("pc_reservations")
-    .select("id")
+    .select("id, payment_status, created_at")
     .eq("branch_id", v.branchId)
     .eq("station_name", v.stationName)
     .in("status", ["pending", "acknowledged"]);
-  if (existingHold && existingHold.length > 0) {
+  const blocking = (existingHold ?? []).filter((h) => {
+    // A paid/acknowledged hold always blocks. An unpaid one blocks only if still within the window.
+    if (h.payment_status !== "unpaid") return true;
+    return new Date(h.created_at as string).getTime() >= Date.parse(staleBefore);
+  });
+  if (blocking.length > 0) {
     return NextResponse.json({ error: "station_already_reserved" }, { status: 409 });
   }
 
