@@ -14,6 +14,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { googleSignInAction, switchAccountAction } from "@/app/(site)/account/_actions/auth";
 import { SubmitButton, LoadingLink } from "@/components/partner/GateButtons";
 import ReservePCClient from "./ReservePCClient";
+import BranchChatContext from "@/components/site/BranchChatContext";
 import { ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -163,8 +164,15 @@ export default async function ReservePCPage({
     ? snapshot.stations.find((s) => s.station_name === requestedPc)
     : null;
 
+  // Grace window to show up after reserving (owner-set per branch; 10 if unset). Shown to the customer
+  // so the wording always matches the actual setting.
+  const graceMin = Number(paymentConfig?.reservation_grace_minutes ?? 10) || 10;
+
   return (
     <>
+      {/* Tag the floating chat bubble to THIS branch so a "message us" from here reaches this branch's
+          on-duty staff (and the owner). Clears on unmount. */}
+      <BranchChatContext branchId={branch.id} branchName={branch.name} />
       <section className="border-b border-line bg-bg-soft">
         <div className="container-edge py-8">
           {backToBranch}
@@ -175,7 +183,11 @@ export default async function ReservePCPage({
             </h1>
             <p className="mt-3 text-cream-dim text-lg max-w-2xl">
               Tap a vacant PC, pick your rate, pay online. A flat ₱{RESERVATION_FEE_PHP} reservation
-              fee applies. 10-minute grace window to show up once you&apos;ve paid.
+              fee applies. {graceMin}-minute grace window to show up once you&apos;ve paid.
+            </p>
+            <p className="mt-3 text-sm text-mocha max-w-2xl">
+              Questions before you book? Tap the <span className="text-amber font-semibold">Chat</span> button
+              (bottom-right) — the cafe gets it right away.
             </p>
           </div>
         </div>

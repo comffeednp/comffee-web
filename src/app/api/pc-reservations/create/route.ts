@@ -6,9 +6,16 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { guardMutating } from "@/lib/security";
 import { isRateAvailableNow, computeRateTotals } from "@/lib/branch-rates";
 import { getBranchPaymentConfig, isPaymongoReservationActive } from "@/lib/branch-payment-config";
-import { claimPaySlot } from "@/lib/reservation-pay-queue";
+import { createCheckoutSession, bookingPaymentMethods } from "@/lib/paymongo";
 
 export const runtime = "nodejs";
+
+// Where PayMongo sends the customer after they pay on the hosted checkout. Mirrors the Playcation
+// pattern (create-intent uses NEXT_PUBLIC_SITE_URL → comffee.org). Falls back to comffee.org.
+function siteUrl(): string {
+  const u = process.env.NEXT_PUBLIC_SITE_URL;
+  return u && u.startsWith("https://") ? u : "https://comffee.org";
+}
 
 const schema = z.object({
   branchId: z.string().uuid(),
@@ -168,18 +175,27 @@ export async function POST(request: Request) {
     memberTopupPhp = topup;
   }
 
-  // What the customer pays online = flat fee + (PC time | top-up). NO unique-centavo (owner 2026-05-30);
-  // the pay QUEUE keeps same-amount payments unambiguous instead.
+  // What the customer pays online = flat ₱10 fee + (PC time | member top-up). Each booking gets its own
+  // PayMongo Checkout Session, so same-amount bookings are no longer ambiguous (the old pay-queue that
+  // serialized them is gone).
   const amountPhp = RESERVATION_FEE_PHP + pcTimePhp + memberTopupPhp;
 
   const now = new Date();
   const startIso = now.toISOString();
   const endIso = new Date(now.getTime() + totalMinutes * 60 * 1000).toISOString();
-  const mustHonorBy = new Date(now.getTime() + CAFE_GRACE_MINUTES * 60 * 1000).toISOString();
+  // Arrival grace is owner-set per branch (Reservation tab); fall back to 10 min if unset. The grace
+  // HOLDS the seat from booking time; at grace end the paid time is considered started + the seat frees
+  // (owner rule 2026-06-01). NOTE: must_honor_by is stamped from booking time now; the website doesn't
+  // yet auto-release at grace end — that's the POS/PanCafe side (see PLAN). We store the deadline so
+  // both sides agree on it.
+  const graceMinutes = Number(config!.reservation_grace_minutes ?? CAFE_GRACE_MINUTES) || CAFE_GRACE_MINUTES;
+  const mustHonorBy = new Date(now.getTime() + graceMinutes * 60 * 1000).toISOString();
   const reservationCode = makeReservationCode();
 
-  // Insert as 'queued' (waiting for the same-amount pay slot). status='pending' so the POS pop-up picks
-  // it up once the POS flips payment_status to 'paid'. One retry covers the astronomically rare code clash.
+  // Insert as 'unpaid' (was 'queued' under the DIY-QR queue — removed; PayMongo Checkout gives each
+  // booking its own hosted page so same-amount payments are no longer ambiguous). status='pending' so
+  // the POS pop-up picks it up once the webhook flips payment_status to 'paid'. One retry covers the
+  // astronomically rare code clash.
   const baseRow = {
     branch_id: v.branchId,
     station_name: v.stationName,
@@ -200,7 +216,7 @@ export async function POST(request: Request) {
     duration_minutes: totalMinutes,
     must_honor_by: mustHonorBy,
     status: "pending" as const,
-    payment_status: "queued" as const,
+    payment_status: "unpaid" as const,
   };
 
   async function insertOnce(code: string) {
@@ -222,15 +238,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "save_failed" }, { status: 500 });
   }
 
-  // Try to grab the active pay slot for this amount right away. If another booking of the EXACT same
-  // total is mid-payment, this stays 'queued' and the confirmed page keeps trying until it's our turn.
-  // Fail-soft: even if the claim hiccups, the reservation exists and the confirmed page will retry.
+  // Create the PayMongo hosted Checkout Session with the BRANCH'S OWN secret key. We block 'card' under
+  // ₱100 (bookingPaymentMethods) since PayMongo enforces a ₱100 card minimum; GCash/Maya/GrabPay have
+  // no floor. On the paid webhook PayMongo sends back the payment's payment_intent_id; we store the
+  // checkout session id here as paymongo_intent_id and the webhook matches on it (see webhook route).
   try {
-    await claimPaySlot(created.id, v.branchId, amountPhp);
-  } catch (e) {
-    console.error("claimPaySlot failed (non-fatal)", e instanceof Error ? e.message : e);
-  }
+    const checkout = await createCheckoutSession({
+      amountPhp,
+      description: `Comffee PC reservation · ${branch.name} · ${v.stationName}`,
+      lineItemName:
+        v.customerType === "member"
+          ? `PC reservation top-up — ${v.stationName}`
+          : `PC reservation (${totalMinutes} min) — ${v.stationName}`,
+      paymentMethodTypes: bookingPaymentMethods(amountPhp),
+      successUrl: `${siteUrl()}/branches/${branch.slug}/reserve-pc/confirmed/${created.id}`,
+      cancelUrl: `${siteUrl()}/branches/${branch.slug}/reserve-pc`,
+      remarks: `pc_reservation:${created.id}`,
+      secretKey: config!.paymongo_secret_key!,
+    });
+    await supabase
+      .from("pc_reservations")
+      .update({ paymongo_intent_id: checkout.id })
+      .eq("id", created.id);
 
-  // The client navigates to /reserve-pc/confirmed/<id>, which polls pay-status (claim/QR/code/paid).
-  return NextResponse.json({ ok: true, reservationId: created.id, reservationCode: code });
+    // The client opens checkout.checkoutUrl (PayMongo hosted page) and lands on the confirmed page after.
+    return NextResponse.json({
+      ok: true,
+      reservationId: created.id,
+      reservationCode: code,
+      checkoutUrl: checkout.checkout_url,
+    });
+  } catch (e) {
+    // Checkout couldn't be created → delete the held row so the seat isn't stuck reserved with no way
+    // to pay (mirrors Playcation create-intent's rollback on payment_link_failed).
+    console.error("pc reservation checkout failed", e instanceof Error ? e.message : e);
+    await supabase.from("pc_reservations").delete().eq("id", created.id);
+    return NextResponse.json(
+      { error: "checkout_failed", detail: e instanceof Error ? e.message : "unknown" },
+      { status: 502 },
+    );
+  }
 }

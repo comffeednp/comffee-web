@@ -87,8 +87,13 @@ export async function POST(request: Request) {
   let verified = verifyWebhookSignature(rawBody, signature, envSecret);
 
   // 2) Fallback for per-branch cafe reservations: find the reservation this event refers to (by the
-  //    Payment Link id), fetch its branch's webhook secret, and verify against that. Only runs when
-  //    the env secret didn't match, so it never weakens the existing path.
+  //    id PayMongo puts at data.attributes.data.id), fetch its branch's webhook secret, and verify
+  //    against that. Only runs when the env secret didn't match, so it never weakens the existing path.
+  //    ⚠ VERIFY ON THE CARD-BLOCK LIVE TEST: for 'checkout_session.payment.paid' we ASSUME inner.id is
+  //    the cs_ id we stored in paymongo_intent_id (the natural Checkout-Session event shape). If PayMongo
+  //    instead puts a payment id there, this lookup misses → branch secret never tried → signature 401
+  //    → the booking would never confirm (the silent-money-failure to watch for). The live test settles
+  //    it; if it differs, also match by the cs_ id carried elsewhere in the payload.
   let cafeReservationId: string | null = null;
   if (!verified && linkOrPaymentId) {
     const { data: pcr } = await supabase
@@ -195,6 +200,14 @@ export async function POST(request: Request) {
     // cashier loads the paid top-up (flowchart §G/§K). On failed/expired: release the held station.
     if (pcReservation) {
       switch (eventType) {
+        // 'checkout_session.payment.paid' is the event a hosted Checkout Session fires (the new
+        // bookings path, 2026-06-01). Only bookings store a cs_ id in paymongo_intent_id, so this
+        // case can only ever match a pc_reservation — existing link/payment flows are untouched.
+        // NOTE (to verify on the card-block live test): for a Checkout Session the actual pay_ id is
+        // expected at inner.attributes.payments[0].data.id (same shape as link.payment.paid, which the
+        // real records confirmed). If that shape differs, actualPaymentId is just null and the booking
+        // STILL confirms (paid) — we only lose the audit pay_ id, never the confirmation. Fails soft.
+        case "checkout_session.payment.paid":
         case "link.payment.paid":
         case "payment.paid": {
           const update: Record<string, unknown> = {
@@ -219,6 +232,7 @@ export async function POST(request: Request) {
             .neq("payment_status", "paid");
           break;
         }
+        case "checkout_session.payment.failed":
         case "link.payment.failed":
         case "payment.failed": {
           // Payment didn't go through → release the seat so it returns to the vacant list.

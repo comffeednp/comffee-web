@@ -273,9 +273,17 @@ export default function ReservePCClient({
           return;
         }
         setReservationId(data.reservationId);
-        // DIY-QR flow (2026-05-30): no external checkout. Go to the confirmed page, which runs the pay
-        // queue → shows the Bookings QR → and flips to "Reserved! + code" the instant the POS matches
-        // the payment on PayMongo.
+        // PayMongo hosted-checkout flow (2026-06-01): open PayMongo's secure page (GCash/Maya/GrabPay,
+        // + card only when ≥₱100 — set server-side). PayMongo's success_url returns the customer to the
+        // confirmed page, which polls pay-status and flips to "Reserved! + code" the instant the webhook
+        // marks it paid. We navigate in the SAME tab (not window.open) so the success redirect lands
+        // back here cleanly — a blocked popup would otherwise strand the customer on "reserving…".
+        if (data.checkoutUrl) {
+          window.location.href = data.checkoutUrl;
+          return;
+        }
+        // Fallback (no checkout url — shouldn't happen): go to the confirmed page so the customer at
+        // least sees their booking and can retry, rather than a dead "reserving…" screen.
         if (data.reservationId) {
           window.location.href = `/branches/${branch.slug}/reserve-pc/confirmed/${data.reservationId}`;
           return;

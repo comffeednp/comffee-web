@@ -24,6 +24,10 @@ export interface BranchPaymentConfig {
   fee_per_100: number;
   reservation_min_hours: number;
   reservation_min_topup: number;
+  // Owner-set arrival grace (minutes) — how long a paid booking holds the seat from booking time
+  // before the paid time is considered started + the seat frees (owner rule 2026-06-01). Set on the
+  // POS admin Reservation tab, synced up. NULL/0 → fall back to the 10-min default in the create route.
+  reservation_grace_minutes: number | null;
   bonus_type: string; // 'percent' | 'fixed'
   bonus_value: number;
   bonus_threshold: number;
@@ -40,6 +44,7 @@ export interface BranchPaymentDisplay {
   onlinePaymentMethod: string;
   reservationMinHours: number;
   reservationMinTopup: number;
+  reservationGraceMinutes: number;
   bonusType: string;
   bonusValue: number;
   bonusThreshold: number;
@@ -58,7 +63,7 @@ export async function getBranchPaymentConfig(
     const { data } = await admin
       .from("branch_payment_config")
       .select(
-        "branch_id, online_payment_method, paymongo_secret_key, paymongo_webhook_secret, fee_per_100, reservation_min_hours, reservation_min_topup, bonus_type, bonus_value, bonus_threshold, booking_qr_tlv, booking_qr_codeid, updated_at",
+        "branch_id, online_payment_method, paymongo_secret_key, paymongo_webhook_secret, fee_per_100, reservation_min_hours, reservation_min_topup, reservation_grace_minutes, bonus_type, bonus_value, bonus_threshold, booking_qr_tlv, booking_qr_codeid, updated_at",
       )
       .eq("branch_id", branchId)
       .maybeSingle();
@@ -70,16 +75,16 @@ export async function getBranchPaymentConfig(
 }
 
 /**
- * True only when this branch is ready to take online DIY-QR reservations.
+ * True only when this branch is ready to take online reservations.
  *
- * Requires: online_payment_method === 'paymongo' AND a synced Bookings QR (booking_qr_tlv).
+ * Requires: online_payment_method === 'paymongo' AND a saved PayMongo SECRET key.
  *
- * WHY just those two (DIY-QR rewrite, 2026-05-30): the website no longer talks to PayMongo for
- * reservations. The customer scans the branch's uploaded Bookings QR (the website builds it from
- * booking_qr_tlv), and the POS — which already holds the PayMongo key — watches PayMongo's payments
- * list and flips the matched booking to payment_status='paid'. The website only needs to (a) be on the
- * paymongo method and (b) have the Bookings QR to draw. The PayMongo secret + webhook secret are NO
- * longer required here (the dropped Payment-Link/webhook path needed them; the DIY path doesn't).
+ * WHY the secret key, not booking_qr_tlv (API rewrite, 2026-06-01): online bookings moved OFF the
+ * home-made "Bookings QR" onto PayMongo's hosted Checkout Session (the website creates it with the
+ * branch's own secret key; PayMongo's webhook confirms it). So readiness now means (a) method is
+ * paymongo and (b) we hold the secret key to create the checkout. The old DIY-QR booking_qr_tlv is no
+ * longer used for reservations (counter still uses its own DIY QR, POS-side). See
+ * [[project-online-pay-reserve-v2]] / PLAN-online-bookings-paymongo-api.md.
  */
 export function isPaymongoReservationActive(
   config: BranchPaymentConfig | null,
@@ -87,7 +92,7 @@ export function isPaymongoReservationActive(
   return (
     !!config &&
     config.online_payment_method === "paymongo" &&
-    !!config.booking_qr_tlv
+    !!config.paymongo_secret_key
   );
 }
 
@@ -104,6 +109,7 @@ export async function getBranchPaymentDisplay(
     onlinePaymentMethod: config.online_payment_method,
     reservationMinHours: Number(config.reservation_min_hours ?? 1),
     reservationMinTopup: Number(config.reservation_min_topup ?? 0),
+    reservationGraceMinutes: Number(config.reservation_grace_minutes ?? 10),
     bonusType: config.bonus_type ?? "percent",
     bonusValue: Number(config.bonus_value ?? 0),
     bonusThreshold: Number(config.bonus_threshold ?? 0),

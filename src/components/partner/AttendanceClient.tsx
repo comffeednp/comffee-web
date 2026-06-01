@@ -5,6 +5,7 @@ import { MapPin, LocateFixed, Loader2, CheckCircle2, XCircle, Clock, ScanFace, R
 import type { AttendanceStatus } from "@/lib/supabase/types";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import LivenessCapture, { type LivenessResult } from "./LivenessCapture";
+import StaffChatPanel from "./StaffChatPanel";
 
 // Live in-store payment QR pushed from the POS the moment the cashier picks GCash (or "Send GCash
 // QR" on a split). Filtered server-side by RLS (migration 0037) to this signed-in staffer only.
@@ -934,6 +935,11 @@ export default function AttendanceClient({
     <div className="relative">
       {/* The map fills the viewport; the site Footer (from the layout) sits below. */}
       <div ref={mapDivRef} className="h-[100svh] w-full bg-bg-soft" />
+
+      {/* Always-on customer-message panel (bottom-left) — shown only while CLOCKED IN, so an off-shift
+          worker isn't answering customers. Routes to this branch's booking-page chats (owner sees them
+          too in /admin/chat). Mirrors the live-QR reliability pattern (poll + realtime nudge). */}
+      {isClockedIn && <StaffChatPanel slug={slug} />}
 
       {/* ── LIVE GCASH PAYMENT QR (redesigned 2026-05-29) ──────────────────────────────────────
           Full-screen takeover that appears the instant the POS mints a QR for this cashier (INSERT

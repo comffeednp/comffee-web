@@ -97,6 +97,90 @@ export async function createPaymentLink(
   };
 }
 
+export interface CreateCheckoutInput {
+  amountPhp: number; // pesos (converted to centavos internally)
+  description: string;
+  lineItemName: string; // shown on the hosted page (e.g. "PC reservation — PC-03")
+  successUrl: string; // where PayMongo returns the customer after paying
+  cancelUrl?: string;
+  // Which methods the hosted page may show. We OMIT "card" for amounts under ₱100
+  // because PayMongo enforces a ₱100 minimum on card — a customer who picks card on
+  // a small booking would be blocked. GCash/Maya/GrabPay have no such floor.
+  // (Basic Payment Links cannot restrict methods — that's WHY bookings use a Checkout
+  //  Session instead of createPaymentLink: the Session honors payment_method_types.)
+  paymentMethodTypes: string[];
+  remarks?: string;
+  // Per-branch PayMongo secret key (the cafe owner's own). Omit → platform env key.
+  secretKey?: string;
+}
+
+export interface CheckoutSession {
+  id: string;
+  checkout_url: string;
+  status: string;
+}
+
+/**
+ * Create a hosted Checkout Session. Like a Payment Link (customer pays at a
+ * PayMongo-hosted `checkout_url`), but it accepts `payment_method_types` so we can
+ * hide card on sub-₱100 bookings. Used by the online PC-reservation flow.
+ */
+export async function createCheckoutSession(
+  input: CreateCheckoutInput,
+): Promise<CheckoutSession> {
+  const res = await fetch(`${API_BASE}/checkout_sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authHeader(input.secretKey),
+    },
+    body: JSON.stringify({
+      data: {
+        attributes: {
+          // PayMongo wants line items; one item carrying the whole amount is fine.
+          line_items: [
+            {
+              name: input.lineItemName,
+              amount: Math.round(input.amountPhp * 100),
+              currency: "PHP",
+              quantity: 1,
+            },
+          ],
+          payment_method_types: input.paymentMethodTypes,
+          description: input.description,
+          ...(input.remarks && { remarks: input.remarks }),
+          success_url: input.successUrl,
+          ...(input.cancelUrl && { cancel_url: input.cancelUrl }),
+          send_email_receipt: false,
+          show_description: true,
+          show_line_items: true,
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PayMongo create checkout failed: ${res.status} ${text}`);
+  }
+
+  const json = (await res.json()) as {
+    data: { id: string; attributes: { checkout_url: string; status: string } };
+  };
+  return {
+    id: json.data.id,
+    checkout_url: json.data.attributes.checkout_url,
+    status: json.data.attributes.status,
+  };
+}
+
+/** The methods a booking pay-page should offer for a given amount. Card carries a
+ *  ₱100 PayMongo minimum, so we drop it below ₱100 (owner rule 2026-06-01). */
+export function bookingPaymentMethods(amountPhp: number): string[] {
+  const base = ["gcash", "paymaya", "grab_pay"];
+  return amountPhp >= 100 ? [...base, "card"] : base;
+}
+
 /** Retrieve a Payment Link to confirm its status (used as a fallback) */
 export async function getPaymentLink(id: string) {
   const res = await fetch(`${API_BASE}/links/${id}`, {

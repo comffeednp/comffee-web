@@ -5,10 +5,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import PaymentClient from "./PaymentClient";
 import { ArrowLeft, MapPin } from "lucide-react";
 
-// DIY-QR reservation confirm page (2026-05-30). The customer lands here right after booking. The live
-// state — queued (waiting for the same-amount pay slot) / awaiting (scan the Bookings QR) / paid (show
-// the code) / expired — is driven entirely by PaymentClient polling /pay-status; this server wrapper
-// just authorizes by reservation id (unguessable UUID, short-lived) and renders the shell.
+// PayMongo hosted-checkout reservation confirm page (2026-06-01). PayMongo's success_url returns the
+// customer here after they pay. The live state — unpaid (waiting for the webhook) / paid (show the
+// code) / expired — is driven entirely by PaymentClient polling /pay-status; this server wrapper just
+// authorizes by reservation id (unguessable UUID, short-lived) and renders the shell.
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +45,13 @@ export default async function ConfirmedPCReservationPage({
 
   const ps = r.payment_status as string;
   const isExpired = ps === "expired" || r.status === "expired" || r.status === "cancelled";
-  const title = ps === "paid" ? "Reserved!" : isExpired ? "Reservation expired" : "Pay to confirm.";
+  const title = ps === "paid" ? "Reserved!" : isExpired ? "Reservation expired" : "Confirming payment.";
   const subtitle =
     ps === "paid"
       ? "You're all set — your code is below."
       : isExpired
-        ? "The payment window ended. Start over if you still want a PC."
-        : "Scan the QR with your payment app to lock in your station — it confirms on its own.";
+        ? "The booking was released. Start over if you still want a PC."
+        : "We're confirming your payment — this page updates on its own once it lands.";
 
   return (
     <>
