@@ -103,10 +103,10 @@ export interface CreateCheckoutInput {
   lineItemName: string; // shown on the hosted page (e.g. "PC reservation — PC-03")
   successUrl: string; // where PayMongo returns the customer after paying
   cancelUrl?: string;
-  // Which methods the hosted page may show. We OMIT "card" for amounts under ₱100
-  // because PayMongo enforces a ₱100 minimum on card — a customer who picks card on
-  // a small booking would be blocked. GCash/Maya/GrabPay have no such floor.
-  // (Basic Payment Links cannot restrict methods — that's WHY bookings use a Checkout
+  // Which methods the hosted page may show (see bookingPaymentMethods): QRPh always, + card only at
+  // ₱100+ (PayMongo's card minimum; QRPh has no floor). Each method must be ACTIVATED on the PayMongo
+  // account or the checkout shows "no payment methods available" — that's why we use QRPh (the one the
+  // owner activated). (Basic Payment Links can't restrict methods — that's WHY bookings use a Checkout
   //  Session instead of createPaymentLink: the Session honors payment_method_types.)
   paymentMethodTypes: string[];
   remarks?: string;
@@ -174,11 +174,18 @@ export async function createCheckoutSession(
   };
 }
 
-/** The methods a booking pay-page should offer for a given amount. Card carries a
- *  ₱100 PayMongo minimum, so we drop it below ₱100 (owner rule 2026-06-01). */
+/** The methods a booking pay-page should offer for a given amount.
+ *
+ * QRPh is the base (owner activated QRPh, NOT individual gcash/maya/grab_pay — 2026-06-01). It's the
+ * one umbrella QR that GCash, Maya, GrabPay and banks all scan, so it covers every e-wallet with the
+ * single method the account actually has live, at the cheapest rate. (The earlier gcash/maya/grab_pay
+ * list produced "no payment methods available" on checkout because none of those were activated.)
+ *
+ * Card is added only for ₱100+ (PayMongo's card minimum; QRPh has no such floor). Card stays DORMANT
+ * until the owner also activates Card in PayMongo — until then the checkout simply shows QRPh. So small
+ * bookings are naturally fine (QRPh only), and card is ready the day it's switched on. */
 export function bookingPaymentMethods(amountPhp: number): string[] {
-  const base = ["gcash", "paymaya", "grab_pay"];
-  return amountPhp >= 100 ? [...base, "card"] : base;
+  return amountPhp >= 100 ? ["qrph", "card"] : ["qrph"];
 }
 
 /** Retrieve a Payment Link to confirm its status (used as a fallback) */

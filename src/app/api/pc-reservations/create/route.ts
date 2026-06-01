@@ -262,10 +262,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "save_failed" }, { status: 500 });
   }
 
-  // Create the PayMongo hosted Checkout Session with the BRANCH'S OWN secret key. We block 'card' under
-  // ₱100 (bookingPaymentMethods) since PayMongo enforces a ₱100 card minimum; GCash/Maya/GrabPay have
-  // no floor. On the paid webhook PayMongo sends back the payment's payment_intent_id; we store the
-  // checkout session id here as paymongo_intent_id and the webhook matches on it (see webhook route).
+  // Create the PayMongo hosted Checkout Session with the BRANCH'S OWN secret key. Methods come from
+  // bookingPaymentMethods(): QRPh always (the one method the account has activated — covers GCash/Maya/
+  // banks via a single QR), + card only at ₱100+ (dormant until Card is also activated). On the paid
+  // webhook PayMongo sends back the payment's payment_intent_id; we store the checkout session id here
+  // as paymongo_intent_id and the webhook matches on it (see webhook route).
   try {
     const checkout = await createCheckoutSession({
       amountPhp,

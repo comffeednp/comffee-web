@@ -273,8 +273,8 @@ export default function ReservePCClient({
           return;
         }
         setReservationId(data.reservationId);
-        // PayMongo hosted-checkout flow (2026-06-01): open PayMongo's secure page (GCash/Maya/GrabPay,
-        // + card only when ≥₱100 — set server-side). PayMongo's success_url returns the customer to the
+        // PayMongo hosted-checkout flow (2026-06-01): open PayMongo's secure page (QRPh — one QR for
+        // GCash/Maya/banks; + card only when ≥₱100, set server-side). PayMongo's success_url returns the customer to the
         // confirmed page, which polls pay-status and flips to "Reserved! + code" the instant the webhook
         // marks it paid. We navigate in the SAME tab (not window.open) so the success redirect lands
         // back here cleanly — a blocked popup would otherwise strand the customer on "reserving…".
