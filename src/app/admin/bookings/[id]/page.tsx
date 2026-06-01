@@ -2,9 +2,15 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getAdminScope } from "@/lib/auth/require-admin";
 import { getReservationById } from "@/lib/reservations";
-import { manualConfirmAction, cancelBookingAction } from "../../_actions/bookings";
+import {
+  manualConfirmAction,
+  cancelBookingAction,
+  approveBookingAction,
+  rejectBookingAction,
+} from "../../_actions/bookings";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import RefundButton from "@/components/admin/RefundButton";
+import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { ArrowLeft, Check, X } from "lucide-react";
 import { formatDate, formatDateTime, formatPHP } from "@/lib/utils";
 import { nightsBetween } from "@/lib/dates";
@@ -96,17 +102,54 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
         </div>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        {reservation.status !== "confirmed" && reservation.status !== "cancelled" && (
-          <form action={manualConfirmAction}>
-            <input type="hidden" name="id" value={reservation.id} />
-            <button type="submit" title="Manually confirm this booking" className="key-cap key-cap-phosphor">
+      {/* Request-to-book: a paid booking waiting for the owner's decision. */}
+      {reservation.status === "pending_approval" && (
+        <div className="mt-10 p-5 border border-amber/50 bg-amber/5 rounded-xl">
+          <p className="font-mono text-xs text-amber uppercase tracking-widest">// awaiting your decision</p>
+          <p className="mt-1 text-sm text-cream-dim">
+            {reservation.guest_name ?? "The guest"} paid{" "}
+            <span className="text-amber font-semibold">{formatPHP(Number(reservation.total_php ?? 0))}</span>{" "}
+            and is waiting. Accept to confirm + email them their booking, or decline to refund in full and reopen the dates.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <ConfirmSubmitButton
+              action={approveBookingAction}
+              id={reservation.id}
+              confirmText={`Accept this booking? ${reservation.guest_name ?? "The guest"} will be confirmed and emailed.`}
+              title="Accept and confirm this booking"
+              className="key-cap key-cap-phosphor"
+            >
               <Check className="h-4 w-4" />
-              Manually confirm
-            </button>
-          </form>
-        )}
-        {reservation.status !== "cancelled" && (
+              Accept
+            </ConfirmSubmitButton>
+            <ConfirmSubmitButton
+              action={rejectBookingAction}
+              id={reservation.id}
+              reason="Booking request declined by host"
+              confirmText={`Decline this booking? ${reservation.guest_name ?? "The guest"} will be refunded in full and the dates reopened.`}
+              title="Decline this booking and refund the guest"
+              className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
+            >
+              <X className="h-3.5 w-3.5" />
+              Reject &amp; refund
+            </ConfirmSubmitButton>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        {reservation.status !== "confirmed" &&
+          reservation.status !== "cancelled" &&
+          reservation.status !== "pending_approval" && (
+            <form action={manualConfirmAction}>
+              <input type="hidden" name="id" value={reservation.id} />
+              <button type="submit" title="Manually confirm this booking" className="key-cap key-cap-phosphor">
+                <Check className="h-4 w-4" />
+                Manually confirm
+              </button>
+            </form>
+          )}
+        {reservation.status !== "cancelled" && reservation.status !== "pending_approval" && (
           <form action={cancelBookingAction}>
             <input type="hidden" name="id" value={reservation.id} />
             <input type="hidden" name="reason" value="cancelled by admin" />
