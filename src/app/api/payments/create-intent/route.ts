@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   attachPaymentIntent,
   computePlaycationTotal,
-  confirmReservation,
+  requestApproval,
   createHold,
 } from "@/lib/reservations";
 import { addDays, nightsBetween } from "@/lib/dates";
@@ -16,8 +16,8 @@ import {
 } from "@/lib/paymongo";
 import { recordRedemption, validatePromoCode } from "@/lib/promo-codes";
 import { guardMutating } from "@/lib/security";
-import { sendBookingConfirmation } from "@/lib/email";
-import { listInstructionPhotos } from "@/lib/branch-instructions";
+import { sendBookingRequestReceived } from "@/lib/email";
+import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
 
 export const runtime = "nodejs";
 
@@ -202,34 +202,38 @@ export async function POST(request: Request) {
   // Purge the branch page cache so availability calendar updates immediately
   revalidatePath(`/branches/${branch.slug}`);
 
-  // Dev mode — no PayMongo configured. Simulate instant confirm + email.
+  // Dev mode — no PayMongo configured. Mirror production: a "paid" booking goes
+  // to WAITING-for-owner-approval, not instant confirm (no real payment id in dev).
   if (!isPaymongoConfigured()) {
     try {
-      await confirmReservation(hold.id);
+      await requestApproval(hold.id);
     } catch (e) {
-      console.error("simulated confirm failed", e);
+      console.error("simulated requestApproval failed", e);
     }
     if (v.guestEmail) {
-      const instructionPhotos = (await listInstructionPhotos(branch.id)).map((p) => ({
-        label: p.label,
-        url: p.signedUrl,
-      }));
-      sendBookingConfirmation({
+      sendBookingRequestReceived({
         to: v.guestEmail,
         guestName: v.guestName,
         branchName: branch.name,
-        branchSlug: branch.slug,
         checkIn: v.checkIn,
         checkOut: v.checkOut,
-        numGuests: v.numGuests,
         totalPhp: total,
         reservationId: hold.id,
-        instructionPhotos,
-      }).catch((e) => console.error("[email] booking failed", e));
+      }).catch((e) => console.error("[email] request received failed", e));
     }
+    notifyOwnerOfBookingRequest({
+      id: hold.id,
+      branchId: branch.id,
+      guestName: v.guestName,
+      checkIn: v.checkIn,
+      checkOut: v.checkOut,
+      totalPhp: total,
+      memberId: member.id,
+    }).catch((e) => console.error("[notify] owner failed", e));
     return NextResponse.json({
       ok: true,
       simulated: true,
+      pendingApproval: true,
       reservationId: hold.id,
       total,
       accommodationTotal,

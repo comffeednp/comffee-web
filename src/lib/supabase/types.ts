@@ -9,7 +9,7 @@
 export type BranchType = "cafe" | "playcation" | "partner_cafe";
 export type AdminRole = "super_admin" | "branch_manager" | "staff" | "partner";
 export type ReservationSource = "website" | "airbnb" | "manual_block";
-export type ReservationStatus = "pending_hold" | "confirmed" | "cancelled" | "completed";
+export type ReservationStatus = "pending_hold" | "pending_approval" | "confirmed" | "cancelled" | "completed";
 export type PaymentStatus = "unpaid" | "pending" | "paid" | "failed" | "refunded";
 
 export interface Branch {

@@ -615,6 +615,112 @@ export async function sendCancellationEmail({
   });
 }
 
+/* ---------------- request-to-book: request received (guest) ---------------- */
+
+export async function sendBookingRequestReceived({
+  to,
+  guestName,
+  branchName,
+  checkIn,
+  checkOut,
+  totalPhp,
+  reservationId,
+}: {
+  to: string;
+  guestName: string;
+  branchName: string;
+  checkIn: string;
+  checkOut: string;
+  totalPhp: number;
+  reservationId: string;
+}) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  const checkInDate = new Date(checkIn + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const checkOutDate = new Date(checkOut + "T00:00:00").toLocaleDateString("en-PH", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:28px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Request received — pending host approval.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Hi ${escapeHtml(guestName.split(" ")[0])} — thanks! Your payment for <strong>${escapeHtml(branchName)}</strong> is in and your dates are held. The host reviews every booking before it&rsquo;s confirmed — you&rsquo;ll get a confirmation email the moment it&rsquo;s approved. If it can&rsquo;t be accepted, you&rsquo;ll be refunded in full.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", branchName)}
+      ${receiptRow("Check-in", checkInDate)}
+      ${receiptRow("Check-out", checkOutDate)}
+      ${receiptRow("Amount paid", formatPHP(totalPhp), true)}
+    </table>
+    <p style="margin:0 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
+      Most hosts respond within a day. If there&rsquo;s no response in 24 hours, your request is automatically cancelled and refunded.
+    </p>
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">// reservation_id</p>
+    <p style="margin:0;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;">${escapeHtml(reservationId)}</p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Request received — ${branchName} · ${formatRange(checkIn, checkOut)} (pending approval)`,
+    html: chrome({
+      preheader: `Your ${branchName} request is in and awaiting host approval.`,
+      bodyHtml: body,
+      ctaLabel: "View your bookings",
+      ctaHref: `${siteUrl}/account`,
+    }),
+    text: `Hi ${guestName.split(" ")[0]}, your payment for ${branchName} (${checkIn} - ${checkOut}) is in and your dates are held, pending host approval. You'll be confirmed once accepted, or refunded in full if not. Reservation ID: ${reservationId}.`,
+    replyTo: `bookings@comffee.org`,
+  });
+}
+
+/* ---------------- request-to-book: new request (owner) ---------------- */
+
+export async function sendBookingRequestToOwner({
+  branchName,
+  guestName,
+  checkIn,
+  checkOut,
+  totalPhp,
+  reservationId,
+}: {
+  branchName: string;
+  guestName: string;
+  checkIn: string;
+  checkOut: string;
+  totalPhp: number;
+  reservationId: string;
+}) {
+  const to = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!to) return { ok: false, error: "owner_email_not_configured" };
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:26px;font-weight:800;color:#1a0f06;">New booking request — action needed.</h1>
+    <p style="margin:0 0 20px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      <strong>${escapeHtml(guestName)}</strong> paid and is waiting for you to <strong>accept</strong> or <strong>decline</strong>.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", branchName)}
+      ${receiptRow("Dates", formatRange(checkIn, checkOut))}
+      ${receiptRow("Amount paid", formatPHP(totalPhp), true)}
+    </table>
+    <p style="margin:0 0 16px;color:#8a7a68;font-size:13px;line-height:1.6;">
+      Declining auto-refunds the guest. No response within 24 hours auto-declines + refunds.
+    </p>
+  `;
+  return sendEmail({
+    to,
+    subject: `Action needed — booking request: ${branchName} · ${formatRange(checkIn, checkOut)}`,
+    html: chrome({
+      preheader: `${guestName} is waiting for your accept/decline.`,
+      bodyHtml: body,
+      ctaLabel: "Review & decide",
+      ctaHref: `${siteUrl}/admin/bookings/${reservationId}`,
+    }),
+    text: `New booking request: ${guestName} - ${branchName} (${checkIn} - ${checkOut}), ${formatPHP(totalPhp)}. Accept or decline: ${siteUrl}/admin/bookings/${reservationId}`,
+  });
+}
+
 /* ---------------- partial-payment balance reminder ---------------- */
 
 interface BalanceReminderInput {

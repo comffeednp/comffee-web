@@ -34,7 +34,9 @@ export async function checkAvailability(
     .from("reservations")
     .select("id, check_in, check_out, source, status, hold_expires_at")
     .eq("branch_id", branchId)
-    .in("status", ["pending_hold", "confirmed"])
+    // pending_approval = paid request waiting for the owner; it holds the dates
+    // exactly like a confirmed booking so no one else can grab them meanwhile.
+    .in("status", ["pending_hold", "pending_approval", "confirmed"])
     // overlap test: existing.check_in < new.check_out AND existing.check_out > new.check_in
     .lt("check_in", checkOut)
     .gt("check_out", checkIn);
@@ -169,6 +171,44 @@ export async function confirmReservation(reservationId: string) {
     })
     .eq("id", reservationId);
   if (error) throw new Error(`confirm failed: ${error.message}`);
+}
+
+/**
+ * Request-to-book: when payment lands, the booking does NOT confirm — it waits
+ * for the owner to accept/reject. We stamp approval_requested_at (the 24h
+ * auto-reject timer counts from here) and keep the PayMongo payment id so a
+ * reject can refund it.
+ */
+export async function requestApproval(reservationId: string, paymentId?: string) {
+  const supabase = getSupabaseAdmin();
+  const patch: Record<string, unknown> = {
+    status: "pending_approval" as ReservationStatus,
+    hold_expires_at: null,
+    approval_requested_at: new Date().toISOString(),
+  };
+  if (paymentId) patch.paymongo_payment_id = paymentId;
+  const { error } = await supabase
+    .from("reservations")
+    .update(patch)
+    .eq("id", reservationId);
+  if (error) throw new Error(`requestApproval failed: ${error.message}`);
+}
+
+/**
+ * Owner accepts a waiting request → confirmed. Guarded to only flip a row that
+ * is STILL pending_approval, so it's idempotent and can't accept a request the
+ * 24h sweep (or a prior click) already rejected. Returns false if nothing flipped.
+ */
+export async function acceptReservation(reservationId: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("reservations")
+    .update({ status: "confirmed" as ReservationStatus, hold_expires_at: null })
+    .eq("id", reservationId)
+    .eq("status", "pending_approval")
+    .select("id");
+  if (error) throw new Error(`accept failed: ${error.message}`);
+  return !!(data && data.length > 0);
 }
 
 /** Cancel a reservation (admin action or webhook on payment failure). */

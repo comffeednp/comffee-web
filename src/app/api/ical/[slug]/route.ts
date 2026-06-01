@@ -32,7 +32,9 @@ export async function GET(
     .from("reservations")
     .select("id, check_in, check_out, status, source, ical_uid")
     .eq("branch_id", branch.id)
-    .in("status", ["pending_hold", "confirmed"]);
+    // pending_approval = paid request awaiting the owner; it holds the dates, so
+    // export it to Airbnb too (don't let Airbnb double-book a held date).
+    .in("status", ["pending_hold", "pending_approval", "confirmed"]);
 
   const events = (reservations ?? [])
     // Don't echo back airbnb-sourced events — Airbnb already knows about its own

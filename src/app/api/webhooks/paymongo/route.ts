@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   cancelReservation,
-  confirmReservation,
+  requestApproval,
   getReservationByBalanceIntent,
   getReservationByIntent,
   markBalancePaid,
@@ -15,8 +15,8 @@ import {
   markOrderPaid,
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
-import { sendBalancePaidReceipt, sendBookingConfirmation, sendOrderConfirmation } from "@/lib/email";
-import { listInstructionPhotos } from "@/lib/branch-instructions";
+import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation } from "@/lib/email";
+import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
 
 export const runtime = "nodejs";
 
@@ -309,49 +309,43 @@ export async function POST(request: Request) {
       switch (eventType) {
         case "link.payment.paid":
         case "payment.paid": {
-          await confirmReservation(reservation.id);
-          if (actualPaymentId) {
-            await supabase
-              .from("reservations")
-              .update({ paymongo_payment_id: actualPaymentId })
-              .eq("id", reservation.id);
-          }
-          // Purge branch page cache so availability calendar updates immediately
+          // Request-to-book: payment does NOT confirm the booking. It moves the
+          // booking to "waiting for the owner to accept/reject" and holds the
+          // dates. The "you're booked" confirmation email now fires on ACCEPT
+          // (admin action in _actions/bookings.ts), never here.
+          await requestApproval(reservation.id, actualPaymentId ?? undefined);
+          // Purge branch page cache so the calendar shows the dates as taken
           {
             const { data: b } = await supabase.from("branches").select("slug").eq("id", reservation.branch_id).maybeSingle();
             if (b?.slug) revalidatePath(`/branches/${b.slug}`);
           }
-          // Fire confirmation email (best effort)
+          // Tell the guest the request is in and awaiting approval (best effort)
           if (reservation.guest_email) {
             const { data: branch } = await supabase
               .from("branches")
-              .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
+              .select("name")
               .eq("id", reservation.branch_id)
               .maybeSingle();
-            const rates = (
-              (branch as { branch_rates?: Array<{ check_in_time: string | null; check_out_time: string | null; sort_order: number }> } | null)
-                ?.branch_rates ?? []
-            ).sort((a, b) => a.sort_order - b.sort_order);
-            const rateWithTime = rates.find((r) => r.check_in_time);
-            sendBookingConfirmation({
+            sendBookingRequestReceived({
               to: reservation.guest_email,
               guestName: reservation.guest_name ?? "there",
               branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
-              branchSlug: (branch as { slug?: string } | null)?.slug ?? "",
-              branchAddress: (branch as { address?: string | null } | null)?.address ?? null,
               checkIn: reservation.check_in,
               checkOut: reservation.check_out,
-              checkInTime: rateWithTime?.check_in_time ?? null,
-              checkOutTime: rateWithTime?.check_out_time ?? null,
-              numGuests: reservation.num_guests ?? 1,
               totalPhp: Number(reservation.total_php ?? 0),
               reservationId: reservation.id,
-              instructionPhotos: (await listInstructionPhotos(reservation.branch_id)).map((p) => ({
-                label: p.label,
-                url: p.signedUrl,
-              })),
-            }).catch((e) => console.error("[email] booking failed", e));
+            }).catch((e) => console.error("[email] request received failed", e));
           }
+          // Alert the owner to accept/reject — push + chat + email (best effort)
+          notifyOwnerOfBookingRequest({
+            id: reservation.id,
+            branchId: reservation.branch_id,
+            guestName: reservation.guest_name ?? null,
+            checkIn: reservation.check_in,
+            checkOut: reservation.check_out,
+            totalPhp: Number(reservation.total_php ?? 0),
+            memberId: reservation.member_id ?? null,
+          }).catch((e) => console.error("[notify] owner request failed", e));
           break;
         }
         case "link.payment.failed":

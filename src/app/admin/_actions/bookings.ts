@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireEditor } from "@/lib/auth/require-admin";
-import { issueRefund } from "@/lib/refunds";
-import { sendCancellationEmail } from "@/lib/email";
+import { sendBookingConfirmation } from "@/lib/email";
+import { acceptReservation } from "@/lib/reservations";
+import { listInstructionPhotos } from "@/lib/branch-instructions";
+import { cancelReservationWithRefund } from "@/lib/booking-cancel";
 
 function bumpAll(id?: string) {
   revalidatePath("/admin/bookings");
@@ -26,106 +28,86 @@ export async function manualConfirmAction(formData: FormData) {
 
 export async function cancelBookingAction(formData: FormData) {
   const admin = await requireEditor();
-  const supabase = getSupabaseAdmin();
   const id = String(formData.get("id") ?? "");
   const reason = String(formData.get("reason") ?? "cancelled by admin");
+  const okParam = await cancelReservationWithRefund(id, reason, admin.id);
+  redirect(`/admin/bookings/${id}?ok=${okParam}`);
+}
 
-  // Fetch full reservation details before cancelling
-  const { data: reservation } = await supabase
+/**
+ * Reject (decline) a waiting request-to-book. Same cancel+refund path as an
+ * admin cancellation — the guest is fully refunded (card instant, GCash manual)
+ * and the dates reopen. Reuses the cancellation ok= codes so the bookings page
+ * shows the right refund message.
+ */
+export async function rejectBookingAction(formData: FormData) {
+  const admin = await requireEditor();
+  const id = String(formData.get("id") ?? "");
+  const reason = String(formData.get("reason") ?? "Booking request declined by host");
+  const okParam = await cancelReservationWithRefund(id, reason, admin.id);
+  redirect(`/admin/bookings/${id}?ok=${okParam}`);
+}
+
+/**
+ * Accept (approve) a waiting request-to-book → confirmed, and NOW fire the
+ * "you're booked" confirmation email (it no longer fires at payment time). The
+ * acceptReservation guard makes this a no-op if the request was already handled
+ * (accepted before, or auto-rejected by the 24h sweep).
+ */
+export async function approveBookingAction(formData: FormData) {
+  await requireEditor();
+  const supabase = getSupabaseAdmin();
+  const id = String(formData.get("id") ?? "");
+
+  const flipped = await acceptReservation(id);
+  bumpAll(id);
+  if (!flipped) {
+    redirect(`/admin/bookings/${id}?ok=already_handled`);
+  }
+
+  const { data: r } = await supabase
     .from("reservations")
-    .select("paymongo_payment_id, total_php, guest_name, guest_email, check_in, check_out, branch_id, branch:branches(name)")
+    .select("guest_email, guest_name, num_guests, total_php, check_in, check_out, branch_id")
     .eq("id", id)
     .maybeSingle();
 
-  await supabase
-    .from("reservations")
-    .update({ status: "cancelled", notes: reason })
-    .eq("id", id);
-  bumpAll(id);
-
-  // Auto-refund if payment was collected
-  let okParam = "cancelled";
-  const totalPhp = Number(reservation?.total_php ?? 0);
-  let refundIssued = false;
-  let isQrphCancel = false;
-  if (reservation?.paymongo_payment_id && totalPhp > 0) {
-    const { data: priorRefunds } = await supabase
-      .from("refunds")
-      .select("amount_php")
-      .eq("reservation_id", id)
-      .eq("status", "succeeded");
-    const alreadyRefunded = (priorRefunds ?? []).reduce((s, r) => s + Number(r.amount_php), 0);
-    const remaining = totalPhp - alreadyRefunded;
-    if (remaining > 0) {
-      try {
-        await issueRefund({
-          reservationId: id,
-          amountPhp: remaining,
-          reason: "Admin-initiated cancellation",
-          adminId: admin.id,
-        });
-        okParam = "cancelled_refund_issued";
-        refundIssued = true;
-      } catch (e) {
-        isQrphCancel = e instanceof Error && e.message === "QRPH_MANUAL_REQUIRED";
-        okParam = isQrphCancel ? "cancelled_refund_qrph" : "cancelled_refund_failed";
-      }
-    }
+  if (r?.branch_id) {
+    const { data: b } = await supabase.from("branches").select("slug").eq("id", r.branch_id).maybeSingle();
+    if (b?.slug) revalidatePath(`/branches/${b.slug}`);
   }
 
-  // Send cancellation email to guest if email on file
-  const guestEmail = (reservation as { guest_email?: string | null } | null)?.guest_email;
-  const guestName = (reservation as { guest_name?: string | null } | null)?.guest_name;
-  const checkIn = (reservation as { check_in?: string | null } | null)?.check_in;
-  const checkOut = (reservation as { check_out?: string | null } | null)?.check_out;
-  const branchRow = (reservation as { branch?: { name: string } | null } | null)?.branch;
-  const branchName = Array.isArray(branchRow) ? branchRow[0]?.name : branchRow?.name;
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
-  if (guestEmail && guestName && checkIn && checkOut && branchName) {
-    sendCancellationEmail({
-      guestEmail,
-      guestName,
-      branchName,
-      checkIn,
-      checkOut,
-      totalPhp,
-      refundIssued,
-      reservationId: id,
-      chatUrl: `${siteUrl}`,
-    }).catch(() => {});
-  }
-
-  // If QR Ph refund can't be processed automatically, post a chat message asking for bank details
-  if (isQrphCancel) {
-    const { data: resRow } = await supabase
-      .from("reservations")
-      .select("member_id")
-      .eq("id", id)
+  if (r?.guest_email && r.branch_id) {
+    const { data: branch } = await supabase
+      .from("branches")
+      .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
+      .eq("id", r.branch_id)
       .maybeSingle();
-    const memberId = (resRow as { member_id?: string | null } | null)?.member_id;
-    if (memberId) {
-      const { data: conv } = await supabase
-        .from("chat_conversations")
-        .select("id")
-        .eq("member_id", memberId)
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (conv) {
-        await supabase.from("chat_messages").insert({
-          conversation_id: conv.id,
-          sender_type: "system",
-          body: `Your booking has been cancelled. Since you paid via QR Ph / GCash, we can't refund automatically. Please reply with your GCash number or bank details (bank name, account number, account name) and we'll process the ₱${totalPhp.toLocaleString("en-PH")} transfer manually.`,
-        });
-        await supabase
-          .from("chat_conversations")
-          .update({ last_message_at: new Date().toISOString(), status: "open" })
-          .eq("id", conv.id);
-      }
-    }
+    const rates = (
+      (branch as { branch_rates?: Array<{ check_in_time: string | null; check_out_time: string | null; sort_order: number }> } | null)
+        ?.branch_rates ?? []
+    ).sort((a, b) => a.sort_order - b.sort_order);
+    const rateWithTime = rates.find((x) => x.check_in_time);
+    sendBookingConfirmation({
+      to: r.guest_email,
+      guestName: r.guest_name ?? "there",
+      branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
+      branchSlug: (branch as { slug?: string } | null)?.slug ?? "",
+      branchAddress: (branch as { address?: string | null } | null)?.address ?? null,
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      checkInTime: rateWithTime?.check_in_time ?? null,
+      checkOutTime: rateWithTime?.check_out_time ?? null,
+      numGuests: r.num_guests ?? 1,
+      totalPhp: Number(r.total_php ?? 0),
+      reservationId: id,
+      instructionPhotos: (await listInstructionPhotos(r.branch_id)).map((p) => ({
+        label: p.label,
+        url: p.signedUrl,
+      })),
+    }).catch((e) => console.error("[email] confirmation failed", e));
   }
 
-  redirect(`/admin/bookings/${id}?ok=${okParam}`);
+  redirect(`/admin/bookings/${id}?ok=confirmed`);
 }
 
 export async function manualBlockAction(formData: FormData) {
