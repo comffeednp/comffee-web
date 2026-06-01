@@ -548,6 +548,9 @@ export default function AttendanceClient({
 
   const ERROR_TEXT: Record<string, string> = {
     device_mismatch: "This account is bound to another phone. Ask your admin to reset it.",
+    // This phone belongs to a DIFFERENT staff account (owner 2026-06-02 guard). The server sends a
+    // specific `detail` naming who — prefer that; this is the fallback wording.
+    device_belongs_to_other: "This phone is registered to another staff account. Sign in with that account, or ask your admin to reset this phone.",
     face_mismatch: "Face didn't match your enrolled photo.",
     outside_geofence: "You're outside the branch area.",
     not_approved: "Your account isn't approved yet.",
@@ -613,7 +616,9 @@ export default function AttendanceClient({
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        setActionMsg(ERROR_TEXT[data.error] ?? "Clock-in failed — try again.");
+        // Prefer the server's specific reason (e.g. which staff owns this phone) so a blocked clock-in
+        // is always LOUD and clear — never a silent fail that leaves a fake running timer.
+        setActionMsg(data.detail || ERROR_TEXT[data.error] || "Clock-in failed — try again.");
       } else {
         setActionMsg(data.clock_type === "clock_in" ? "Clocked IN ✓" : "Clocked OUT ✓");
         // Flip the button + start/stop the timer immediately.

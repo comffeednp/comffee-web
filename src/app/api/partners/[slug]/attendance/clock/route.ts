@@ -99,6 +99,32 @@ export async function POST(
     .eq("staff_id", staff.id)
     .maybeSingle();
 
+  // PREVENT crossed identities (owner 2026-06-02): if THIS phone is already registered to a DIFFERENT
+  // staff (a different email), refuse loudly. This is the root-cause guard for the Kalhel case — one
+  // person had two Gmails and tried to clock in on a phone bound to the other identity, which silently
+  // failed and left a fake running timer. A definite, named error here means the page can show why
+  // instead of spinning. The fix for the worker: sign in with the account that owns this phone, or have
+  // the admin RESET the phone first. (A reset clears the old binding, so this check then passes.)
+  const { data: otherBinding } = await admin
+    .from("device_bindings")
+    .select("staff_id, branch_staff!inner(name, email)")
+    .eq("device_token", deviceToken)
+    .neq("staff_id", staff.id)
+    .maybeSingle();
+  if (otherBinding) {
+    const ob = otherBinding as unknown as { branch_staff?: { name?: string; email?: string } };
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "device_belongs_to_other",
+        detail:
+          `This phone is registered to ${ob.branch_staff?.name ?? "another staff account"}. ` +
+          `Sign in with that account, or ask your admin to reset this phone first.`,
+      },
+      { status: 403 },
+    );
+  }
+
   const enrolled = isValidDescriptor(staff.face_descriptor);
   // Face distance vs the enrolled face (∞ if not enrolled → the gate denies it).
   const faceDist = enrolled
