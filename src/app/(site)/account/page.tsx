@@ -52,7 +52,7 @@ export default async function AccountPage({ searchParams }: Props) {
     .from("reservations")
     .select("id, check_in, check_out, status, total_php, num_guests, payment_type, balance_php, balance_due_date, balance_paid_at, branch:branches(name, slug)")
     .eq("member_id", member.id)
-    .in("status", ["pending_hold", "confirmed", "cancelled"])
+    .in("status", ["pending_hold", "pending_approval", "confirmed", "cancelled"])
     .order("check_in", { ascending: false })
     .limit(20);
   const playcationBookings = (playcationData ?? []) as unknown as PlaycationBooking[];
@@ -117,6 +117,11 @@ export default async function AccountPage({ searchParams }: Props) {
                       <p className="mt-1 font-mono text-xs text-amber">
                         {r.total_php != null ? formatPHP(r.total_php) : "—"}
                       </p>
+                      {r.status === "pending_approval" && (
+                        <p className="mt-1 font-mono text-xs text-amber">
+                          // waiting for the host to confirm — we&apos;ll email you, or refund in full if declined
+                        </p>
+                      )}
                       {hasUnpaidBalance && (
                         <p className={`mt-1 font-mono text-xs ${overdue ? "text-red-400" : "text-cream-dim"}`}>
                           // balance {formatPHP(balanceDue)} {overdue ? "overdue" : `due ${r.balance_due_date}`}
@@ -127,10 +132,10 @@ export default async function AccountPage({ searchParams }: Props) {
                       {r.branch?.slug && (
                         <Link
                           href={`/playcation/${r.branch.slug}/confirmed/${r.id}`}
-                          title="View booking receipt"
+                          title={r.status === "pending_approval" ? "View your request" : "View booking receipt"}
                           className="font-mono text-[0.65rem] uppercase tracking-widest text-amber hover:underline"
                         >
-                          View receipt →
+                          {r.status === "pending_approval" ? "View request →" : "View receipt →"}
                         </Link>
                       )}
                       {hasUnpaidBalance && (
@@ -210,6 +215,7 @@ export default async function AccountPage({ searchParams }: Props) {
 function StatusChip({ status }: { status: string }) {
   const map: Record<string, string> = {
     requested: "text-amber border-amber/40",
+    pending_approval: "text-amber border-amber bg-amber/10",
     confirmed: "text-rgb-b border-[color:var(--color-rgb-b)]/40",
     active: "text-phosphor border-phosphor/40",
     completed: "text-cream-dim border-line-bright",
@@ -219,7 +225,7 @@ function StatusChip({ status }: { status: string }) {
     <span
       className={`inline-block font-mono text-[0.65rem] uppercase tracking-widest px-2 py-1 border rounded ${map[status] ?? ""}`}
     >
-      {status}
+      {status === "pending_approval" ? "awaiting approval" : status}
     </span>
   );
 }

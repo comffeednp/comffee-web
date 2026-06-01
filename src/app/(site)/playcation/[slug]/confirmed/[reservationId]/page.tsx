@@ -38,6 +38,9 @@ export default async function ConfirmedPage({
 
   const nights = nightsBetween(reservation.check_in, reservation.check_out);
   const isConfirmed = reservation.status === "confirmed";
+  // Request-to-book: after payment the booking WAITS for the owner. Don't tell
+  // the guest they're "confirmed" until the host actually accepts.
+  const isPendingApproval = reservation.status === "pending_approval";
 
   return (
     <section className="relative min-h-[80vh] py-20 md:py-32 overflow-hidden">
@@ -60,6 +63,11 @@ export default async function ConfirmedPage({
                 BOOKING<br />
                 <span className="text-amber text-glow-amber">CONFIRMED.</span>
               </>
+            ) : isPendingApproval ? (
+              <>
+                REQUEST<br />
+                <span className="text-amber text-glow-amber">SENT.</span>
+              </>
             ) : (
               <>
                 SLOT<br />
@@ -70,6 +78,8 @@ export default async function ConfirmedPage({
           <p className="mt-6 text-lg text-cream-dim max-w-xl mx-auto">
             {isConfirmed
               ? "Your reservation is locked in. We'll have the controllers charged and the espresso ready."
+              : isPendingApproval
+              ? "Payment received and your dates are held. The host reviews each booking — you'll get a confirmation the moment it's approved, or a full refund if it can't be accepted."
               : "Your slot is held for 20 minutes while payment processes. We'll email you the moment it's confirmed."}
           </p>
 
@@ -116,7 +126,11 @@ export default async function ConfirmedPage({
                     isConfirmed ? "text-phosphor text-glow-phosphor" : "text-amber"
                   }`}
                 >
-                  {isConfirmed ? "▶ CONFIRMED" : "◔ HOLD ACTIVE"}
+                  {isConfirmed
+                    ? "▶ CONFIRMED"
+                    : isPendingApproval
+                    ? "◔ AWAITING HOST APPROVAL"
+                    : "◔ HOLD ACTIVE"}
                 </p>
               </div>
             </div>
@@ -124,7 +138,11 @@ export default async function ConfirmedPage({
 
           {(reservation as { guest_email?: string | null }).guest_email && (
             <p className="mt-6 font-mono text-sm text-cream-dim">
-              // A confirmation email has been sent to{" "}
+              {isConfirmed
+                ? "// A confirmation email has been sent to "
+                : isPendingApproval
+                ? "// We've emailed your request details to "
+                : "// A receipt has been sent to "}
               <span className="text-amber">{(reservation as { guest_email: string }).guest_email}</span>
               . Check your inbox (and spam folder).
             </p>
