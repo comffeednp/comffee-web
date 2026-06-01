@@ -233,6 +233,7 @@ export default function ReservePCClient({
     if (!name.trim()) return false;
     if (mode === "member") {
       if (!memberNumber.trim()) return false;
+      if (!memberFirstName.trim() || !memberLastName.trim()) return false; // both names required (owner 2026-06-01)
       if (!memberMeetsMinTopup) return false;
     }
     if (mode === "walk_in") {
@@ -241,7 +242,7 @@ export default function ReservePCClient({
       if (!walkInMeetsMinHours) return false;
     }
     return true;
-  }, [stationName, name, mode, memberNumber, selectedRate, memberMeetsMinTopup, walkInMeetsMinHours]);
+  }, [stationName, name, mode, memberNumber, memberFirstName, memberLastName, selectedRate, memberMeetsMinTopup, walkInMeetsMinHours]);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -517,17 +518,17 @@ export default function ReservePCClient({
                 </section>
               )}
 
-              {/* ---------- MEMBER (member mode only): number + top-up + optional name ---------- */}
+              {/* ---------- MEMBER (member mode only): member name + top-up + required name ---------- */}
               {mode === "member" && (
                 <section className="space-y-6">
                   <div>
-                    <p className="terminal-label">// member_number</p>
+                    <p className="terminal-label">// member_name</p>
                     <input
                       type="text"
                       value={memberNumber}
                       onChange={(e) => setMemberNumber(e.target.value)}
                       className="reserve-input mt-3"
-                      placeholder="Your PanCafe member number"
+                      placeholder="Your member name"
                       autoComplete="off"
                     />
                     <p className="mt-2 text-[0.7rem] text-mocha">
@@ -570,16 +571,17 @@ export default function ReservePCClient({
                     )}
                   </div>
 
-                  {/* Optional first/last name — shown to the cashier to confirm who you are (flowchart §G). */}
+                  {/* First/last name — REQUIRED (owner 2026-06-01): the cashier confirms who you are on
+                      arrival, so both are needed, not optional. */}
                   <div>
-                    <p className="terminal-label">// your_name_optional</p>
+                    <p className="terminal-label">// your_name</p>
                     <div className="mt-3 grid gap-4 sm:grid-cols-2">
                       <input
                         type="text"
                         value={memberFirstName}
                         onChange={(e) => setMemberFirstName(e.target.value)}
                         className="reserve-input"
-                        placeholder="First name (optional)"
+                        placeholder="First name"
                         autoComplete="off"
                       />
                       <input
@@ -587,7 +589,7 @@ export default function ReservePCClient({
                         value={memberLastName}
                         onChange={(e) => setMemberLastName(e.target.value)}
                         className="reserve-input"
-                        placeholder="Last name (optional)"
+                        placeholder="Last name"
                         autoComplete="off"
                       />
                     </div>
@@ -756,7 +758,7 @@ export default function ReservePCClient({
               </>
             )}
             {mode === "member" && memberNumber && (
-              <SummaryRow label="member" value={`#${memberNumber}`} />
+              <SummaryRow label="member" value={memberNumber} />
             )}
             {mode === "member" && topupValid && (
               <SummaryRow label="top-up" value={formatPHP(topupNum)} />
