@@ -142,13 +142,14 @@ export default async function AttendancePage({
   const admin = getSupabaseAdmin();
   const { data: staff } = await admin
     .from("branch_staff")
-    .select("id, status, face_descriptor, name")
+    .select("id, status, face_descriptor, name, face_consent_version")
     .eq("branch_id", branch.id)
     .eq("email", email)
     .maybeSingle();
 
   let status: AttendanceStatus = (staff?.status as AttendanceStatus) ?? "pending";
   let enrolled = !!staff?.face_descriptor;
+  let consentVersion: number | null = staff?.face_consent_version ?? null;
 
   if (!staff) {
     const name =
@@ -165,10 +166,11 @@ export default async function AttendancePage({
         name,
         status: "pending",
       })
-      .select("status, face_descriptor")
+      .select("status, face_descriptor, face_consent_version")
       .maybeSingle();
     status = (inserted?.status as AttendanceStatus) ?? "pending";
     enrolled = false;
+    consentVersion = inserted?.face_consent_version ?? null;
   }
 
   // Latest clock punch (if any) so the Clock In / Clock Out button is correct on the FIRST paint —
@@ -201,6 +203,7 @@ export default async function AttendancePage({
       email={email}
       status={status}
       enrolled={enrolled}
+      consentVersion={consentVersion}
       initialClockType={initialClockType}
       initialClockAt={initialClockAt}
     />

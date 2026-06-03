@@ -15,7 +15,8 @@ import {
   markOrderPaid,
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
-import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation } from "@/lib/email";
+import { mintLicenseKey, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
+import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation, sendSubscriptionKey } from "@/lib/email";
 import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
 
 export const runtime = "nodejs";
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
 
   // Find which entity this payment belongs to — Playcation reservation (initial payment), a
   // reservation balance payment, an order, a wallet top-up, or a per-branch cafe PC reservation.
-  const [reservation, balanceRes, order, topupRes, pcReservation] = await Promise.all([
+  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -231,9 +232,98 @@ export async function POST(request: Request) {
         return null;
       }
     })(),
+    (async () => {
+      // Partner-Cafe SaaS subscription (PLATFORM key). Match by the pi_ the paid webhook carries,
+      // then the cs_ id as a fallback.
+      try {
+        if (paymentIntentId) {
+          const { data } = await supabase
+            .from("subscription_orders")
+            .select("id, tier, email, machine_id, license_key, status")
+            .eq("paymongo_payment_intent_id", paymentIntentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        if (linkOrPaymentId) {
+          const { data } = await supabase
+            .from("subscription_orders")
+            .select("id, tier, email, machine_id, license_key, status")
+            .eq("paymongo_checkout_id", linkOrPaymentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })(),
   ]);
 
   try {
+    // Partner-Cafe SaaS subscription payment (platform key). On paid: mark paid + mint a license key
+    // in the LICENSE project + stamp it here (the POS polls /api/billing/subscribe/status and
+    // auto-activates with it). Failures NEVER lose the payment — the order stays paid, key retriable.
+    if (subscriptionOrder) {
+      switch (eventType) {
+        case "checkout_session.payment.paid":
+        case "link.payment.paid":
+        case "payment.paid": {
+          // Claim atomically: only an unpaid order flips to paid (idempotent against duplicate webhooks).
+          const { data: claimed } = await supabase
+            .from("subscription_orders")
+            .update({
+              status: "paid",
+              paymongo_payment_id: actualPaymentId ?? null,
+              paid_at: new Date().toISOString(),
+            })
+            .eq("id", subscriptionOrder.id)
+            .eq("status", "unpaid")
+            .select("id, tier, email, machine_id, license_key");
+          const row = claimed && claimed[0];
+          if (row && !row.license_key) {
+            try {
+              const licenseKey = await mintLicenseKey({
+                tier: row.tier as string,
+                email: row.email as string,
+                machineId: (row.machine_id as string | null) ?? null,
+              });
+              await supabase
+                .from("subscription_orders")
+                .update({ license_key: licenseKey })
+                .eq("id", subscriptionOrder.id);
+              // Email the key + receipt to the cafe (fire-and-forget; never block the webhook).
+              const tierInfo = SUBSCRIPTION_TIERS[row.tier as keyof typeof SUBSCRIPTION_TIERS];
+              sendSubscriptionKey({
+                to: row.email as string,
+                tierName: tierInfo?.name ?? (row.tier as string),
+                amountPhp: tierInfo?.amountPhp ?? 0,
+                licenseKey,
+              }).catch((e) =>
+                console.error("[billing] key email failed", e instanceof Error ? e.message : e),
+              );
+            } catch (mintErr) {
+              // Payment is real + recorded; minting failed (e.g. LICENSE project not wired up yet).
+              // Leave license_key null so it can be retried / issued manually — never drop the payment.
+              console.error(
+                "[billing] license mint failed",
+                mintErr instanceof Error ? mintErr.message : mintErr,
+              );
+            }
+          }
+          break;
+        }
+        case "checkout_session.payment.failed":
+        case "payment.failed":
+          await supabase
+            .from("subscription_orders")
+            .update({ status: "failed" })
+            .eq("id", subscriptionOrder.id)
+            .eq("status", "unpaid");
+          break;
+      }
+      return NextResponse.json({ ok: true, kind: "subscription" });
+    }
+
     // Per-branch cafe PC reservation (Chunk 6). On paid: mark it paid + ensure a reservation_code,
     // leaving status='pending' so the POS — which polls pc_reservations for newly-paid rows at its
     // branch — picks it up and the cashier can find it by code on arrival. We DELIBERATELY do NOT

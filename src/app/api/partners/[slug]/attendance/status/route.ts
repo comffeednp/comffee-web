@@ -42,7 +42,7 @@ export async function GET(
 
   const { data: staff } = await admin
     .from("branch_staff")
-    .select("id, status, face_descriptor")
+    .select("id, status, face_descriptor, face_consent_version")
     .eq("branch_id", branch.id)
     .eq("email", user.email.toLowerCase())
     .maybeSingle();
@@ -129,6 +129,9 @@ export async function GET(
     branchId: branch.id,
     status: staff?.status ?? "pending",
     enrolled: !!staff?.face_descriptor,
+    // Highest face-scan acknowledgment version this staffer has accepted (null = never). The
+    // client compares it to FACE_CONSENT_VERSION; a lower/null value re-opens the ack gate.
+    consentVersion: staff?.face_consent_version ?? null,
     lastClockType,
     lastClockAt,
     deviceState,

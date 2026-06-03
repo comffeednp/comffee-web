@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MapPin, LocateFixed, Loader2, CheckCircle2, XCircle, Clock, ScanFace, Receipt, Camera, QrCode } from "lucide-react";
+import { MapPin, LocateFixed, Loader2, CheckCircle2, XCircle, Clock, ScanFace, Receipt, Camera, QrCode, ShieldCheck } from "lucide-react";
 import type { AttendanceStatus } from "@/lib/supabase/types";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import LivenessCapture, { type LivenessResult } from "./LivenessCapture";
 import StaffChatPanel from "./StaffChatPanel";
+import { FACE_CONSENT, FACE_CONSENT_VERSION } from "@/lib/face-consent";
 
 // Live in-store payment QR pushed from the POS the moment the cashier picks GCash (or "Send GCash
 // QR" on a split). Filtered server-side by RLS (migration 0037) to this signed-in staffer only.
@@ -53,6 +54,9 @@ interface Props {
   email: string;
   status: AttendanceStatus;
   enrolled: boolean;
+  // Highest face-scan ack version this staffer has accepted (null = never). When it's < the app's
+  // FACE_CONSENT_VERSION the enroll buttons open the ack gate instead of the camera.
+  consentVersion: number | null;
   // Latest clock punch read server-side so the button is correct on the FIRST paint (no "Clock In"
   // flash for an already-clocked-in staffer). null = no punch yet → defaults to Clock In.
   initialClockType?: string | null;
@@ -127,6 +131,7 @@ export default function AttendanceClient({
   email,
   status: initialStatus,
   enrolled: initialEnrolled,
+  consentVersion: initialConsentVersion,
   initialClockType,
   initialClockAt,
 }: Props) {
@@ -134,6 +139,11 @@ export default function AttendanceClient({
   // a POS-admin approval flips the page to clock-in WITHOUT a manual reload).
   const [status, setStatus] = useState<AttendanceStatus>(initialStatus);
   const [enrolled, setEnrolled] = useState(initialEnrolled);
+  const [consentVersion, setConsentVersion] = useState<number | null>(initialConsentVersion);
+  // Ack gate visibility + in-flight flag. Opened by requestEnroll() when the stored consent version
+  // is stale; closed by accepting (which then starts capture) or backing out (which does nothing).
+  const [ackOpen, setAckOpen] = useState(false);
+  const [ackBusy, setAckBusy] = useState(false);
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const userMarkerRef = useRef<google.maps.Marker | null>(null);
@@ -333,6 +343,7 @@ export default function AttendanceClient({
         if (data?.ok) {
           setStatus(data.status as AttendanceStatus);
           setEnrolled(data.enrolled);
+          setConsentVersion(data.consentVersion ?? null);
           setDeviceState(data.deviceState ?? "none");
           setCoworkers(data.coworkers ?? []);
           setStaffId(data.staffId ?? null);
@@ -555,9 +566,45 @@ export default function AttendanceClient({
     outside_geofence: "You're outside the branch area.",
     not_approved: "Your account isn't approved yet.",
     not_enrolled: "Enroll your face first.",
+    ack_required: "Please read and acknowledge the face-scan notice first.",
     no_location: "Location required — enable GPS.",
     rate_limited: "Too many attempts — wait a minute.",
   };
+
+  // Single entry point for BOTH enroll buttons. If the staffer hasn't acknowledged the CURRENT
+  // face-scan version, open the gate instead of the camera. No decline path: the only way forward
+  // is to acknowledge; backing out (the X) simply leaves them un-enrolled.
+  function requestEnroll() {
+    if (consentVersion !== null && consentVersion >= FACE_CONSENT_VERSION) {
+      setCapture("enroll");
+    } else {
+      setAckOpen(true);
+    }
+  }
+
+  // Record the acknowledgment server-side, then go straight into the face scan. A failed write
+  // keeps the gate open (the server also blocks enrollment until the record exists), so a staffer
+  // can never slip past an un-saved acknowledgment.
+  async function acceptAck() {
+    if (ackBusy) return;
+    setAckBusy(true);
+    setActionMsg("");
+    try {
+      const res = await fetch(`/api/partners/${slug}/attendance/ack`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setActionMsg("Couldn't save your acknowledgment — try again.");
+        return;
+      }
+      setConsentVersion(data.consentVersion ?? FACE_CONSENT_VERSION);
+      setAckOpen(false);
+      setCapture("enroll");
+    } catch {
+      setActionMsg("Network error — try again.");
+    } finally {
+      setAckBusy(false);
+    }
+  }
 
   async function handleEnroll(r: LivenessResult) {
     setCapture(null);
@@ -907,6 +954,13 @@ export default function AttendanceClient({
   // is OFF for this branch, the inside check is skipped (matches the existing clock-in policy).
   const qrGuardsPass = !!activeQr && isClockedIn && (geofenceRequired ? inside : true);
 
+  // Geofence policy (owner 2026-06-03): clocking IN must be inside the branch area, but clocking OUT
+  // is allowed from anywhere — a worker may already be off-site when they remember to end their shift.
+  // So the geofence only BLOCKS when the NEXT action is a clock-IN (i.e. they're not currently on
+  // shift). When already clocked in, the next action is a clock-OUT → never blocked. The server gate
+  // enforces the same rule authoritatively, so this is purely the button's enable/label logic.
+  const geofenceBlocksClock = geofenceRequired && !inside && !isClockedIn;
+
   // Receipt-upload mode (owner 2026-05-30): the receipt photo upload — BOTH the QR-card "Take Photo"
   // button and the home "Online Payment Receipts" button — shows ONLY when this branch's method is
   // GCash-Personal (P2P). Under PayMongo there is no customer photo to take (the DIY QR auto-confirms by
@@ -1214,7 +1268,7 @@ export default function AttendanceClient({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setCapture("enroll")}
+                onClick={requestEnroll}
                 title="Enroll your face"
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-amber px-4 py-3 text-sm font-bold text-bg transition hover:brightness-110 disabled:opacity-50"
               >
@@ -1247,7 +1301,7 @@ export default function AttendanceClient({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setCapture("enroll")}
+                onClick={requestEnroll}
                 title="Register this phone"
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-amber px-4 py-3 text-sm font-bold text-bg transition hover:brightness-110 disabled:opacity-50"
               >
@@ -1294,17 +1348,17 @@ export default function AttendanceClient({
               )}
               <button
                 type="button"
-                disabled={(geofenceRequired && !inside) || busy}
+                disabled={geofenceBlocksClock || busy}
                 title={
-                  geofenceRequired && !inside
-                    ? `Move within the branch area to ${isClockedIn ? "clock out" : "clock in"}`
+                  geofenceBlocksClock
+                    ? "Move within the branch area to clock in"
                     : isClockedIn
                       ? "Clock out — end your shift"
                       : "Clock in — start your shift"
                 }
                 onClick={() => setCapture("clock")}
                 className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition ${
-                  (!geofenceRequired || inside) && !busy
+                  !geofenceBlocksClock && !busy
                     ? isClockedIn
                       ? "bg-red-500 text-white hover:brightness-110"
                       : "bg-amber text-bg hover:brightness-110"
@@ -1315,19 +1369,24 @@ export default function AttendanceClient({
                 {isClockedIn ? "Clock Out" : "Clock In"}
               </button>
 
-              {/* Clear, visible reason you can't clock (phones don't show the hover tooltip). */}
+              {/* Clear, visible reason about location (phones don't show the hover tooltip). Clocking
+                  OUT is allowed anywhere, so the "too far" blocker only ever applies to a clock-IN. */}
               {!geofenceRequired ? (
                 <p className="mt-2 text-center text-[0.7rem] text-mocha">
                   Location check is advisory for this branch.
                 </p>
+              ) : isClockedIn && !inside ? (
+                <p className="mt-2 text-center text-[0.7rem] text-mocha">
+                  You&apos;re away from the branch — you can still clock out from here.
+                </p>
               ) : inside ? null : distance !== null ? (
                 <p className="mt-2 rounded-lg bg-amber/10 px-3 py-2 text-center text-xs font-semibold text-amber">
-                  You can&apos;t clock in or out from here — you&apos;re about {Math.round(distance)} m
-                  from the branch. Move within {radiusM} m to enable it.
+                  You can&apos;t clock in from here — you&apos;re about {Math.round(distance)} m from
+                  the branch. Move within {radiusM} m to start your shift.
                 </p>
               ) : (
                 <p className="mt-2 text-center text-xs text-cream-dim">
-                  Turn on location above to clock in or out.
+                  Turn on location above to clock in.
                 </p>
               )}
 
@@ -1510,6 +1569,49 @@ export default function AttendanceClient({
           {actionMsg && (
             <p className="mt-3 text-center text-sm font-semibold text-cream">{actionMsg}</p>
           )}
+        </div>
+      )}
+
+      {/* Face-scan acknowledgment gate — one-time per consent version, shown BEFORE the first
+          enrollment. No opt-out (face scan is the only clock-in method); the X just backs out. */}
+      {ackOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ackTitle"
+        >
+          <div className="relative w-[min(92vw,26rem)] rounded-2xl border border-line-bright bg-bg-elev p-6 text-center shadow-xl glow-amber">
+            <button
+              type="button"
+              onClick={() => setAckOpen(false)}
+              title="Go back without scanning"
+              disabled={ackBusy}
+              className="absolute right-4 top-4 text-mocha transition hover:text-cream disabled:opacity-50"
+              aria-label="Go back without scanning"
+            >
+              <XCircle className="h-5 w-5" />
+            </button>
+            <ShieldCheck className="mx-auto h-8 w-8 text-amber" />
+            <h2 id="ackTitle" className="mt-3 font-display text-lg font-bold text-cream">
+              {FACE_CONSENT.title}
+            </h2>
+            <div className="mt-3 space-y-2 text-left text-sm text-cream-dim">
+              {FACE_CONSENT.body.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={acceptAck}
+              disabled={ackBusy}
+              title="Acknowledge and start the face scan"
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-amber px-4 py-3 text-sm font-bold text-bg transition hover:brightness-110 disabled:opacity-50"
+            >
+              {ackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {FACE_CONSENT.acceptLabel}
+            </button>
+          </div>
         </div>
       )}
 

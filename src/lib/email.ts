@@ -949,3 +949,52 @@ export async function sendBranchEditSubmittedEmail(input: BranchEditSubmittedInp
     replyTo: `bookings@comffee.org`,
   });
 }
+
+/* ---------------- Partner-Cafe subscription: license key delivery ---------------- */
+
+interface SubscriptionKeyInput {
+  to: string;
+  tierName: string; // e.g. "AI-Integrated"
+  amountPhp: number;
+  licenseKey: string;
+}
+
+// Sent to a Partner Cafe the moment their PayMongo subscription payment is confirmed and a license
+// key is minted. The POS auto-fills the key on the device they paid from, but we email it for
+// safekeeping / reinstalls. [[comffee-saas-vision]]
+export async function sendSubscriptionKey(input: SubscriptionKeyInput) {
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Welcome to Comffee POS!
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Your payment is in and your <strong>${escapeHtml(input.tierName)}</strong> subscription is active. Here&rsquo;s your license key — keep it somewhere safe. You&rsquo;ll need it to re-activate Comffee POS if you ever reinstall or move to a new computer.
+    </p>
+
+    <div style="margin:24px 0 8px;text-align:center;">
+      <div style="font-size:11px;color:#8a7a68;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Your license key</div>
+      <div style="display:inline-block;background:#faf6ee;border:2px solid #ff8a3d;border-radius:12px;padding:14px 24px;font-size:22px;font-weight:800;letter-spacing:3px;font-family:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;color:#1a0f06;">
+        ${escapeHtml(input.licenseKey)}
+      </div>
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Plan", input.tierName)}
+      ${receiptRow("Billing", "Monthly")}
+      ${receiptRow("Amount paid", formatPHP(input.amountPhp), true)}
+    </table>
+
+    <p style="margin:16px 0 0;color:#8a7a68;font-size:13px;line-height:1.6;">
+      The app activates this key automatically on the device you just paid from. Your subscription renews monthly — we&rsquo;ll remind you before it&rsquo;s due.
+    </p>
+  `;
+  return sendEmail({
+    to: input.to,
+    subject: `Your Comffee POS license key · ${input.tierName}`,
+    html: chrome({
+      preheader: `Your ${input.tierName} subscription is active — license key inside`,
+      bodyHtml: body,
+    }),
+    text: `Welcome to Comffee POS! Your ${input.tierName} subscription is active. License key: ${input.licenseKey}. Amount paid: ${formatPHP(input.amountPhp)} (monthly). Keep this key safe for reinstalls.`,
+  });
+}

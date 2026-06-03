@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isValidDescriptor } from "@/lib/face-match";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { FACE_CONSENT_VERSION } from "@/lib/face-consent";
 
 const BUCKET = "attendance-selfies";
 
@@ -65,7 +66,7 @@ export async function POST(
 
   const { data: staff } = await admin
     .from("branch_staff")
-    .select("id, status")
+    .select("id, status, face_consent_version")
     .eq("branch_id", branch.id)
     .eq("email", email)
     .maybeSingle();
@@ -74,6 +75,16 @@ export async function POST(
   }
   if (staff.status === "rejected" || staff.status === "disabled") {
     return NextResponse.json({ ok: false, error: "not_allowed" }, { status: 403 });
+  }
+  // Server-side enforcement of the face-scan acknowledgment (owner decision: enforce on the server,
+  // not just the phone screen). No face is enrolled until this staffer has acknowledged the CURRENT
+  // consent version. The client gate normally prevents reaching here, but a crafted direct POST
+  // would otherwise bypass it — this makes the acknowledgment a real precondition, not just UI.
+  if (
+    staff.face_consent_version == null ||
+    staff.face_consent_version < FACE_CONSENT_VERSION
+  ) {
+    return NextResponse.json({ ok: false, error: "ack_required" }, { status: 403 });
   }
 
   // ONE phone per staff, locked at enrollment (so the phone is bound before approval, not
@@ -86,6 +97,34 @@ export async function POST(
     .maybeSingle();
   if (deviceToken && binding && binding.device_token !== deviceToken) {
     return NextResponse.json({ ok: false, error: "device_mismatch" }, { status: 403 });
+  }
+
+  // Cross-identity guard (mirror of the /clock route): never let THIS staffer enroll a phone that is
+  // already bound to a DIFFERENT staff. Without it, two people (or one person with two Gmails — the
+  // Kalhel case) can both bind the same phone, which corrupts the one-phone-per-person rule and then
+  // LOCKS BOTH out of clocking. The admin must reset that phone first. limit(1)+array (not
+  // maybeSingle) so a duplicate row can never throw, and the error is CHECKED, never swallowed.
+  if (deviceToken) {
+    const { data: otherBindings, error: otherErr } = await admin
+      .from("device_bindings")
+      .select("staff_id, branch_staff!inner(name)")
+      .eq("device_token", deviceToken)
+      .neq("staff_id", staff.id)
+      .limit(1);
+    if (otherErr) {
+      return NextResponse.json({ ok: false, error: "device_check_failed" }, { status: 500 });
+    }
+    if (otherBindings && otherBindings.length) {
+      const ob = otherBindings[0] as unknown as { branch_staff?: { name?: string } };
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "device_belongs_to_other",
+          detail: `This phone is already registered to ${ob.branch_staff?.name ?? "another staff account"}. Ask your admin to reset it first.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // Store the selfie (one canonical enrollment image per staff; overwrite on re-enroll).
