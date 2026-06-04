@@ -41,3 +41,9 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# local operational scripts + logs (owner-only; not part of the app build)
+/sjdm-inventory.js
+/sjdm-wipe.js
+/cleanup-attendance-selfies.js
+/cleanup-attendance-selfies.log
