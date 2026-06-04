@@ -63,15 +63,59 @@ interface Props {
   initialClockAt?: string | null;
 }
 
-// Per-phone identifier for device binding. Created once, kept in localStorage; the
-// clock route binds it to the staff on first clock and blocks any other phone after.
-function getDeviceToken(): string {
-  const KEY = "comffee_attendance_device";
-  let t = localStorage.getItem(KEY);
-  if (!t) {
-    t = crypto.randomUUID();
-    localStorage.setItem(KEY, t);
+// Per-phone identifier for device binding. The clock/enroll routes bind it to the staff on
+// first enrollment and block any OTHER phone after — so if this token ever changes, the worker
+// is hard-locked into "registered to another phone" until a POS admin resets them.
+//
+// localStorage ALONE was too fragile: Android Chrome wipes it on "clear cache / site data"
+// (which staff try as a "fix") and can EVICT it under low storage on cheap phones — silently
+// regenerating the token and re-locking a legitimately-approved worker (the recurring Kalhel
+// lockout, 2026-06-04). So we mirror the token into a 1-year first-party cookie and restore from
+// whichever store survives. Cookies are not subject to the same quota-eviction as localStorage,
+// so this rides out the most common wipe path. (Still one token per phone — no rule weakened.)
+const DEVICE_KEY = "comffee_attendance_device";
+
+function readCookieToken(): string | null {
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)comffee_attendance_device=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    return null;
   }
+}
+
+function writeCookieToken(t: string): void {
+  try {
+    // 1 year, same-site, https-only. path=/ so it's visible to the attendance route + API.
+    document.cookie = `${DEVICE_KEY}=${encodeURIComponent(t)}; Max-Age=31536000; Path=/; SameSite=Lax; Secure`;
+  } catch {
+    /* cookies disabled — localStorage still carries it */
+  }
+}
+
+function getDeviceToken(): string {
+  let ls: string | null = null;
+  try {
+    ls = localStorage.getItem(DEVICE_KEY);
+  } catch {
+    /* localStorage blocked (private mode) — fall back to the cookie */
+  }
+  const ck = readCookieToken();
+
+  // Use whichever store still has it; prefer localStorage for continuity. The KEY recovery path:
+  // localStorage was wiped but the cookie survived → restore from the cookie (NO new token, so the
+  // existing binding still matches and the worker stays logged in).
+  const t = ls || ck || crypto.randomUUID();
+
+  // Re-materialize into BOTH stores so a future wipe of either one is recoverable from the other.
+  if (ls !== t) {
+    try {
+      localStorage.setItem(DEVICE_KEY, t);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (ck !== t) writeCookieToken(t);
   return t;
 }
 
@@ -332,6 +376,20 @@ export default function AttendanceClient({
   // soon as it's no longer pending (approved/rejected/disabled).
   // Poll the live status the WHOLE time the page is open (not only while pending) so BOTH an
   // admin approval AND an admin device-reset are reflected on their own — no manual reload.
+  // Make the device identity durable on first paint: (1) ask the browser to mark this origin's
+  // storage as persistent so it isn't evicted under low disk (best-effort; Chrome grants on
+  // engagement), and (2) call getDeviceToken() once so the token is written to BOTH localStorage
+  // and the cookie immediately — not only when the first poll fires. This is the recurring-lockout
+  // fix: a wipe of one store is recoverable from the other instead of regenerating a fresh token.
+  useEffect(() => {
+    try {
+      navigator.storage?.persist?.().catch(() => {});
+    } catch {
+      /* storage API absent — cookie mirror still helps */
+    }
+    getDeviceToken();
+  }, []);
+
   useEffect(() => {
     const id = setInterval(async () => {
       try {
