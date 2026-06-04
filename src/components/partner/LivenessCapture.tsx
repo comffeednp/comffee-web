@@ -5,9 +5,12 @@ import { Loader2, X, ScanFace } from "lucide-react";
 import { eyeAspectRatio, headYaw, BLINK_EAR_OPEN, YAW_TURN_MIN, type Pt } from "@/lib/liveness";
 import { euclideanDistance } from "@/lib/face-match";
 
-// face-api model weights ship inside the npm package; jsDelivr serves them so we don't
-// commit ~13MB of binaries. Self-host under /public/models later if the CDN is a concern.
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+// Face-api model weights are SELF-HOSTED under /public/models (served from comffee.org's own
+// CDN), NOT a third-party CDN. The cafe's ISP is flaky (see network notes); a failed/slow fetch
+// of the ~7MB weights from jsDelivr was leaving staff stuck at "face couldn't be detected".
+// Same-origin static files are fast, cacheable, and have no external dependency. The 3 sets here
+// (detector + landmarks + recognition) are copied from node_modules/@vladmandic/face-api/model.
+const MODEL_URL = "/models";
 
 export interface LivenessResult {
   descriptor: number[]; // 128-d, taken from a frontal frame
@@ -51,8 +54,17 @@ interface Props {
 //   with the debug readout if cameras/lighting change.
 const CONSISTENCY_MAX = 0.55; // same person across frontal frames (pose-tolerant)
 const FRONTAL_YAW = 0.12; // |yaw| below this = looking straight enough to trust identity
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 45_000; // give time to reposition/find better light before failing
 const TICK_MS = 160;
+// Detector strength. inputSize 224 (was the old value) is weak in low light — a marginal face
+// (evening, backlit, darker skin, glasses) simply isn't found and the staffer hits "couldn't
+// detect". 416 is face-api's own default and detects far more reliably; the busyRef guard skips
+// overlapping ticks so a slower phone just runs fewer detections, it never piles up. The lower
+// score threshold (0.3 vs the 0.5 default) catches faint faces the high bar was dropping.
+const DETECTOR_INPUT_SIZE = 416;
+const DETECTOR_SCORE_THRESHOLD = 0.3;
+// How long with NO face visible before we show the "improve lighting / reposition" hint.
+const NO_FACE_HINT_MS = 2500;
 
 // Fixed order: "turn" records WHICH way they went; "turnBack" then requires the opposite
 // side, so the sequence can't be shuffled (turnBack depends on turn's direction).
@@ -74,6 +86,7 @@ export default function LivenessCapture({ title, onComplete, onCancel, debug }: 
   const busyRef = useRef(false);
   const doneRef = useRef(false);
   const startedAtRef = useRef(0);
+  const noFaceSinceRef = useRef(0); // when the face first went missing (for the lighting hint)
 
   // Challenge progression + evidence (refs so the detection loop isn't re-created).
   const challengesRef = useRef<Challenge[]>([]);
@@ -86,6 +99,7 @@ export default function LivenessCapture({ title, onComplete, onCancel, debug }: 
   const [phase, setPhase] = useState<"loading" | "active" | "error">("loading");
   const [errMsg, setErrMsg] = useState("");
   const [instruction, setInstruction] = useState("");
+  const [hint, setHint] = useState(""); // live "no face / improve lighting" guidance
   const [metrics, setMetrics] = useState({ face: false, ear: 0, yaw: 0 });
 
   const snapshot = useCallback((): Promise<Blob | null> => {
@@ -158,14 +172,28 @@ export default function LivenessCapture({ title, onComplete, onCancel, debug }: 
       busyRef.current = true;
       try {
         const det = await faceapi
-          .detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }))
+          .detectSingleFace(
+            v,
+            new faceapi.TinyFaceDetectorOptions({
+              inputSize: DETECTOR_INPUT_SIZE,
+              scoreThreshold: DETECTOR_SCORE_THRESHOLD,
+            }),
+          )
           .withFaceLandmarks()
           .withFaceDescriptor();
 
         if (!det) {
           setMetrics({ face: false, ear: 0, yaw: 0 });
+          // No face seen for a moment → tell them HOW to fix it instead of silently timing out.
+          if (!noFaceSinceRef.current) noFaceSinceRef.current = Date.now();
+          else if (Date.now() - noFaceSinceRef.current > NO_FACE_HINT_MS) {
+            setHint("Face not detected — face a light, hold the phone at eye level, and remove anything covering your face.");
+          }
           return;
         }
+        // Face is back — clear the hint.
+        noFaceSinceRef.current = 0;
+        setHint("");
 
         const lm = det.landmarks;
         const leftEye = lm.getLeftEye() as Pt[];
@@ -286,6 +314,9 @@ export default function LivenessCapture({ title, onComplete, onCancel, debug }: 
         <p className="mt-4 animate-pulse text-center font-display text-base font-bold text-amber">
           {instruction}
         </p>
+      )}
+      {phase === "active" && hint && (
+        <p className="mt-2 max-w-xs text-center text-xs text-cream-dim">{hint}</p>
       )}
       {phase === "loading" && (
         <p className="mt-4 text-sm text-cream-dim">Loading face check…</p>
