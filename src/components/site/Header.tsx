@@ -4,22 +4,9 @@ import type { SiteSettings } from "@/lib/settings";
 import { User } from "lucide-react";
 import CartButton from "@/components/cart/CartButton";
 import MobileNav from "@/components/site/MobileNav";
+import NavDropdown from "@/components/site/NavDropdown";
+import { navLinks } from "@/lib/nav";
 import { getMemberOptional } from "@/lib/auth/require-member";
-
-const navLinks = [
-  { href: "/branches", label: "Branches" },
-  // "Partner Cafes" = independent internet cafes that bought the Comffee POS as SaaS. Listed at
-  // /partners (a separate section from Comffee-brand franchises at /branches). Empty until the
-  // first partner is approved through the POS Reservation tab. [[comffee-saas-vision]]
-  { href: "/partners", label: "Partner Cafes" },
-  { href: "/playcation", label: "Playcation" },
-  { href: "/internet-cafe", label: "Internet Cafe" },
-  { href: "/menu", label: "Menu" },
-  // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
-  { href: "/softwares", label: "Software" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
-];
 
 export default async function Header({ settings }: { settings: SiteSettings }) {
   const name = settings?.company_name ?? "Comffee Drink and Play";
@@ -49,16 +36,20 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-1">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              title={`Go to ${link.label}`}
-              className="font-mono text-xs uppercase tracking-[0.18em] text-cream-dim hover:text-cream px-3 py-2 transition-colors focus-visible:outline-none rounded"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) =>
+            link.children ? (
+              <NavDropdown key={link.label} label={link.label} items={link.children} />
+            ) : (
+              <Link
+                key={link.href}
+                href={link.href!}
+                title={`Go to ${link.label}`}
+                className="font-mono text-xs uppercase tracking-[0.18em] text-cream-dim hover:text-cream px-3 py-2 transition-colors focus-visible:outline-none rounded"
+              >
+                {link.label}
+              </Link>
+            )
+          )}
         </nav>
 
         {/* Right cluster */}

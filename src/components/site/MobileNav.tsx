@@ -6,17 +6,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, Power, Terminal, X } from "lucide-react";
-
-interface NavLink {
-  href: string;
-  label: string;
-}
+import type { NavItem } from "@/lib/nav";
 
 interface Props {
-  links: NavLink[];
+  links: NavItem[];
   memberHref: string;
   memberLabel: string;
 }
+
+const itemClass = (active: boolean) =>
+  `block px-4 py-3 rounded-lg font-mono text-sm uppercase tracking-[0.18em] transition ${
+    active
+      ? "bg-bg-card text-amber border border-amber/40"
+      : "text-cream-dim hover:text-amber hover:bg-bg-card"
+  }`;
 
 export default function MobileNav({ links, memberHref, memberLabel }: Props) {
   const [open, setOpen] = useState(false);
@@ -77,23 +80,38 @@ export default function MobileNav({ links, memberHref, memberLabel }: Props) {
 
             <nav className="flex-1 p-5 overflow-y-auto">
               <ul className="space-y-1">
-                {links.map((link) => {
-                  const active = pathname === link.href;
-                  return (
+                {links.map((link) =>
+                  link.children ? (
+                    <li key={link.label} className="pt-1">
+                      <p className="px-4 pt-2 pb-1 font-mono text-[0.62rem] uppercase tracking-[0.22em] text-mocha">
+                        {link.label}
+                      </p>
+                      <ul className="space-y-1">
+                        {link.children.map((child) => (
+                          <li key={child.href}>
+                            <Link
+                              href={child.href}
+                              title={`Go to ${child.label}`}
+                              className={itemClass(pathname === child.href)}
+                            >
+                              → {child.label}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ) : (
                     <li key={link.href}>
                       <Link
-                        href={link.href}
-                        className={`block px-4 py-3 rounded-lg font-mono text-sm uppercase tracking-[0.18em] transition ${
-                          active
-                            ? "bg-bg-card text-amber border border-amber/40"
-                            : "text-cream-dim hover:text-amber hover:bg-bg-card"
-                        }`}
+                        href={link.href!}
+                        title={`Go to ${link.label}`}
+                        className={itemClass(pathname === link.href)}
                       >
                         → {link.label}
                       </Link>
                     </li>
-                  );
-                })}
+                  )
+                )}
               </ul>
 
               <div className="mt-6 pt-6 border-t border-line">

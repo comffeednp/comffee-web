@@ -17,6 +17,10 @@ export interface Branch {
   slug: string;
   name: string;
   type: BranchType;
+  // Optional chain grouping for partner cafes: branches that share the same non-null `brand` are
+  // one owner's chain and collapse into a single brand card on /partners. NULL/undefined =
+  // standalone. Absent from rows until migration 0051 is applied (the UI treats absent as solo).
+  brand?: string | null;
   tagline: string | null;
   address: string | null;
   city: string | null;

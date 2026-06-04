@@ -1,7 +1,7 @@
 import { getPublishedBranches } from "@/lib/branches";
-import BranchCard from "@/components/site/BranchCard";
 import HeroParallax from "@/components/site/HeroParallax";
 import Reveal from "@/components/site/Reveal";
+import PartnerFinder from "@/components/site/PartnerFinder";
 import type { Metadata } from "next";
 import { Store } from "lucide-react";
 
@@ -60,13 +60,10 @@ export default async function PartnerCafesPage() {
             </div>
           </Reveal>
         ) : (
-          <div className="grid gap-6 md:gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {partners.map((b, i) => (
-              <Reveal key={b.id} delay={i * 0.05}>
-                <BranchCard branch={b} hrefBase="/partners" />
-              </Reveal>
-            ))}
-          </div>
+          <Reveal>
+            {/* Search (near-me / by-name) + multi-branch grouping live in this client island. */}
+            <PartnerFinder partners={partners} />
+          </Reveal>
         )}
       </section>
     </>

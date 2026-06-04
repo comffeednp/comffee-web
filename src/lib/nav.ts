@@ -1,0 +1,38 @@
+// Single source of truth for the top-bar navigation. Consumed by both the desktop Header
+// (src/components/site/Header.tsx) and the mobile drawer (src/components/site/MobileNav.tsx)
+// so the two never drift apart.
+
+export interface NavChild {
+  href: string;
+  label: string;
+}
+
+export interface NavItem {
+  label: string;
+  /** Direct destination. Omitted when the item is a dropdown (use `children` instead). */
+  href?: string;
+  /** When present, the item renders as a dropdown and `href` is ignored. */
+  children?: NavChild[];
+}
+
+export const navLinks: NavItem[] = [
+  {
+    // "Branches" is a dropdown grouping every kind of location you can find through Comffee.
+    label: "Branches",
+    children: [
+      // The full overview (Comffee cafes + Playcation stays) — "Every Comffee location".
+      { href: "/branches", label: "All Locations" },
+      // Comffee-brand internet cafes.
+      { href: "/internet-cafe", label: "Internet Cafe" },
+      // "Partner Cafes" = independent internet cafes that bought the Comffee POS as SaaS. Empty
+      // until the first partner is approved through the POS Reservation tab. [[comffee-saas-vision]]
+      { href: "/partners", label: "Partner Cafes" },
+    ],
+  },
+  { label: "Playcation", href: "/playcation" },
+  { label: "Menu", href: "/menu" },
+  // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
+  { label: "Software", href: "/softwares" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contact" },
+];

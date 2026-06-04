@@ -9,9 +9,12 @@ interface Props {
   // Override the URL prefix. Default "/branches" for franchises + Playcation; partner cafes pass
   // "/partners" since they live in their own section ([[comffee-saas-vision]]).
   hrefBase?: string;
+  // Optional pre-formatted distance (e.g. "1.2 km") shown beside the city when the partner finder
+  // is in "near me" mode. Omitted everywhere else.
+  distanceLabel?: string;
 }
 
-export default function BranchCard({ branch, size = "default", hrefBase = "/branches" }: Props) {
+export default function BranchCard({ branch, size = "default", hrefBase = "/branches", distanceLabel }: Props) {
   const isFeature = size === "feature";
   const isPlay = branch.type === "playcation";
   return (
@@ -67,6 +70,7 @@ export default function BranchCard({ branch, size = "default", hrefBase = "/bran
           <span className="flex items-center gap-1.5 text-mocha font-mono">
             <MapPin className="h-3.5 w-3.5" />
             {branch.city ?? "—"}
+            {distanceLabel && <span className="text-amber">· {distanceLabel}</span>}
           </span>
           <span className="flex items-center gap-1 text-amber font-mono uppercase tracking-widest">
             Enter

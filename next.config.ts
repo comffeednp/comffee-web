@@ -46,12 +46,19 @@ const baseSecurityHeaders = [
 // geolocation (geofence). An empty allowlist "geolocation=()" makes the browser refuse silently
 // WITHOUT prompting (returns PERMISSION_DENIED) — which is exactly why location was dead on the
 // attendance page. So we scope camera+geolocation=(self) to that path only; everything else stays
-// fully disabled. Both policies are sent as a single header per route (never two conflicting ones,
-// or the browser would intersect to the stricter value and re-break location).
+// fully disabled. Each route resolves to exactly ONE Permissions-Policy. Next.js does NOT send two
+// headers for the browser to reconcile — when multiple rules set the SAME header key, the LAST
+// matching rule's value OVERRIDES the earlier ones (see headers() below for the invariant this
+// creates).
 const PERMISSIONS_STRICT =
   "camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(self), usb=()";
 const PERMISSIONS_ATTENDANCE =
   "camera=(self), microphone=(), geolocation=(self), interest-cohort=(), payment=(self), usb=()";
+// The public Partner Cafes listing needs ONLY geolocation — for the "Near me" search. No camera.
+// Without this it inherits geolocation=() and the browser silently denies getCurrentPosition (the
+// same trap the attendance page hit — see the note above PERMISSIONS_STRICT).
+const PERMISSIONS_PARTNERS =
+  "camera=(), microphone=(), geolocation=(self), interest-cohort=(), payment=(self), usb=()";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -76,9 +83,18 @@ const nextConfig: NextConfig = {
         source: "/partners/:slug/attendance",
         headers: [{ key: "Permissions-Policy", value: PERMISSIONS_ATTENDANCE }],
       },
-      // Everything EXCEPT the attendance page: fully locked down (negative lookahead).
+      // Partner Cafes LISTING (exact /partners): geolocation only, for the "Near me" search.
       {
-        source: "/((?!partners/[^/]+/attendance).*)",
+        source: "/partners",
+        headers: [{ key: "Permissions-Policy", value: PERMISSIONS_PARTNERS }],
+      },
+      // Everything ELSE: fully locked down. INVARIANT: this catch-all MUST stay LAST. Next overrides
+      // on duplicate header keys (last matching rule wins), so if this rule MATCHED /partners or the
+      // attendance route it would override their geolocation=(self) back to strict and silently
+      // re-break location. The two negative lookaheads exist precisely to stop it from matching those
+      // two routes. Keep it last AND keep the lookaheads — that is what protects the grants above.
+      {
+        source: "/((?!partners/[^/]+/attendance)(?!partners/?$).*)",
         headers: [{ key: "Permissions-Policy", value: PERMISSIONS_STRICT }],
       },
     ];
