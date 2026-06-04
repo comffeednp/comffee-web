@@ -15,6 +15,8 @@ const navLinks = [
   { href: "/playcation", label: "Playcation" },
   { href: "/internet-cafe", label: "Internet Cafe" },
   { href: "/menu", label: "Menu" },
+  // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
+  { href: "/softwares", label: "Software" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
 ];
