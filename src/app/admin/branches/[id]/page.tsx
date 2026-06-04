@@ -5,6 +5,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
 import PendingBranchEditPanel from "@/components/admin/PendingBranchEditPanel";
+import BranchBrandForm from "@/components/admin/BranchBrandForm";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import type { Branch, BranchAmenity, BranchPhoto, BranchRate } from "@/lib/supabase/types";
@@ -120,6 +121,10 @@ export default async function ViewBranchPage({ params, searchParams }: Props) {
       {error && (
         <p className="mt-6 font-mono text-xs text-red-400">// {error}</p>
       )}
+
+      {/* BRAND GROUPING — website-only, editable here (the POS has no concept of it). Only partner
+          cafes use it: branches sharing a brand collapse into one card on /partners. */}
+      {branch.type === "partner_cafe" && <BranchBrandForm branch={branch} />}
 
       {/* APPROVE / REJECT incoming POS submissions */}
       <div className="mt-6">
