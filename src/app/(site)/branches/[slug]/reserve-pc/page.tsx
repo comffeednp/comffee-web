@@ -207,6 +207,7 @@ export default async function ReservePCPage({
             tier: (s as unknown as { pc_tier?: string | null }).pc_tier ?? null,
             currentSessionEndsAt: s.current_session_ends_at,
             isMemberSession: s.is_member_session,
+            vacantSince: s.vacant_since,
           }))}
           rates={allRates.map((r) => ({
             id: r.id,

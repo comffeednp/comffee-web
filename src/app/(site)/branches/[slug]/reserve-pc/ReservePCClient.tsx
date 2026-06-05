@@ -17,6 +17,7 @@ import {
 import { formatPHP } from "@/lib/utils";
 import { isRateAvailableNow } from "@/lib/rate-window";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { isReservableVacant, minutesUntilReservable } from "@/lib/pc-reservation-rules";
 
 interface Branch {
   id: string;
@@ -31,6 +32,9 @@ interface Station {
   tier: string | null;
   currentSessionEndsAt: string | null;
   isMemberSession: boolean;
+  // When the PC last became free (DB trigger; migration 0052). A PC is only reservable once it's been
+  // vacant for the buffer — see pc-reservation-rules. Null while occupied.
+  vacantSince: string | null;
 }
 
 interface Rate {
@@ -91,6 +95,7 @@ export default function ReservePCClient({
       tier: (row.pc_tier ?? null) as string | null,
       currentSessionEndsAt: (row.current_session_ends_at ?? null) as string | null,
       isMemberSession: (row.is_member_session ?? false) as boolean,
+      vacantSince: (row.vacant_since ?? null) as string | null,
     });
 
     supabase
@@ -125,13 +130,14 @@ export default function ReservePCClient({
     return () => { supabase.removeChannel(channel); };
   }, [branch.id]);
 
-  // Default: requested PC (if vacant), otherwise first vacant
+  // Default: requested PC (if reservable), otherwise the first reservable one (vacant ≥ the buffer).
   const [stationName, setStationName] = useState(() => {
+    const t = Date.now();
     if (requestedPc) {
       const r = initialStations.find((s) => s.name === requestedPc);
-      if (r && !r.isOccupied) return r.name;
+      if (r && isReservableVacant(r.isOccupied, r.vacantSince, t)) return r.name;
     }
-    return initialStations.find((s) => !s.isOccupied)?.name ?? "";
+    return initialStations.find((s) => isReservableVacant(s.isOccupied, s.vacantSince, t))?.name ?? "";
   });
 
   const [rateId, setRateId] = useState<string>("");
@@ -147,10 +153,11 @@ export default function ReservePCClient({
   const [reservationId, setReservationId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  // Re-tick every 30s so the night-promo availability badge updates
-  const [, setTick] = useState(0);
+  // Re-tick the clock every 15s so the night-promo rate badge AND the "available in Xm" vacancy
+  // countdown re-evaluate (a PC flips from settling → reservable with no DB event at the 5-min mark).
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    const id = setInterval(() => setNowMs(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
 
@@ -200,7 +207,28 @@ export default function ReservePCClient({
     };
   }, [selectedRate, quantity]);
 
-  const vacantStations = stations.filter((s) => !s.isOccupied);
+  // A PC is reservable only once it's been vacant ≥ the buffer; one that JUST freed up is "settling"
+  // (shown, but not pickable yet). Recomputed on every nowMs tick so settling PCs flip on their own.
+  const reservableStations = useMemo(
+    () => stations.filter((s) => isReservableVacant(s.isOccupied, s.vacantSince, nowMs)),
+    [stations, nowMs],
+  );
+  const settlingCount = useMemo(
+    () => stations.filter((s) => !s.isOccupied && !isReservableVacant(s.isOccupied, s.vacantSince, nowMs)).length,
+    [stations, nowMs],
+  );
+  const selectedReservable = selectedStation
+    ? isReservableVacant(selectedStation.isOccupied, selectedStation.vacantSince, nowMs)
+    : false;
+
+  // If nothing is selected yet (e.g. mount had no reservable PC, then a settling one crossed the
+  // buffer on the ticker — no DB event fires), default to the first reservable PC. Only fills an
+  // EMPTY selection, so it never overrides the customer's pick and never selects an unreservable PC.
+  useEffect(() => {
+    if (!stationName && reservableStations.length > 0) {
+      setStationName(reservableStations[0].name);
+    }
+  }, [reservableStations, stationName]);
 
   // Walk-in must book at least `minHours` of time. Compare the booked minutes against the minimum.
   // (Applies to every rate type — a 3-hour pack already clears a 1-hour minimum.)
@@ -230,6 +258,7 @@ export default function ReservePCClient({
 
   const canSubmit = useMemo(() => {
     if (!stationName) return false;
+    if (!selectedReservable) return false; // selected PC got taken / not vacant long enough
     if (!name.trim()) return false;
     if (mode === "member") {
       if (!memberNumber.trim()) return false;
@@ -242,7 +271,7 @@ export default function ReservePCClient({
       if (!walkInMeetsMinHours) return false;
     }
     return true;
-  }, [stationName, name, mode, memberNumber, memberFirstName, memberLastName, selectedRate, memberMeetsMinTopup, walkInMeetsMinHours]);
+  }, [stationName, selectedReservable, name, mode, memberNumber, memberFirstName, memberLastName, selectedRate, memberMeetsMinTopup, walkInMeetsMinHours]);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -270,7 +299,7 @@ export default function ReservePCClient({
         const data = await res.json();
         if (!res.ok) {
           setStep("error");
-          setErrorMsg(data.error ?? "reservation failed");
+          setErrorMsg(friendlyError(data.error ?? "reservation failed"));
           return;
         }
         setReservationId(data.reservationId);
@@ -325,19 +354,30 @@ export default function ReservePCClient({
                   {stations.map((s) => {
                     const selected = s.name === stationName;
                     const occupied = s.isOccupied;
+                    const reservable = isReservableVacant(s.isOccupied, s.vacantSince, nowMs);
+                    // Vacant but not yet past the buffer — shown, but not pickable until it settles.
+                    const settling = !occupied && !reservable;
                     return (
                       <button
                         key={s.id}
                         type="button"
-                        onClick={() => !occupied && setStationName(s.name)}
-                        disabled={occupied}
-                        title={s.isOccupied ? `${s.name} is currently in use` : `Select station ${s.name}`}
+                        onClick={() => reservable && setStationName(s.name)}
+                        disabled={!reservable}
+                        title={
+                          occupied
+                            ? `${s.name} is currently in use`
+                            : settling
+                              ? `${s.name} just freed up — reservable in a few minutes`
+                              : `Select station ${s.name}`
+                        }
                         className={`aspect-square flex flex-col items-center justify-center rounded-lg border transition relative ${
                           occupied
                             ? "border-line bg-bg opacity-40 cursor-not-allowed"
-                            : selected
-                            ? "border-amber bg-amber/10 glow-amber"
-                            : "border-phosphor/40 bg-phosphor/5 hover:bg-phosphor/10"
+                            : settling
+                              ? "border-amber/30 bg-amber/5 opacity-60 cursor-not-allowed"
+                              : selected
+                                ? "border-amber bg-amber/10 glow-amber"
+                                : "border-phosphor/40 bg-phosphor/5 hover:bg-phosphor/10"
                         }`}
                       >
                         {s.tier && (
@@ -347,18 +387,18 @@ export default function ReservePCClient({
                         )}
                         <Cpu
                           className={`h-4 w-4 ${
-                            occupied ? "text-mocha" : selected ? "text-amber" : "text-phosphor"
+                            occupied ? "text-mocha" : settling ? "text-amber/70" : selected ? "text-amber" : "text-phosphor"
                           }`}
                           strokeWidth={1.5}
                         />
                         <span
                           className={`mt-2 font-mono text-xs font-bold ${
-                            occupied ? "text-mocha" : selected ? "text-amber" : "text-cream"
+                            occupied ? "text-mocha" : settling ? "text-amber/80" : selected ? "text-amber" : "text-cream"
                           }`}
                         >
                           {s.name}
                         </span>
-                        {occupied && (
+                        {occupied ? (
                           <span className="mt-1 font-mono text-[0.55rem] text-center leading-tight">
                             {s.currentSessionEndsAt
                               ? <InlineCountdown endsAt={s.currentSessionEndsAt} />
@@ -366,17 +406,23 @@ export default function ReservePCClient({
                               ? <span className="text-mocha">member</span>
                               : null}
                           </span>
-                        )}
+                        ) : settling ? (
+                          <span className="mt-1 font-mono text-[0.55rem] leading-tight text-amber/80">
+                            in {minutesUntilReservable(s.vacantSince, nowMs)}m
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}
                 </div>
 
-                {vacantStations.length === 0 && (
+                {reservableStations.length === 0 && (
                   <div className="mt-4 p-3 border border-amber/40 rounded-lg bg-amber/5 flex items-start gap-2">
                     <AlertTriangle className="h-4 w-4 text-amber mt-0.5" />
                     <p className="text-sm text-cream-dim">
-                      All stations are in use right now. Wait until one frees up.
+                      {settlingCount > 0
+                        ? `${settlingCount} station${settlingCount === 1 ? " is" : "s are"} opening up — a PC becomes reservable a few minutes after it frees up. Hang tight.`
+                        : "All stations are in use right now. Wait until one frees up."}
                     </p>
                   </div>
                 )}
@@ -652,6 +698,16 @@ export default function ReservePCClient({
                 </div>
               </div>
 
+              {/* The selected PC got taken (Realtime) or is still settling — explain why the button is
+                  dead, tracking the ticker/Realtime state, instead of a silent grey CTA. */}
+              {selectedStation && !selectedReservable && (
+                <p className="font-mono text-xs text-amber">
+                  {selectedStation.isOccupied
+                    ? `// ${selectedStation.name} was just taken — pick another station.`
+                    : `// ${selectedStation.name} just freed up — reservable in ${minutesUntilReservable(selectedStation.vacantSince, nowMs)}m, or pick another.`}
+                </p>
+              )}
+
               {errorMsg && (
                 <p className="font-mono text-xs text-red-400">// {errorMsg}</p>
               )}
@@ -664,7 +720,7 @@ export default function ReservePCClient({
                 className="key-cap key-cap-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Power className="h-4 w-4" />
-                {`Pay ${formatPHP(payNowPhp)} to reserve ${stationName || "station"}`}
+                {`Pay ${formatPHP(payNowPhp)} to reserve ${selectedReservable ? stationName : "a station"}`}
               </button>
             </motion.div>
           )}
@@ -797,6 +853,36 @@ export default function ReservePCClient({
       `}</style>
     </div>
   );
+}
+
+// Map create-API error codes to a sentence the customer can act on (the screen already prevents
+// picking an occupied/settling PC, so these mostly cover a race or a direct POST).
+function friendlyError(code: string): string {
+  switch (code) {
+    case "station_settling":
+      return "that PC just opened up — it'll be reservable in a few minutes. Pick another, or try again shortly.";
+    case "station_occupied":
+      return "someone just took that PC. Pick another station.";
+    case "station_already_reserved":
+      return "that PC was just reserved by someone else. Pick another station.";
+    case "rate_outside_time_window":
+      return "that rate just went outside its available hours. Pick another rate.";
+    case "rate_tier_mismatch":
+    case "rate_not_reservable":
+      return "that rate isn't available for this PC. Pick another rate.";
+    case "below_min_hours":
+      return "that's below this branch's minimum hours. Add more time and try again.";
+    case "below_min_topup":
+    case "topup_required":
+      return "your top-up is below this branch's minimum. Increase it and try again.";
+    case "reservations_not_available":
+      return "online reservations aren't available for this branch right now.";
+    case "sign_in_required":
+      return "please sign in with Google to reserve.";
+    default:
+      // Never surface a raw snake_case server code to the customer.
+      return "something went wrong starting your reservation — please try again.";
+  }
 }
 
 function InlineCountdown({ endsAt }: { endsAt: string }) {

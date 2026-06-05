@@ -7,6 +7,7 @@ import { guardMutating } from "@/lib/security";
 import { isRateAvailableNow, computeRateTotals } from "@/lib/branch-rates";
 import { getBranchPaymentConfig, isPaymongoReservationActive } from "@/lib/branch-payment-config";
 import { createCheckoutSession, bookingPaymentMethods } from "@/lib/paymongo";
+import { isReservableVacant } from "@/lib/pc-reservation-rules";
 
 export const runtime = "nodejs";
 
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
   // Station must exist + be vacant right now.
   const { data: station } = await supabase
     .from("pc_stations")
-    .select("id, station_name, is_occupied, pc_tier")
+    .select("id, station_name, is_occupied, pc_tier, vacant_since")
     .eq("branch_id", v.branchId)
     .eq("station_name", v.stationName)
     .maybeSingle();
@@ -115,6 +116,12 @@ export async function POST(request: Request) {
   }
   if (station.is_occupied) {
     return NextResponse.json({ error: "station_occupied" }, { status: 409 });
+  }
+  // Authoritative buffer gate (the booking screen shows the same rule but can be stale): a PC must
+  // have been continuously vacant for MIN_VACANT_MINUTES before it can be booked. Blocks a just-freed
+  // seat — which may be a PanCafe flicker or about to be retaken by the previous walk-in.
+  if (!isReservableVacant(station.is_occupied, station.vacant_since as string | null)) {
+    return NextResponse.json({ error: "station_settling" }, { status: 409 });
   }
 
   // Release stale UNPAID holds first (bug fix 2026-06-01): a customer who reached PayMongo checkout but

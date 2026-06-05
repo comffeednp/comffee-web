@@ -15,6 +15,9 @@ export interface PCStation {
   last_synced_at: string;
   sort_order: number;
   pc_tier: string | null;
+  // When the station last became vacant (maintained by a DB trigger; migration 0052). Drives the
+  // "must be vacant N minutes before online-reservable" rule. Null while occupied.
+  vacant_since: string | null;
 }
 
 export interface PCStationsSnapshot {
