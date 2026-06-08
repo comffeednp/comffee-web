@@ -11,9 +11,11 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 // If the control project can't be reached, fall back to the known current installer.
+// MUST be a de-baked (secret-free) build — the pre-1.2.0 installers were deleted from the bucket
+// because they shipped a hardcoded key. Keep this in step with the latest published version.
 const FALLBACK_URL =
-  "https://ipcgytexedrzwoayhvyy.supabase.co/storage/v1/object/public/releases/Comffee-POS-Setup-1.1.0.exe";
-const FALLBACK_VERSION = "1.1.0";
+  "https://ipcgytexedrzwoayhvyy.supabase.co/storage/v1/object/public/releases/Comffee-POS-Setup-1.2.0.exe";
+const FALLBACK_VERSION = "1.2.0";
 
 // The live release is the single source of truth: publish.js writes the version + Supabase
 // installer_url into app_releases (control project, ipcgyt…) and flips is_live. We read it
