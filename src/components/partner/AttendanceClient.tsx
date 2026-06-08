@@ -624,6 +624,9 @@ export default function AttendanceClient({
     outside_geofence: "You're outside the branch area.",
     not_approved: "Your account isn't approved yet.",
     not_enrolled: "Enroll your face first.",
+    // Duplicate-person guard: this face already belongs to another account at the branch (the server
+    // `detail` names which). Sign in with that account instead of creating a second one.
+    already_registered: "This face is already registered to another account. Sign in with that account.",
     ack_required: "Please read and acknowledge the face-scan notice first.",
     no_location: "Location required — enable GPS.",
     rate_limited: "Too many attempts — wait a minute.",
@@ -679,7 +682,9 @@ export default function AttendanceClient({
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        setActionMsg(ERROR_TEXT[data.error] ?? "Enrollment failed — try again.");
+        // Prefer the server's specific reason (e.g. "already registered as X") over the generic text,
+        // so a duplicate sign-up is named rather than a vague failure.
+        setActionMsg(data.detail || ERROR_TEXT[data.error] || "Enrollment failed — try again.");
       } else {
         setActionMsg("Face verified — this phone is now registered.");
         setEnrolled(true); // flip in place — no reload; polling watches for admin approval

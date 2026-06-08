@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { isValidDescriptor } from "@/lib/face-match";
+import { isValidDescriptor, euclideanDistance, FACE_MATCH_THRESHOLD } from "@/lib/face-match";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { FACE_CONSENT_VERSION } from "@/lib/face-consent";
 
@@ -123,6 +123,39 @@ export async function POST(
           detail: `This phone is already registered to ${ob.branch_staff?.name ?? "another staff account"}. Ask your admin to reset it first.`,
         },
         { status: 403 },
+      );
+    }
+  }
+
+  // ── DUPLICATE-PERSON GUARD (owner 2026-06-08, the recurring Kalhel lockout) ──
+  // One human = ONE account per branch. The lockout kept coming back because nothing stopped a
+  // person from signing up a SECOND time with another Gmail and enrolling the SAME face — then the
+  // single phone ping-ponged between the two identities and BOTH ended up locked ("registered to
+  // another phone"). We catch it at the earliest point a face exists: if this scan matches an
+  // ALREADY-ENROLLED face on a DIFFERENT staff at this branch, refuse and NAME that account so the
+  // worker signs into it instead of creating a duplicate. Same threshold as /clock by design — two
+  // faces the system would accept as identical at clock-in MUST be treated as one person here too
+  // (otherwise account A's face could clock in as account B). Re-enrolling your OWN account (same
+  // id) is excluded, so a legitimate re-scan is never blocked.
+  const { data: others, error: othersErr } = await admin
+    .from("branch_staff")
+    .select("name, email, face_descriptor")
+    .eq("branch_id", branch.id)
+    .neq("id", staff.id)
+    .not("face_descriptor", "is", null);
+  if (othersErr) {
+    return NextResponse.json({ ok: false, error: "dup_check_failed" }, { status: 500 });
+  }
+  for (const o of others ?? []) {
+    if (!isValidDescriptor(o.face_descriptor)) continue;
+    if (euclideanDistance(descriptor, o.face_descriptor) < FACE_MATCH_THRESHOLD) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "already_registered",
+          detail: `This face is already registered as ${o.name ?? o.email ?? "another account"}. Sign in with that account instead of making a new one. If this is a mistake, ask your admin.`,
+        },
+        { status: 409 },
       );
     }
   }
