@@ -43,6 +43,10 @@ export interface Branch {
   gcash_qr_url: string | null;     // Stage 7a: partner's static GCash QR image URL (customer scans to pay).
   gcash_qr_path: string | null;    // storage path; useful for replace/delete.
   gcash_type: string | null;       // 'p2p' default; 'business' is TBA.
+  // Display-only rate sheet authored in the POS Reservation tab. Renders on the public cafe page
+  // INSTEAD of the flat branch_rates when present. Does NOT drive billing (PanCafe owns tariffs).
+  // null / undefined = never configured → fall back to branch_rates. See SHARED DATA CONTRACT.
+  rate_config?: RateConfig | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -65,6 +69,37 @@ export interface BranchPhoto {
   caption: string | null;
   sort_order: number;
   created_at: string;
+}
+
+// ── Display-only rate sheet (branches.rate_config jsonb) ─────────────────────
+// Authored in the POS Reservation tab, rendered on the public cafe page. snake_case keys mirror
+// the SHARED DATA CONTRACT exactly. All numeric fields are nullable (an owner may leave any blank).
+// This does NOT bill — PanCafe still owns the real tariffs.
+export interface RateTier {
+  label: string;
+  minutes: number | null;
+  price: number | null;
+}
+
+export interface RateCategory {
+  name: string;
+  color: string;            // hex string for the colored dot
+  pc_count: number | null;  // stations in this category
+  member_rate: number | null; // member ₱ per hour (display)
+  tiers: RateTier[];
+}
+
+export interface RateMembership {
+  fee: number | null;               // one-time membership fee
+  topup_bonus_pct: number | null;   // top-up bonus %
+  members_avail_promos: boolean;
+  drink_free_hour: boolean;         // "every drink = 1 free hour"
+}
+
+export interface RateConfig {
+  total_pcs: number | null;     // owner's manual "how many PCs" (display)
+  categories: RateCategory[];
+  membership: RateMembership;
 }
 
 export interface BranchRate {

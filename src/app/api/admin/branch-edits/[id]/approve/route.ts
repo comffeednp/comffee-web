@@ -56,6 +56,7 @@ interface Payload {
   gcash_qr_url?: string | null;
   gcash_qr_path?: string | null;
   gcash_type?: string | null;
+  rate_config?: unknown; // display-only JSONB rate sheet (see SHARED DATA CONTRACT); null = unset
   photos?: PayloadPhoto[];
   amenities?: PayloadAmenity[];
   rates?: PayloadRate[];
@@ -132,6 +133,7 @@ export async function POST(
     if (payload.gcash_qr_url !== undefined) update.gcash_qr_url = payload.gcash_qr_url;
     if (payload.gcash_qr_path !== undefined) update.gcash_qr_path = payload.gcash_qr_path;
     if (payload.gcash_type !== undefined) update.gcash_type = payload.gcash_type;
+    if (payload.rate_config !== undefined) update.rate_config = payload.rate_config;
     update.updated_at = new Date().toISOString();
     const { error: upErr } = await admin.from("branches").update(update).eq("id", branchId);
     if (upErr) {
@@ -160,6 +162,7 @@ export async function POST(
         gcash_qr_url: payload.gcash_qr_url ?? null,
         gcash_qr_path: payload.gcash_qr_path ?? null,
         gcash_type: payload.gcash_type ?? null,
+        rate_config: payload.rate_config ?? null,
       })
       .select("id")
       .single();

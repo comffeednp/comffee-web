@@ -7,6 +7,7 @@ import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
 import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
+import RateConfigDisplay from "@/components/site/RateConfigDisplay";
 import Reveal from "@/components/site/Reveal";
 import {
   ArrowRight,
@@ -255,24 +256,33 @@ export default async function PartnerCafeDetailPage({
       )}
 
       {/* RATES */}
-      {branch.rates.length > 0 && (
-        <section className="relative py-24 md:py-32 border-y border-line bg-bg-soft">
-          <div className="container-edge">
-            <div className="flex flex-wrap items-end justify-between gap-6">
-              <Reveal>
-                <p className="terminal-label">rates.live</p>
-                <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream max-w-2xl">
-                  The numbers.
-                </h2>
-              </Reveal>
-              <span className="font-mono text-xs text-mocha uppercase tracking-widest">
-                // prices in PHP
-              </span>
+      {(() => {
+        const hasRateConfig =
+          branch.rate_config != null && (branch.rate_config.categories?.length ?? 0) > 0;
+        if (!hasRateConfig && branch.rates.length === 0) return null;
+        return (
+          <section className="relative py-24 md:py-32 border-y border-line bg-bg-soft">
+            <div className="container-edge">
+              <div className="flex flex-wrap items-end justify-between gap-6">
+                <Reveal>
+                  <p className="terminal-label">rates.live</p>
+                  <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream max-w-2xl">
+                    The numbers.
+                  </h2>
+                </Reveal>
+                <span className="font-mono text-xs text-mocha uppercase tracking-widest">
+                  // prices in PHP
+                </span>
+              </div>
+              {hasRateConfig ? (
+                <RateConfigDisplay config={branch.rate_config!} />
+              ) : (
+                <RateCardList rates={branch.rates} />
+              )}
             </div>
-            <RateCardList rates={branch.rates} />
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {/* FINAL CTA — generic for Stage 2 (no booking flow wired yet). Stages 5-6 add the PC
           reservation CTA (gated by the on/off toggle) and the GCash QR display. For now we point

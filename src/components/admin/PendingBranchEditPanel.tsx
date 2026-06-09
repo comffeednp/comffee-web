@@ -176,6 +176,7 @@ function describePayload(p: Record<string, unknown>): string[] {
   if (Array.isArray(p.photos)) out.push(`Photos: ${p.photos.length}`);
   if (Array.isArray(p.amenities)) out.push(`Amenities: ${p.amenities.length}`);
   if (Array.isArray(p.rates)) out.push(`Rates: ${p.rates.length}`);
+  if (p.rate_config && typeof p.rate_config === "object") out.push("Rate config updated");
   if (typeof p.is_published === "boolean")
     out.push(`Published: ${p.is_published ? "yes" : "no"}`);
   return out;

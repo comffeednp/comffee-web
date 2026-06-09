@@ -10,6 +10,7 @@ import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
 import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
+import RateConfigDisplay from "@/components/site/RateConfigDisplay";
 import LivePCStations from "@/components/site/LivePCStations";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
@@ -338,24 +339,33 @@ export default async function BranchDetailPage({
       {/* ============================================================
           RATES
           ============================================================ */}
-      {branch.rates.length > 0 && (
-        <section className="relative py-24 md:py-32 border-y border-line bg-bg-soft">
-          <div className="container-edge">
-            <div className="flex flex-wrap items-end justify-between gap-6">
-              <Reveal>
-                <p className="terminal-label">rates.live</p>
-                <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream max-w-2xl">
-                  The numbers.
-                </h2>
-              </Reveal>
-              <span className="font-mono text-xs text-mocha uppercase tracking-widest">
-                // prices in PHP
-              </span>
+      {(() => {
+        const hasRateConfig =
+          branch.rate_config != null && (branch.rate_config.categories?.length ?? 0) > 0;
+        if (!hasRateConfig && branch.rates.length === 0) return null;
+        return (
+          <section className="relative py-24 md:py-32 border-y border-line bg-bg-soft">
+            <div className="container-edge">
+              <div className="flex flex-wrap items-end justify-between gap-6">
+                <Reveal>
+                  <p className="terminal-label">rates.live</p>
+                  <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream max-w-2xl">
+                    The numbers.
+                  </h2>
+                </Reveal>
+                <span className="font-mono text-xs text-mocha uppercase tracking-widest">
+                  // prices in PHP
+                </span>
+              </div>
+              {hasRateConfig ? (
+                <RateConfigDisplay config={branch.rate_config!} />
+              ) : (
+                <RateCardList rates={branch.rates} />
+              )}
             </div>
-            <RateCardList rates={branch.rates} />
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {/* ============================================================
           MENU BOARDS (cafe only)
