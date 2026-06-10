@@ -998,3 +998,54 @@ export async function sendSubscriptionKey(input: SubscriptionKeyInput) {
     text: `Welcome to Comffee POS! Your ${input.tierName} subscription is active. License key: ${input.licenseKey}. Amount paid: ${formatPHP(input.amountPhp)} (monthly). Keep this key safe for reinstalls.`,
   });
 }
+
+/* ---------------- Partner-Cafe subscription: renewal receipt ---------------- */
+
+interface SubscriptionRenewedInput {
+  to: string;
+  tierName: string; // e.g. "AI-Integrated"
+  amountPhp: number;
+  renewedUntil: string; // ISO timestamptz from renew_license — the new term end
+}
+
+// Sent to a Partner Cafe when a renewal payment is confirmed and the license term extended (the
+// webhook calls renew_license, then fires this). NO license key in here — renewals keep the same
+// key, so there's nothing to re-activate; this is just the receipt + new expiry. [[comffee-saas-vision]]
+export async function sendSubscriptionRenewed(input: SubscriptionRenewedInput) {
+  const d = new Date(input.renewedUntil);
+  const untilDate = Number.isNaN(d.getTime())
+    ? input.renewedUntil
+    : d.toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        timeZone: "Asia/Manila",
+      });
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Subscription renewed
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Your Comffee POS subscription has been renewed &mdash; your <strong>${escapeHtml(input.tierName)}</strong> plan is active until <strong>${escapeHtml(untilDate)}</strong>.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Plan", input.tierName)}
+      ${receiptRow("Active until", untilDate)}
+      ${receiptRow("Amount paid", formatPHP(input.amountPhp), true)}
+    </table>
+
+    <p style="margin:16px 0 0;color:#8a7a68;font-size:13px;line-height:1.6;">
+      Your existing license key keeps working &mdash; nothing to re-activate. We&rsquo;ll remind you before your next renewal is due.
+    </p>
+  `;
+  return sendEmail({
+    to: input.to,
+    subject: `Your Comffee POS subscription is renewed · ${input.tierName}`,
+    html: chrome({
+      preheader: `Your ${input.tierName} plan is active until ${untilDate}`,
+      bodyHtml: body,
+    }),
+    text: `Your Comffee POS subscription has been renewed — your ${input.tierName} plan is active until ${untilDate}. Amount paid: ${formatPHP(input.amountPhp)}. Your existing license key keeps working.`,
+  });
+}

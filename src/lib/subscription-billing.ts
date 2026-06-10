@@ -68,3 +68,75 @@ export async function mintLicenseKey(opts: {
   }
   return licenseKey;
 }
+
+/** The licenses-table fields the renewal flow needs from the LICENSE project. */
+export interface RenewableLicense {
+  license_key: string;
+  plan: string;
+  business_name: string | null;
+  expires_at: string | null;
+  status: string | null;
+}
+
+/**
+ * Look up a license in the LICENSE project (ipcgyt…) by its key. Used by /api/billing/renew to
+ * validate a renewal request (does the key exist? which tier → which price?) before creating the
+ * PayMongo checkout. Same env vars as mintLicenseKey (service-role; RLS blocks anon reads).
+ * Returns the row or null when the key doesn't exist.
+ */
+export async function getRenewableLicense(licenseKey: string): Promise<RenewableLicense | null> {
+  const url = process.env.LICENSE_SUPABASE_URL;
+  const key = process.env.LICENSE_SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    throw new Error("LICENSE_SUPABASE_URL / LICENSE_SUPABASE_SERVICE_KEY not configured");
+  }
+  const res = await fetch(
+    `${url}/rest/v1/licenses?license_key=eq.${encodeURIComponent(licenseKey)}&select=license_key,plan,business_name,expires_at,status`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`license lookup failed: ${res.status} ${await res.text()}`);
+  }
+  const rows = (await res.json()) as RenewableLicense[];
+  return rows[0] ?? null;
+}
+
+/**
+ * Extend an existing license by p_months via the `renew_license` RPC in the LICENSE project.
+ * Called from the PayMongo webhook once a renewal payment is confirmed. The RPC owns the owner-locked
+ * date math — extend from the DUE date (paying early adds a month to the current term end); an
+ * already-expired license restarts from now. Returns jsonb {ok, code?, expires_at?}.
+ * Returns the new expires_at; throws on any failure (the caller leaves the order paid + retriable).
+ */
+export async function renewLicense(licenseKey: string, months = 1): Promise<string> {
+  const url = process.env.LICENSE_SUPABASE_URL;
+  const key = process.env.LICENSE_SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    throw new Error("LICENSE_SUPABASE_URL / LICENSE_SUPABASE_SERVICE_KEY not configured");
+  }
+  const res = await fetch(`${url}/rest/v1/rpc/renew_license`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      p_license_key: licenseKey,
+      p_months: months,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`renew_license RPC failed: ${res.status} ${await res.text()}`);
+  }
+  const out = (await res.json()) as { ok?: boolean; code?: string; expires_at?: string };
+  if (out?.ok !== true || !out.expires_at) {
+    throw new Error(`renew_license rejected: ${out?.code ?? "no_expires_at"}`);
+  }
+  return out.expires_at;
+}

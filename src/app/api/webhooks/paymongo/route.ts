@@ -15,8 +15,8 @@ import {
   markOrderPaid,
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
-import { mintLicenseKey, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
-import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation, sendSubscriptionKey } from "@/lib/email";
+import { mintLicenseKey, renewLicense, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
+import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation, sendSubscriptionKey, sendSubscriptionRenewed } from "@/lib/email";
 import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
 
 export const runtime = "nodejs";
@@ -239,7 +239,7 @@ export async function POST(request: Request) {
         if (paymentIntentId) {
           const { data } = await supabase
             .from("subscription_orders")
-            .select("id, tier, email, machine_id, license_key, status")
+            .select("id, tier, email, machine_id, license_key, status, kind")
             .eq("paymongo_payment_intent_id", paymentIntentId)
             .maybeSingle();
           if (data) return data;
@@ -247,7 +247,7 @@ export async function POST(request: Request) {
         if (linkOrPaymentId) {
           const { data } = await supabase
             .from("subscription_orders")
-            .select("id, tier, email, machine_id, license_key, status")
+            .select("id, tier, email, machine_id, license_key, status, kind")
             .eq("paymongo_checkout_id", linkOrPaymentId)
             .maybeSingle();
           if (data) return data;
@@ -260,9 +260,11 @@ export async function POST(request: Request) {
   ]);
 
   try {
-    // Partner-Cafe SaaS subscription payment (platform key). On paid: mark paid + mint a license key
-    // in the LICENSE project + stamp it here (the POS polls /api/billing/subscribe/status and
-    // auto-activates with it). Failures NEVER lose the payment — the order stays paid, key retriable.
+    // Partner-Cafe SaaS subscription payment (platform key). On paid: mark paid, then either mint a
+    // license key in the LICENSE project + stamp it here (kind='new' — the POS polls
+    // /api/billing/subscribe/status and auto-activates with it), or extend the existing license via
+    // renew_license (kind='renewal' — same poll reads renewedUntil; no new key). Failures NEVER lose
+    // the payment — the order stays paid, mint/renew retriable.
     if (subscriptionOrder) {
       switch (eventType) {
         case "checkout_session.payment.paid":
@@ -278,9 +280,40 @@ export async function POST(request: Request) {
             })
             .eq("id", subscriptionOrder.id)
             .eq("status", "unpaid")
-            .select("id, tier, email, machine_id, license_key");
+            .select("id, tier, email, machine_id, license_key, kind");
           const row = claimed && claimed[0];
-          if (row && !row.license_key) {
+          if (row && row.kind === "renewal") {
+            // RENEWAL: extend the existing license via the renew_license RPC — never mint a new key.
+            // The RPC owns the owner-locked date math (extend from the DUE date; paying early adds a
+            // month to the term end; an expired license restarts from now).
+            try {
+              const renewedUntil = await renewLicense(row.license_key as string);
+              await supabase
+                .from("subscription_orders")
+                .update({ renewed_until: renewedUntil })
+                .eq("id", subscriptionOrder.id);
+              // Receipt + new expiry to the cafe (fire-and-forget; never block the webhook).
+              const tierInfo = SUBSCRIPTION_TIERS[row.tier as keyof typeof SUBSCRIPTION_TIERS];
+              if (row.email) {
+                sendSubscriptionRenewed({
+                  to: row.email as string,
+                  tierName: tierInfo?.name ?? (row.tier as string),
+                  amountPhp: tierInfo?.amountPhp ?? 0,
+                  renewedUntil,
+                }).catch((e) =>
+                  console.error("[billing] renewal email failed", e instanceof Error ? e.message : e),
+                );
+              }
+            } catch (renewErr) {
+              // Payment is real + recorded; the extend failed (e.g. RPC not deployed yet). The order
+              // stays paid with renewed_until null so it can be retried / applied manually — never
+              // lose the payment.
+              console.error(
+                "[billing] license renew failed",
+                renewErr instanceof Error ? renewErr.message : renewErr,
+              );
+            }
+          } else if (row && !row.license_key) {
             try {
               const licenseKey = await mintLicenseKey({
                 tier: row.tier as string,
