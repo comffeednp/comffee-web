@@ -13,8 +13,10 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
-// Tiers that get a website branch + seating + attendance. Basic is POS-only (no branch).
-const BRANCHED_TIERS = new Set(["pancafe", "ai"]);
+// Tiers that get a website branch + seating + attendance. The POS-only tier (pos/basic) gets none.
+// Both naming generations are honoured: post-merge (clockwork=₱499, unified=₱699) and legacy
+// (pancafe, ai). See migration 0055 — the 2026-06-11 POS↔Clockwork product-line rename.
+const BRANCHED_TIERS = new Set(["clockwork", "unified", "pancafe", "ai"]);
 
 export class ProvisionError extends Error {
   code: string;
