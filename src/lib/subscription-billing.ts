@@ -5,6 +5,12 @@
 import crypto from "node:crypto";
 
 export const SUBSCRIPTION_TIERS = {
+  // Current product lines (the merged desktop's onboarding wizard sends these
+  // ids since 2026-06-11; they're also stored as the license `plan`).
+  pos: { amountPhp: 199, name: "Comffee POS" },
+  clockwork: { amountPhp: 499, name: "Comffee Clockwork" },
+  unified: { amountPhp: 699, name: "Comffee Unified" },
+  // Legacy ids — installers built before the merge still send these.
   basic: { amountPhp: 199, name: "Basic POS" },
   pancafe: { amountPhp: 499, name: "PanCafe-Integrated" },
   ai: { amountPhp: 699, name: "AI-Integrated" },
