@@ -1,0 +1,133 @@
+// Aerial floor plan for an internet-cafe branch — renders the layout the owner designed in the POS
+// (pushed to branch_floorplan_elements), replacing the old 1–12 PC grid. Phase 2 = static render
+// (positions/shapes/labels). Phase 3 will color reservable elements by live remaining time and add
+// online reservation. Server component (pure SVG) — no client JS, SSR-friendly.
+
+export interface FloorplanElement {
+  id: string;
+  type: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  z_index: number;
+  shape: string;
+  reservable: boolean;
+  billing_mode: string;
+  rate_per_hour: number;
+  min_order_amount: number;
+  capacity: number;
+  pc_station_id: number | null;
+}
+
+const STYLE: Record<string, { fill: string; stroke: string; text: string }> = {
+  pc:           { fill: "#d3e6ff", stroke: "#3b82c4", text: "#12354f" },
+  ps5:          { fill: "#2b2b3a", stroke: "#0c0c14", text: "#ffffff" },
+  table:        { fill: "#e7c9a0", stroke: "#a9794a", text: "#4a3417" },
+  long_table:   { fill: "#e7c9a0", stroke: "#a9794a", text: "#4a3417" },
+  chair:        { fill: "#cdbfae", stroke: "#8a7a64", text: "#3a3128" },
+  gaming_chair: { fill: "#d9332e", stroke: "#911", text: "#ffffff" },
+  counter:      { fill: "#c4c4c4", stroke: "#777", text: "#2b2b2b" },
+  decor:        { fill: "#7fae6a", stroke: "#4e7a3a", text: "#22311a" },
+};
+
+function shapeFor(el: FloorplanElement, s: { fill: string; stroke: string }) {
+  const w = el.width, h = el.height;
+  const common = { fill: s.fill, stroke: s.stroke, strokeWidth: 1.5, filter: "url(#fpShadow)" };
+  if (el.shape === "round") {
+    return <ellipse cx={0} cy={0} rx={w / 2} ry={h / 2} {...common} />;
+  }
+  if (el.shape === "L") {
+    const pts = [
+      [-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 6],
+      [-w / 6, -h / 6], [-w / 6, h / 2], [-w / 2, h / 2],
+    ].map((p) => p.join(",")).join(" ");
+    return <polygon points={pts} {...common} />;
+  }
+  const r = Math.min(10, Math.min(w, h) / 4);
+  return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={r} ry={r} {...common} />;
+}
+
+export default function BranchFloorPlan({
+  elements,
+  branchName,
+}: {
+  elements: FloorplanElement[];
+  branchName: string;
+}) {
+  if (!elements || elements.length === 0) return null;
+
+  // Bounds (approximate; ignores rotation) + padding → a viewBox that frames the whole layout.
+  const pad = 40;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of elements) {
+    const hw = Math.max(el.width, el.height) / 2;
+    minX = Math.min(minX, el.x - hw); minY = Math.min(minY, el.y - hw);
+    maxX = Math.max(maxX, el.x + hw); maxY = Math.max(maxY, el.y + hw);
+  }
+  const vbX = minX - pad, vbY = minY - pad;
+  const vbW = Math.max(200, maxX - minX + pad * 2), vbH = Math.max(160, maxY - minY + pad * 2);
+
+  const sorted = [...elements].sort((a, b) => a.z_index - b.z_index);
+  const reservableCount = elements.filter((e) => e.reservable).length;
+
+  return (
+    <section className="container-edge py-20 md:py-28" aria-label="Cafe floor plan">
+      <p className="terminal-label">floor.plan</p>
+      <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">
+        Find your spot
+      </h2>
+      <p className="mt-4 text-cream-dim max-w-2xl">
+        The real layout of {branchName} — PCs, tables{reservableCount > 0 ? ", and reservable spots" : ""}.
+        A green dot marks what you can reserve.
+      </p>
+
+      <div className="mt-10 rounded-2xl border border-line bg-[#f7f3ec] p-3 md:p-5 overflow-hidden">
+        <svg
+          viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
+          className="w-full h-auto"
+          style={{ maxHeight: 620 }}
+          role="img"
+          aria-label={`Floor plan of ${branchName}`}
+        >
+          <defs>
+            <filter id="fpShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.22" />
+            </filter>
+            <pattern id="fpGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e6ddcd" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <rect x={vbX} y={vbY} width={vbW} height={vbH} fill="url(#fpGrid)" />
+          {sorted.map((el) => {
+            const s = STYLE[el.type] ?? STYLE.decor;
+            const fontSize = Math.max(9, Math.min(13, el.height / 3));
+            return (
+              <g key={el.id} transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}>
+                {shapeFor(el, s)}
+                {el.label && (
+                  <text
+                    x={0}
+                    y={fontSize / 3}
+                    textAnchor="middle"
+                    fontSize={fontSize}
+                    fontWeight={700}
+                    fill={s.text}
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {el.label}
+                  </text>
+                )}
+                {el.reservable && (
+                  <circle cx={el.width / 2 - 6} cy={-el.height / 2 + 6} r={3.5} fill="#1e8449" stroke="#fff" strokeWidth={1} />
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </section>
+  );
+}
