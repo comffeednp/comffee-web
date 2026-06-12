@@ -4,27 +4,31 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Activity,
   AlertTriangle,
+  Armchair,
   Cpu,
   LayoutGrid,
   Map,
   Power,
-  RefreshCw,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { PCStation } from "@/lib/pc-stations";
 import PCFloorMap from "./PCFloorMap";
+import BranchFloorPlan, { type FloorplanElement } from "./BranchFloorPlan";
 
 interface Props {
   branchId: string;
   branchSlug: string;
+  branchName: string;
   initialStations: PCStation[];
   initialSyncedAt: string | null;
   // Mirrors the branch page's canReserveOnline. When false, the per-vacant-PC "Reserve" link is
   // hidden so the board just reports availability — the owner's "accept online reservations" switch
   // now controls BOTH the main CTA and these per-station links (2026-05-30).
   canReserve: boolean;
+  // The aerial layout the owner designed in the POS. When present it's offered as a third "Layout"
+  // view alongside the grid + map — it AUGMENTS the live board, it does not replace it.
+  floorplan?: FloorplanElement[];
 }
 
 /**
@@ -35,14 +39,20 @@ interface Props {
 export default function LivePCStations({
   branchId,
   branchSlug,
+  branchName,
   initialStations,
   initialSyncedAt,
   canReserve,
+  floorplan = [],
 }: Props) {
   const [stations, setStations] = useState<PCStation[]>(initialStations);
   const [syncedAt, setSyncedAt] = useState<string | null>(initialSyncedAt);
   const [tick, setTick] = useState(0);
-  const [view, setView] = useState<"grid" | "map">("grid");
+  const hasFloorplan = floorplan.length > 0;
+  // When a branch has a designed layout but no synced PCs yet, open straight on the layout.
+  const [view, setView] = useState<"grid" | "map" | "floorplan">(
+    initialStations.length === 0 && hasFloorplan ? "floorplan" : "grid",
+  );
 
   // Subscribe to Realtime for this branch's pc_stations
   useEffect(() => {
@@ -141,7 +151,7 @@ export default function LivePCStations({
     return `${hr}h ago`;
   }, [syncedAt, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (stations.length === 0) {
+  if (stations.length === 0 && !hasFloorplan) {
     return null;
   }
 
@@ -189,33 +199,57 @@ export default function LivePCStations({
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setView("grid")}
-              title="Grid view"
-              className={`p-1.5 rounded border transition ${
-                view === "grid"
-                  ? "border-cream text-cream bg-bg-soft"
-                  : "border-line-bright text-mocha hover:text-cream-dim"
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setView("map")}
-              title="Floor map"
-              className={`p-1.5 rounded border transition ${
-                view === "map"
-                  ? "border-cream text-cream bg-bg-soft"
-                  : "border-line-bright text-mocha hover:text-cream-dim"
-              }`}
-            >
-              <Map className="h-3.5 w-3.5" />
-            </button>
+            {stations.length > 0 && (
+              <>
+                <button
+                  onClick={() => setView("grid")}
+                  title="Grid view"
+                  className={`p-1.5 rounded border transition ${
+                    view === "grid"
+                      ? "border-cream text-cream bg-bg-soft"
+                      : "border-line-bright text-mocha hover:text-cream-dim"
+                  }`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setView("map")}
+                  title="Floor map"
+                  className={`p-1.5 rounded border transition ${
+                    view === "map"
+                      ? "border-cream text-cream bg-bg-soft"
+                      : "border-line-bright text-mocha hover:text-cream-dim"
+                  }`}
+                >
+                  <Map className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+            {hasFloorplan && (
+              <button
+                onClick={() => setView("floorplan")}
+                title="Floor plan — the real layout from above"
+                className={`p-1.5 rounded border transition ${
+                  view === "floorplan"
+                    ? "border-cream text-cream bg-bg-soft"
+                    : "border-line-bright text-mocha hover:text-cream-dim"
+                }`}
+              >
+                <Armchair className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Grid / Floor map */}
-        {view === "map" ? (
+        {/* Grid / Floor map / Floor plan */}
+        {view === "floorplan" ? (
+          <BranchFloorPlan
+            elements={floorplan}
+            branchName={branchName}
+            branchId={branchId}
+            stations={stations}
+          />
+        ) : view === "map" ? (
           <PCFloorMap stations={stations} branchSlug={branchSlug} canReserve={canReserve} />
         ) : (
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">

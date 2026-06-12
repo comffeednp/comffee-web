@@ -12,7 +12,6 @@ import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
 import RateConfigDisplay from "@/components/site/RateConfigDisplay";
 import LivePCStations from "@/components/site/LivePCStations";
-import BranchFloorPlan from "@/components/site/BranchFloorPlan";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import BranchChatContext from "@/components/site/BranchChatContext";
@@ -93,7 +92,8 @@ export default async function BranchDetailPage({
     ? null
     : await getPCStationsForBranch(branch.id);
 
-  // Designed floor plan (Phase 2): if the owner built one in the POS it replaces the 1–12 grid.
+  // Designed floor plan (Phase 2): if the owner built one in the POS it's offered as a third "Layout"
+  // view inside the live board — it augments the grid/map, it does NOT replace them.
   let floorplan: import("@/components/site/BranchFloorPlan").FloorplanElement[] = [];
   if (!isPlay) {
     const { data: fp } = await getSupabaseAdmin()
@@ -303,21 +303,19 @@ export default async function BranchDetailPage({
       )}
 
       {/* ============================================================
-          FLOOR PLAN (designed in the POS) — replaces the 1–12 grid when present;
-          otherwise the legacy live PC grid renders as before.
+          LIVE BOARD — grid + floor map + (when the owner designed one) the aerial floor plan,
+          all behind one view toggle. The floor plan augments the board, never replaces it.
           ============================================================ */}
-      {hasFloorplan ? (
-        <BranchFloorPlan elements={floorplan} branchName={branch.name} branchId={branch.id} />
-      ) : (
-        pcSnapshot && pcSnapshot.stations.length > 0 && (
-          <LivePCStations
-            branchId={branch.id}
-            branchSlug={branch.slug}
-            initialStations={pcSnapshot.stations}
-            initialSyncedAt={pcSnapshot.lastSyncedAt}
-            canReserve={canReserveOnline}
-          />
-        )
+      {((pcSnapshot && pcSnapshot.stations.length > 0) || hasFloorplan) && (
+        <LivePCStations
+          branchId={branch.id}
+          branchSlug={branch.slug}
+          branchName={branch.name}
+          initialStations={pcSnapshot?.stations ?? []}
+          initialSyncedAt={pcSnapshot?.lastSyncedAt ?? null}
+          canReserve={canReserveOnline}
+          floorplan={floorplan}
+        />
       )}
 
       {/* ============================================================

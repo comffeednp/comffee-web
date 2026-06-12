@@ -1,11 +1,13 @@
 "use client";
 
-// Aerial floor plan for an internet-cafe branch — renders the layout the owner designed in the POS
-// (branch_floorplan_elements), replacing the old 1–12 PC grid. Phase 3b: reservable spots animate with
-// the live remaining time the POS pushes (live_status / live_ends_at). Ticks every second locally and
-// polls the branch's live fields so a session a staffer just started shows up within seconds.
+// Aerial floor plan for an internet-cafe branch — renders the exact layout the owner designed in the POS
+// (branch_floorplan_elements). Shown as a third "Layout" view alongside the live grid + map. Furniture
+// sits in a lit wooden room (fills the panel edge-to-edge, no letterboxing) so a customer can picture the
+// real space. Live time-remaining is shown on each spot: PCs read PanCafe state from `stations` (same feed
+// as the grid), while PS5 / tables read the POS floor-plan session fields (live_status / live_ends_at).
 import { useEffect, useState, type ReactNode } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import type { PCStation } from "@/lib/pc-stations";
 
 export interface FloorplanElement {
   id: string;
@@ -30,33 +32,68 @@ export interface FloorplanElement {
   live_ends_at?: string | null;
 }
 
-// On-brand dark palette (espresso surfaces + phosphor/mocha accents) — matches the site's terminal look
-// instead of flat paint colors. Muted dark fills, clear strokes for definition, cream text.
-const STYLE: Record<string, { fill: string; stroke: string; text: string }> = {
-  pc:           { fill: "#18241d", stroke: "#2da66a", text: "#dfeee6" },
-  ps5:          { fill: "#221b2b", stroke: "#7CFFB2", text: "#e7e0f0" },
-  table:        { fill: "#2e231b", stroke: "#8a7a68", text: "#f4ecdf" },
-  long_table:   { fill: "#2e231b", stroke: "#8a7a68", text: "#f4ecdf" },
-  chair:        { fill: "#241e18", stroke: "#5a4f43", text: "#c9bfae" },
-  gaming_chair: { fill: "#341c1a", stroke: "#b04a44", text: "#f0d8d4" },
-  counter:      { fill: "#262019", stroke: "#8a7a68", text: "#c9bfae" },
-  decor:        { fill: "#1a261a", stroke: "#2da66a", text: "#bcd6c2" },
-  door:         { fill: "#2a2016", stroke: "#8a7a68", text: "#c9bfae" },
-  restroom:     { fill: "#1a242c", stroke: "#5e7d96", text: "#bcd0dc" },
-  restroom_door:{ fill: "#1a242c", stroke: "#5e7d96", text: "#bcd0dc" },
-};
-
-function liveOf(el: FloorplanElement, now: number) {
-  if (!el.reservable || el.live_status !== "active" || !el.live_ends_at) return null;
-  const left = new Date(el.live_ends_at).getTime() - now;
-  if (left <= 0) return { over: true, text: "TIME UP", color: "#ff7a5c" };
-  const t = Math.round(left / 1000);
-  return { over: false, text: `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`, color: "#ffb547" };
-}
-
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-// Base footprint honouring the chosen shape (rect / round / L / C), used for counters + tables + decor.
+// ── Live state ────────────────────────────────────────────────────────────────
+// A spot is either free (reservable / vacant) or busy (a running session). PCs derive this from the live
+// PanCafe station feed; PS5 / dining tables derive it from the POS floor-plan session the staff started.
+type Live = { busy: boolean; over: boolean; text: string | null };
+
+const FREE = "#7CFFB2";
+const BUSY = "#ffb547";
+const OVER = "#ff7a5c";
+
+function fmt(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${sec}s`;
+}
+
+// Match a floor-plan PC element to its live PanCafe station. The POS labels PCs "PC 1".. and stores the
+// seat number in pc_station_id; PanCafe stations come back as station_name "PC 1".. — match on the trailing
+// number first (most robust), then on a normalised name.
+function numOf(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const m = String(s).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function stationFor(el: FloorplanElement, stations: PCStation[]): PCStation | undefined {
+  if (el.type !== "pc") return undefined;
+  const n = el.pc_station_id ?? numOf(el.label);
+  if (n != null) {
+    const byNum = stations.find((s) => numOf(s.station_name) === n);
+    if (byNum) return byNum;
+  }
+  const key = el.label.replace(/\s+/g, "").toLowerCase();
+  return stations.find((s) => s.station_name.replace(/\s+/g, "").toLowerCase() === key);
+}
+
+function liveFor(el: FloorplanElement, now: number, stations: PCStation[]): Live | null {
+  if (el.type === "pc") {
+    const st = stationFor(el, stations);
+    if (!st) return null; // PC not synced yet — show as static furniture
+    if (!st.is_occupied) return { busy: false, over: false, text: null };
+    if (st.current_session_ends_at) {
+      const left = new Date(st.current_session_ends_at).getTime() - now;
+      return { busy: true, over: left <= 0, text: left <= 0 ? "TIME UP" : fmt(left) };
+    }
+    if (st.is_member_session) return { busy: true, over: false, text: "MEMBER" };
+    if (st.current_session_amount_php != null && Number(st.current_session_amount_php) > 0)
+      return { busy: true, over: false, text: `₱${Number(st.current_session_amount_php).toFixed(0)}` };
+    return { busy: true, over: false, text: "IN USE" };
+  }
+  // PS5 / dining table / anything the POS floor-plan timer drives.
+  if (el.reservable && el.live_status === "active" && el.live_ends_at) {
+    const left = new Date(el.live_ends_at).getTime() - now;
+    return { busy: true, over: left <= 0, text: left <= 0 ? "TIME UP" : fmt(left) };
+  }
+  return null;
+}
+
+// ── Furniture ──────────────────────────────────────────────────────────────────
+// Footprint honouring the chosen shape (rect / round / L / C), used for counters + tables.
 function baseShape(el: FloorplanElement, fill: string, stroke: string, sw = 1.4) {
   const w = el.width, h = el.height;
   const common = { fill, stroke, strokeWidth: sw, filter: "url(#fpShadow)" };
@@ -73,40 +110,66 @@ function baseShape(el: FloorplanElement, fill: string, stroke: string, sw = 1.4)
   return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={Math.min(8, Math.min(w, h) / 5)} {...common} />;
 }
 
-// A simple top-down chair (seat + backrest), rotated to face a table edge.
-function Chair({ cx, cy, cw, ch, rot = 0, k }: { cx: number; cy: number; cw: number; ch: number; rot?: number; k: string }) {
+// Simple top-down dining chair (seat + backrest), faces a table edge via rot.
+function Chair({ cx, cy, cw, ch, rot = 0 }: { cx: number; cy: number; cw: number; ch: number; rot?: number }) {
   return (
-    <g key={k} transform={`translate(${cx} ${cy}) rotate(${rot})`}>
-      <rect x={-cw / 2} y={-ch / 2} width={cw} height={ch} rx={cw * 0.22} fill="#3a2e24" stroke="#221911" strokeWidth="0.6" />
-      <rect x={-cw / 2} y={ch / 2 - ch * 0.26} width={cw} height={ch * 0.26} rx={2} fill="#221911" />
+    <g transform={`translate(${cx} ${cy}) rotate(${rot})`}>
+      <rect x={-cw / 2} y={-ch / 2} width={cw} height={ch} rx={cw * 0.22} fill="#3a2e24" stroke="#1c1410" strokeWidth="0.6" />
+      <rect x={-cw / 2} y={ch / 2 - ch * 0.28} width={cw} height={ch * 0.28} rx={2} fill="#211711" />
     </g>
   );
 }
 
-// Detailed, realistic top-down furniture so customers can picture the space.
+// Top-down racing/gaming chair: contoured backrest with coloured bolster wings + headrest + seat cushion.
+function GamingChair({ cx, cy, w, h, rot = 0, accent = "#c0504a" }: { cx: number; cy: number; w: number; h: number; rot?: number; accent?: string }) {
+  return (
+    <g transform={`translate(${cx} ${cy}) rotate(${rot})`} filter="url(#fpShadow)">
+      {/* base / wheel spread */}
+      <ellipse cx={0} cy={h * 0.06} rx={w * 0.5} ry={h * 0.5} fill="#140d0b" opacity="0.85" />
+      {/* backrest shell */}
+      <rect x={-w * 0.44} y={-h / 2} width={w * 0.88} height={h * 0.56} rx={w * 0.2} fill="#241715" stroke="#0d0807" strokeWidth="0.8" />
+      {/* coloured side bolsters */}
+      <rect x={-w * 0.44} y={-h / 2 + h * 0.04} width={w * 0.18} height={h * 0.5} rx={w * 0.08} fill={accent} />
+      <rect x={w * 0.26} y={-h / 2 + h * 0.04} width={w * 0.18} height={h * 0.5} rx={w * 0.08} fill={accent} />
+      {/* headrest */}
+      <rect x={-w * 0.17} y={-h / 2 - h * 0.08} width={w * 0.34} height={h * 0.18} rx={3} fill={accent} stroke="#0d0807" strokeWidth="0.6" />
+      {/* seat cushion */}
+      <rect x={-w * 0.34} y={h * 0.02} width={w * 0.68} height={h * 0.44} rx={w * 0.14} fill="#2c1d19" />
+      <rect x={-w * 0.22} y={h * 0.08} width={w * 0.44} height={h * 0.3} rx={4} fill="#3a2620" />
+    </g>
+  );
+}
+
 function Furniture({ el }: { el: FloorplanElement }) {
   const w = el.width, h = el.height;
   switch (el.type) {
     case "pc": {
-      const deskH = h * 0.52, cs = Math.min(w * 0.55, h * 0.42);
+      const deskH = h * 0.5, gc = Math.min(w * 0.82, h * 0.5);
       return (
         <g>
-          <Chair k="c" cx={0} cy={h * 0.24} cw={cs} ch={h * 0.34} />
+          <GamingChair cx={0} cy={h * 0.26} w={gc} h={h * 0.42} />
+          {/* desk */}
           <rect x={-w / 2} y={-h / 2} width={w} height={deskH} rx={3} fill="url(#fpWood)" stroke="#241813" strokeWidth="1.2" filter="url(#fpShadow)" />
-          <rect x={-w * 0.3} y={-h / 2 + h * 0.05} width={w * 0.6} height={deskH * 0.4} rx={2} fill="#0c1612" stroke="#2da66a" strokeWidth="0.8" />
-          <rect x={-w * 0.27} y={-h / 2 + h * 0.08} width={w * 0.54} height={deskH * 0.28} rx={1} fill="#143a2c" />
-          <rect x={-w * 0.2} y={-h / 2 + deskH * 0.62} width={w * 0.4} height={deskH * 0.22} rx={2} fill="#2a2320" />
+          {/* monitor */}
+          <rect x={-w * 0.32} y={-h / 2 + h * 0.05} width={w * 0.64} height={deskH * 0.46} rx={2} fill="#0a1410" stroke="#2da66a" strokeWidth="0.9" filter="url(#fpScreen)" />
+          <rect x={-w * 0.28} y={-h / 2 + h * 0.08} width={w * 0.56} height={deskH * 0.3} rx={1} fill="#163f30" />
+          {/* keyboard */}
+          <rect x={-w * 0.22} y={-h / 2 + deskH * 0.66} width={w * 0.44} height={deskH * 0.2} rx={2} fill="#2a2320" stroke="#161210" strokeWidth="0.5" />
         </g>
       );
     }
     case "ps5": {
       return (
         <g>
-          <Chair k="s" cx={0} cy={h * 0.28} cw={w * 0.6} ch={h * 0.3} />
-          <rect x={-w / 2} y={-h / 2} width={w} height={h * 0.46} rx={3} fill="#141018" stroke="#0a0810" strokeWidth="1.2" filter="url(#fpShadow)" />
-          <rect x={-w * 0.34} y={-h / 2 + h * 0.06} width={w * 0.68} height={h * 0.3} rx={2} fill="#0c1612" stroke="#7CFFB2" strokeWidth="0.8" />
-          <rect x={-w * 0.3} y={-h / 2 + h * 0.09} width={w * 0.6} height={h * 0.2} fill="#10302a" />
-          <rect x={w * 0.2} y={h * 0.04} width={w * 0.2} height={h * 0.16} rx={2} fill="#e8e8ee" stroke="#9a9aa2" strokeWidth="0.6" />
+          <GamingChair cx={0} cy={h * 0.3} w={w * 0.78} h={h * 0.38} accent="#5a4cc0" />
+          {/* media unit */}
+          <rect x={-w / 2} y={-h / 2} width={w} height={h * 0.44} rx={3} fill="#141018" stroke="#0a0810" strokeWidth="1.2" filter="url(#fpShadow)" />
+          {/* TV */}
+          <rect x={-w * 0.36} y={-h / 2 + h * 0.05} width={w * 0.72} height={h * 0.3} rx={2} fill="#0a1410" stroke="#7CFFB2" strokeWidth="0.9" filter="url(#fpScreen)" />
+          <rect x={-w * 0.32} y={-h / 2 + h * 0.08} width={w * 0.64} height={h * 0.2} fill="#123630" />
+          {/* console tower */}
+          <rect x={w * 0.22} y={h * 0.02} width={w * 0.18} height={h * 0.18} rx={2} fill="#eef0f4" stroke="#9a9aa2" strokeWidth="0.6" />
+          <line x1={w * 0.31} y1={h * 0.02} x2={w * 0.31} y2={h * 0.2} stroke="#3a4cc0" strokeWidth="1.2" />
         </g>
       );
     }
@@ -116,18 +179,18 @@ function Furniture({ el }: { el: FloorplanElement }) {
       const cw = Math.min(w, h) * 0.22, ch = Math.min(w, h) * 0.22;
       if (el.type === "table") {
         chairs.push(
-          <Chair k="t" cx={0} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
-          <Chair k="b" cx={0} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
-          <Chair k="l" cx={-w / 2 + cw * 0.4} cy={0} cw={ch} ch={cw} rot={90} />,
-          <Chair k="r" cx={w / 2 - cw * 0.4} cy={0} cw={ch} ch={cw} rot={270} />,
+          <Chair key="t" cx={0} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
+          <Chair key="b" cx={0} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
+          <Chair key="l" cx={-w / 2 + cw * 0.4} cy={0} cw={ch} ch={cw} rot={90} />,
+          <Chair key="r" cx={w / 2 - cw * 0.4} cy={0} cw={ch} ch={cw} rot={270} />,
         );
       } else {
         const n = Math.max(2, Math.floor(w / 46));
         for (let i = 0; i < n; i++) {
           const x = -w / 2 + (w / (n + 1)) * (i + 1);
           chairs.push(
-            <Chair k={`tt${i}`} cx={x} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
-            <Chair k={`bb${i}`} cx={x} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
+            <Chair key={`tt${i}`} cx={x} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
+            <Chair key={`bb${i}`} cx={x} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
           );
         }
       }
@@ -149,15 +212,9 @@ function Furniture({ el }: { el: FloorplanElement }) {
         </g>
       );
     case "chair":
-      return <Chair k="c" cx={0} cy={0} cw={w} ch={h} />;
+      return <Chair cx={0} cy={0} cw={w} ch={h} />;
     case "gaming_chair":
-      return (
-        <g filter="url(#fpShadow)">
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={w * 0.25} fill="#341c1a" stroke="#1c0e0c" strokeWidth="1" />
-          <rect x={-w * 0.4} y={-h / 2} width={w * 0.8} height={h * 0.24} rx={3} fill="#b04a44" />
-          <rect x={-w * 0.34} y={-h * 0.05} width={w * 0.68} height={h * 0.42} rx={4} fill="#241412" />
-        </g>
-      );
+      return <GamingChair cx={0} cy={0} w={w} h={h} />;
     case "door":
     case "restroom_door": {
       const wood = el.type === "door" ? "#6b4f33" : "#3a5066";
@@ -179,7 +236,7 @@ function Furniture({ el }: { el: FloorplanElement }) {
         </g>
       );
     default: {
-      if (el.shape === "rect") return baseShape(el, "#3a322a", "#241c16", 1.2); // wall
+      if (el.shape === "rect") return baseShape(el, "#3a322a", "#241c16", 1.2); // wall segment
       return (
         <g filter="url(#fpShadow)">
           <ellipse rx={w / 2} ry={h / 2} fill="#16210f" stroke="#243018" />
@@ -195,10 +252,12 @@ export default function BranchFloorPlan({
   elements: initial,
   branchName,
   branchId,
+  stations = [],
 }: {
   elements: FloorplanElement[];
   branchName: string;
   branchId: string;
+  stations?: PCStation[];
 }) {
   const [elements, setElements] = useState(initial);
   const [now, setNow] = useState(() => Date.now());
@@ -258,7 +317,7 @@ export default function BranchFloorPlan({
     return () => clearInterval(t);
   }, []);
 
-  // Poll the branch's live fields so a session a staffer just started appears within seconds.
+  // Poll the branch's live fields so a PS5/table session a staffer just started appears within seconds.
   useEffect(() => {
     let stop = false;
     let supabase: ReturnType<typeof getSupabaseBrowser>;
@@ -282,88 +341,165 @@ export default function BranchFloorPlan({
 
   if (!elements || elements.length === 0) return null;
 
-  const pad = 60;
+  // ── Bounds → room → viewBox. Rotated AABB per element keeps tall PCs from over-padding the width.
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of elements) {
-    const hw = Math.max(el.width, el.height) / 2;
-    minX = Math.min(minX, el.x - hw); minY = Math.min(minY, el.y - hw);
-    maxX = Math.max(maxX, el.x + hw); maxY = Math.max(maxY, el.y + hw);
+    const r = (el.rotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(r)), sin = Math.abs(Math.sin(r));
+    const halfW = (el.width * cos + el.height * sin) / 2;
+    const halfH = (el.width * sin + el.height * cos) / 2;
+    minX = Math.min(minX, el.x - halfW); maxX = Math.max(maxX, el.x + halfW);
+    minY = Math.min(minY, el.y - halfH); maxY = Math.max(maxY, el.y + halfH);
   }
-  const vbX = minX - pad, vbY = minY - pad;
-  const vbW = Math.max(200, maxX - minX + pad * 2), vbH = Math.max(160, maxY - minY + pad * 2);
+  const ROOM = 30; // walking margin between furniture and the wall
+  const OUT = 14;  // thin dark frame outside the wall
+  const roomX = minX - ROOM, roomY = minY - ROOM;
+  const roomW = maxX - minX + ROOM * 2, roomH = maxY - minY + ROOM * 2;
+  const vbX = roomX - OUT, vbY = roomY - OUT;
+  const vbW = roomW + OUT * 2, vbH = roomH + OUT * 2;
+
   const sorted = [...elements].sort((a, b) => a.z_index - b.z_index);
-  const activeCount = elements.filter((e) => liveOf(e, now)).length;
+  const liveMap = new Map(elements.map((e) => [e.id, liveFor(e, now, stations)] as const));
+  const busyCount = [...liveMap.values()].filter((l) => l?.busy).length;
+  const showLabel = (t: string) => t === "pc" || t === "ps5";
 
   return (
-    <section className="container-edge py-20 md:py-28" aria-label="Cafe floor plan">
-      <p className="terminal-label">floor.plan</p>
-      <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">Find your spot</h2>
+    <div className="w-full">
       <p className="mt-4 text-cream-dim max-w-2xl">
-        The real layout of {branchName}. A glowing dot marks what you can reserve
-        {activeCount > 0 ? `, and ${activeCount} spot${activeCount > 1 ? "s are" : " is"} in use right now with the time left shown.` : "."}
+        The real layout of {branchName} from above. A glowing dot marks what you can reserve
+        {busyCount > 0 ? `, and ${busyCount} spot${busyCount > 1 ? "s are" : " is"} in use right now with the time left shown.` : "."}
       </p>
 
-      <div className="mt-10 rounded-2xl border border-line-bright bg-bg-card p-3 md:p-5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-        <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} preserveAspectRatio="xMidYMid meet" className="w-full" style={{ aspectRatio: `${vbW} / ${vbH}`, maxHeight: "80vh" }} role="img" aria-label={`Floor plan of ${branchName}`}>
-          <defs>
-            <filter id="fpShadow" x="-40%" y="-40%" width="180%" height="180%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
-            </filter>
-            <filter id="fpGlow" x="-80%" y="-80%" width="260%" height="260%">
-              <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#7CFFB2" floodOpacity="0.95" />
-            </filter>
-            <linearGradient id="fpWood" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#6e5235" />
-              <stop offset="0.5" stopColor="#5a4129" />
-              <stop offset="1" stopColor="#46311e" />
-            </linearGradient>
-            <pattern id="fpGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#ffffff" strokeOpacity="0.04" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect x={vbX} y={vbY} width={vbW} height={vbH} fill="url(#fpGrid)" />
-          {sorted.map((el) => {
-            const s = STYLE[el.type] ?? STYLE.decor;
-            const live = liveOf(el, now);
-            const fontSize = Math.max(8, Math.min(12, el.height / 3.4));
-            return (
-              <g
-                key={el.id}
-                transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}
-                onClick={canBook(el) ? () => openBook(el) : undefined}
-                style={{ cursor: canBook(el) ? "pointer" : "default" }}
-              >
-                <Furniture el={el} />
-                {live && (
-                  <rect x={-el.width / 2} y={-el.height / 2} width={el.width} height={el.height} rx={Math.min(10, Math.min(el.width, el.height) / 4)} fill="none" stroke={live.color} strokeWidth={2.5} />
-                )}
-                {el.label && (
-                  <text x={0} y={live ? -2 : fontSize / 3} textAnchor="middle" fontSize={fontSize} fontWeight={700} fill={s.text} fontFamily={MONO} letterSpacing="0.5" style={{ pointerEvents: "none" }}>
-                    {el.label.toUpperCase()}
-                  </text>
-                )}
-                {live && (
-                  <text x={0} y={el.height / 2 - 4} textAnchor="middle" fontSize={Math.max(9, Math.min(12, el.height / 3.4))} fontWeight={700} fill={live.color} fontFamily={MONO} style={{ pointerEvents: "none" }}>
-                    {live.text}
-                  </text>
-                )}
-                {!live && el.reservable && (
-                  <circle className="animate-pulse" cx={el.width / 2 - 6} cy={-el.height / 2 + 6} r={3} fill="#7CFFB2" filter="url(#fpGlow)" />
-                )}
-              </g>
-            );
-          })}
-        </svg>
+      <div className="mt-6 rounded-2xl border border-line-bright bg-[#0b0907] p-2 md:p-3 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_60px_-24px_rgba(0,0,0,0.8)]">
+        <div className="relative w-full overflow-hidden rounded-xl" style={{ aspectRatio: `${vbW} / ${vbH}` }}>
+          <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full" role="img" aria-label={`Floor plan of ${branchName}`}>
+            <defs>
+              <filter id="fpShadow" x="-40%" y="-40%" width="180%" height="180%">
+                <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.5" />
+              </filter>
+              <filter id="fpScreen" x="-60%" y="-60%" width="220%" height="220%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#2da66a" floodOpacity="0.6" />
+              </filter>
+              <filter id="fpGlow" x="-120%" y="-120%" width="340%" height="340%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#7CFFB2" floodOpacity="0.95" />
+              </filter>
+              <linearGradient id="fpWood" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#6e5235" />
+                <stop offset="0.5" stopColor="#5a4129" />
+                <stop offset="1" stopColor="#46311e" />
+              </linearGradient>
+              {/* warm, softly-lit wooden floor */}
+              <radialGradient id="fpFloor" cx="0.5" cy="0.42" r="0.75">
+                <stop offset="0" stopColor="#2b2018" />
+                <stop offset="0.6" stopColor="#1f1610" />
+                <stop offset="1" stopColor="#140d09" />
+              </radialGradient>
+              <radialGradient id="fpVignette" cx="0.5" cy="0.5" r="0.72">
+                <stop offset="0.55" stopColor="#000" stopOpacity="0" />
+                <stop offset="1" stopColor="#000" stopOpacity="0.45" />
+              </radialGradient>
+              {/* plank seams */}
+              <pattern id="fpPlank" width={Math.max(40, roomW)} height="30" patternUnits="userSpaceOnUse" x={roomX} y={roomY}>
+                <line x1="0" y1="0" x2={Math.max(40, roomW)} y2="0" stroke="#000" strokeOpacity="0.22" strokeWidth="1.4" />
+                <line x1="0" y1="1.4" x2={Math.max(40, roomW)} y2="1.4" stroke="#fff" strokeOpacity="0.03" strokeWidth="1" />
+              </pattern>
+            </defs>
+
+            {/* dark frame */}
+            <rect x={vbX} y={vbY} width={vbW} height={vbH} fill="#0b0907" />
+            {/* room: floor + planks + walls + vignette */}
+            <rect x={roomX} y={roomY} width={roomW} height={roomH} rx={14} fill="url(#fpFloor)" />
+            <rect x={roomX} y={roomY} width={roomW} height={roomH} rx={14} fill="url(#fpPlank)" />
+            <rect x={roomX + 3} y={roomY + 3} width={roomW - 6} height={roomH - 6} rx={12} fill="none" stroke="#0d0907" strokeWidth="1" strokeOpacity="0.6" />
+            <rect x={roomX} y={roomY} width={roomW} height={roomH} rx={14} fill="none" stroke="#3a2c20" strokeWidth="4" />
+            <rect x={roomX + 6} y={roomY + 6} width={roomW - 12} height={roomH - 12} rx={10} fill="none" stroke="#6b4f33" strokeWidth="1" strokeOpacity="0.3" />
+
+            {sorted.map((el) => {
+              const live = liveMap.get(el.id) ?? null;
+              const bookable = canBook(el) && !live?.busy;
+              const ringColor = live?.busy ? (live.over ? OVER : BUSY) : null;
+              const fontSize = Math.max(7, Math.min(11, Math.min(el.width, el.height) / 3.6));
+              const half = Math.min(el.width, el.height);
+              return (
+                <g
+                  key={el.id}
+                  transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}
+                  onClick={bookable ? () => openBook(el) : undefined}
+                  style={{ cursor: bookable ? "pointer" : "default" }}
+                >
+                  <Furniture el={el} />
+
+                  {/* live status ring */}
+                  {ringColor && (
+                    el.shape === "round"
+                      ? <ellipse rx={el.width / 2 + 2} ry={el.height / 2 + 2} fill="none" stroke={ringColor} strokeWidth={2.5} />
+                      : <rect x={-el.width / 2 - 2} y={-el.height / 2 - 2} width={el.width + 4} height={el.height + 4} rx={Math.min(10, half / 4)} fill="none" stroke={ringColor} strokeWidth={2.5} />
+                  )}
+
+                  {/* label — only PCs + PS5 carry a name; furniture stays clean */}
+                  {showLabel(el.type) && el.label && (
+                    <text
+                      x={0}
+                      y={-el.height / 2 + fontSize + 2}
+                      textAnchor="middle"
+                      transform={`rotate(${-el.rotation})`}
+                      fontSize={fontSize}
+                      fontWeight={700}
+                      fill="#f4ecdf"
+                      fontFamily={MONO}
+                      letterSpacing="0.5"
+                      stroke="#000"
+                      strokeWidth={2.4}
+                      strokeOpacity={0.55}
+                      paintOrder="stroke"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      {el.label.toUpperCase()}
+                    </text>
+                  )}
+
+                  {/* time remaining */}
+                  {live?.busy && live.text && (
+                    <text
+                      x={0}
+                      y={el.height / 2 - 4}
+                      textAnchor="middle"
+                      transform={`rotate(${-el.rotation})`}
+                      fontSize={Math.max(8, fontSize)}
+                      fontWeight={700}
+                      fill={live.over ? OVER : BUSY}
+                      fontFamily={MONO}
+                      stroke="#000"
+                      strokeWidth={2.4}
+                      strokeOpacity={0.6}
+                      paintOrder="stroke"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      {live.text}
+                    </text>
+                  )}
+
+                  {/* availability dot — bookable spot OR a free PC */}
+                  {(bookable || (el.type === "pc" && live && !live.busy)) && (
+                    <circle className="animate-pulse" cx={el.width / 2 - 5} cy={-el.height / 2 + 5} r={3} fill={FREE} filter="url(#fpGlow)" />
+                  )}
+                </g>
+              );
+            })}
+
+            <rect x={roomX} y={roomY} width={roomW} height={roomH} rx={14} fill="url(#fpVignette)" pointerEvents="none" />
+          </svg>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-        {elements.some(canBook) && (
+        {(elements.some(canBook) || stations.some((s) => !s.is_occupied)) && (
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-phosphor shadow-[0_0_6px_var(--color-phosphor)]" />
-            <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">Reservable — tap to book</span>
+            <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">Available — tap a spot to reserve</span>
           </div>
         )}
-        {activeCount > 0 && (
+        {busyCount > 0 && (
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-amber shadow-[0_0_6px_var(--color-amber)]" />
             <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">In use — time left shown</span>
@@ -404,7 +540,7 @@ export default function BranchFloorPlan({
               {bMsg && <p className="text-sm text-amber">{bMsg}</p>}
             </div>
             <div className="mt-5 flex gap-2">
-              <button className="flex-1 rounded-lg border border-line py-2 text-cream-dim" onClick={() => setBook(null)} disabled={bBusy} title="Cancel">Cancel</button>
+              <button className="flex-1 rounded-lg border border-line py-2 text-cream-dim" onClick={() => setBook(null)} disabled={bBusy} title="Cancel reservation">Cancel</button>
               <button className="flex-1 rounded-lg bg-phosphor py-2 font-semibold text-bg disabled:opacity-60" onClick={submitBook} disabled={bBusy} title="Confirm reservation">
                 {bBusy ? "…" : book.billing_mode === "time_rate" ? "Pay & reserve" : "Reserve"}
               </button>
@@ -412,6 +548,6 @@ export default function BranchFloorPlan({
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
