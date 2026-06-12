@@ -302,15 +302,18 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
   return (data ?? []) as ChatMessage[];
 }
 
-export async function listConversations(branchId?: string | null): Promise<(ChatConversation & { branch_name?: string | null; unread: boolean })[]> {
+export async function listConversations(branchId?: string | string[] | null): Promise<(ChatConversation & { branch_name?: string | null; unread: boolean })[]> {
   const supabase = getSupabaseAdmin();
   let convQ = supabase
     .from("chat_conversations")
     .select("*, branches(name)")
     .order("last_message_at", { ascending: false })
     .limit(200);
-  // Branch-partners only see their branch's conversations.
-  if (branchId) convQ = convQ.eq("branch_id", branchId) as typeof convQ;
+  // Branch-partners only see their branch's conversations. An ARRAY = a chat
+  // manager covering several branches (branch_chat_managers rows); an empty
+  // array must match NOTHING (fail closed), never fall through to "all".
+  if (Array.isArray(branchId)) convQ = convQ.in("branch_id", branchId.length ? branchId : ["00000000-0000-0000-0000-000000000000"]) as typeof convQ;
+  else if (branchId) convQ = convQ.eq("branch_id", branchId) as typeof convQ;
   const [{ data: rows }, { data: activeIds }] = await Promise.all([
     convQ,
     supabase

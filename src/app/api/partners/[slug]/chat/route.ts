@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listConversations, listMessages, markConversationSeen, postAdminMessage } from "@/lib/chat";
+import { canAccessConversationById } from "@/lib/chat-access";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -70,14 +71,10 @@ export async function GET(
     return NextResponse.json({ ok: true, conversations });
   }
 
-  // Opening a conversation marks it seen + verify it really belongs to this branch before showing it.
+  // Opening a conversation marks it seen + verify it really belongs to this branch before showing it
+  // (the same shared decision point the manager /inbox uses — see lib/chat-access).
   const admin = getSupabaseAdmin();
-  const { data: conv } = await admin
-    .from("chat_conversations")
-    .select("id, branch_id")
-    .eq("id", conversationId)
-    .maybeSingle();
-  if (!conv || conv.branch_id !== who.branchId) {
+  if (!(await canAccessConversationById(admin, [who.branchId], conversationId))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   await markConversationSeen(conversationId);
@@ -110,14 +107,9 @@ export async function POST(
   }
 
   // Confirm the conversation is this branch's before replying — a crafted id must not let a staffer
-  // post into another branch's thread.
+  // post into another branch's thread (shared decision point, see lib/chat-access).
   const admin = getSupabaseAdmin();
-  const { data: conv } = await admin
-    .from("chat_conversations")
-    .select("id, branch_id")
-    .eq("id", parsed.data.conversationId)
-    .maybeSingle();
-  if (!conv || conv.branch_id !== who.branchId) {
+  if (!(await canAccessConversationById(admin, [who.branchId], parsed.data.conversationId))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
