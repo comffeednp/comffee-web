@@ -41,6 +41,7 @@ const STYLE: Record<string, { fill: string; stroke: string; text: string }> = {
   decor: { fill: "#7fae6a", stroke: "#4e7a3a", text: "#22311a" },
   door: { fill: "#c9a36b", stroke: "#6b4f2a", text: "#3a2a12" },
   restroom: { fill: "#bcd3e6", stroke: "#5e7d96", text: "#24414f" },
+  restroom_door: { fill: "#9fb8cc", stroke: "#5e7d96", text: "#24414f" },
 };
 
 function liveOf(el: FloorplanElement, now: number) {
