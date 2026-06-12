@@ -61,6 +61,11 @@ function ShapeEl({ el }: { el: FloorplanElement }) {
     const pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 6], [-w / 6, -h / 6], [-w / 6, h / 2], [-w / 2, h / 2]].map((p) => p.join(",")).join(" ");
     return <polygon points={pts} {...common} />;
   }
+  if (el.shape === "C") {
+    const t = Math.max(10, Math.min(w, h) * 0.3);
+    const pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 2 + t], [-w / 2 + t, -h / 2 + t], [-w / 2 + t, h / 2 - t], [w / 2, h / 2 - t], [w / 2, h / 2], [-w / 2, h / 2]].map((p) => p.join(",")).join(" ");
+    return <polygon points={pts} {...common} />;
+  }
   return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={Math.min(10, Math.min(w, h) / 4)} {...common} />;
 }
 
