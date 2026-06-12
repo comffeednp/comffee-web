@@ -210,6 +210,105 @@ export async function getPaymentLink(id: string) {
   return res.json();
 }
 
+// ── Dynamic QR Ph payment intents (PLATFORM key) ────────────────────────────
+// The same intent → qrph method → attach flow Clockwork's counter runs against
+// the BRANCH key — here on the PLATFORM account, for charges whose money is
+// COMFFEE'S (AI token top-ups, owner 2026-06-12: "token payments go directly
+// to me, same as the package payment"). Returns a base64 QR Ph image the
+// customer scans straight from the seat with GCash/Maya/any bank app.
+
+export interface QrPhIntent {
+  id: string;            // payment intent id (pi_…) — the durable reference
+  qrImage: string;       // base64 PNG data URL of the QR Ph code
+  expiresAt: number;     // ms epoch (QR Ph codes live ~10 minutes)
+  amount: number;        // centavos, echoed from PayMongo
+  testUrl: string | null; // test mode only — settles the charge without a bank app
+}
+
+export async function createQrPhIntent(input: {
+  amountCentavos: number;
+  description: string;
+  metadata?: Record<string, string>;
+}): Promise<QrPhIntent> {
+  const headers = {
+    Authorization: authHeader(),
+    "Content-Type": "application/json",
+  };
+  const post = async (path: string, attributes: unknown) => {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ data: { attributes } }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = Array.isArray(json?.errors)
+        ? json.errors.map((e: { detail?: string; code?: string }) => e.detail || e.code).join("; ")
+        : `HTTP ${res.status}`;
+      throw new Error(`paymongo ${path}: ${detail}`);
+    }
+    return json;
+  };
+
+  const intent = await post("/payment_intents", {
+    amount: Math.trunc(input.amountCentavos),
+    currency: "PHP",
+    payment_method_allowed: ["qrph"],
+    capture_type: "automatic",
+    description: input.description,
+    metadata: input.metadata ?? {},
+  });
+  const intentId: string = intent.data?.id;
+  const clientKey: string = intent.data?.attributes?.client_key;
+  if (!intentId) throw new Error("paymongo: no payment_intent id");
+
+  const pm = await post("/payment_methods", {
+    type: "qrph",
+    billing: { name: "Comffee Customer", email: "pay@comffee.org" },
+  });
+  const pmId: string = pm.data?.id;
+  if (!pmId) throw new Error("paymongo: no payment_method id");
+
+  const attached = await post(`/payment_intents/${intentId}/attach`, {
+    payment_method: pmId,
+    client_key: clientKey,
+  });
+  const a = attached.data?.attributes ?? {};
+  const code = a.next_action?.code ?? {};
+  if (!code.image_url) throw new Error(`paymongo: attach returned no QR (status=${a.status ?? "?"})`);
+  const exp = code.expires_at ? Date.parse(code.expires_at) : NaN;
+  return {
+    id: intentId,
+    qrImage: code.image_url,
+    expiresAt: Number.isNaN(exp) ? Date.now() + 10 * 60000 : exp,
+    amount: typeof a.amount === "number" ? a.amount : Math.trunc(input.amountCentavos),
+    testUrl: code.test_url ?? null,
+  };
+}
+
+/** Poll a platform payment intent. paid = succeeded (or a payment marked paid). */
+export async function getQrPhIntentStatus(intentId: string): Promise<{
+  status: string;
+  paid: boolean;
+  paymentId: string | null;
+  metadata: Record<string, string>;
+}> {
+  const res = await fetch(`${API_BASE}/payment_intents/${intentId}`, {
+    headers: { Authorization: authHeader() },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`paymongo intent lookup: HTTP ${res.status}`);
+  const a = json.data?.attributes ?? {};
+  const payments: { id: string; attributes?: { status?: string } }[] = Array.isArray(a.payments) ? a.payments : [];
+  const paidPayment = payments.find((p) => p?.attributes?.status === "paid");
+  return {
+    status: a.status ?? "unknown",
+    paid: a.status === "succeeded" || !!paidPayment,
+    paymentId: paidPayment?.id ?? null,
+    metadata: (a.metadata ?? {}) as Record<string, string>,
+  };
+}
+
 export interface RefundInput {
   paymentId: string;
   amountPhp: number;
