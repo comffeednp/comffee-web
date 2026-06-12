@@ -4,7 +4,7 @@
 // (branch_floorplan_elements), replacing the old 1–12 PC grid. Phase 3b: reservable spots animate with
 // the live remaining time the POS pushes (live_status / live_ends_at). Ticks every second locally and
 // polls the branch's live fields so a session a staffer just started shows up within seconds.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export interface FloorplanElement {
@@ -56,21 +56,139 @@ function liveOf(el: FloorplanElement, now: number) {
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-function ShapeEl({ el }: { el: FloorplanElement }) {
-  const s = STYLE[el.type] ?? STYLE.decor;
+// Base footprint honouring the chosen shape (rect / round / L / C), used for counters + tables + decor.
+function baseShape(el: FloorplanElement, fill: string, stroke: string, sw = 1.4) {
   const w = el.width, h = el.height;
-  const common = { fill: s.fill, stroke: s.stroke, strokeWidth: 1.5, filter: "url(#fpShadow)" };
+  const common = { fill, stroke, strokeWidth: sw, filter: "url(#fpShadow)" };
   if (el.shape === "round") return <ellipse cx={0} cy={0} rx={w / 2} ry={h / 2} {...common} />;
   if (el.shape === "L") {
-    const pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 6], [-w / 6, -h / 6], [-w / 6, h / 2], [-w / 2, h / 2]].map((p) => p.join(",")).join(" ");
-    return <polygon points={pts} {...common} />;
+    const p = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 6], [-w / 6, -h / 6], [-w / 6, h / 2], [-w / 2, h / 2]].map((q) => q.join(",")).join(" ");
+    return <polygon points={p} {...common} />;
   }
   if (el.shape === "C") {
     const t = Math.max(10, Math.min(w, h) * 0.3);
-    const pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 2 + t], [-w / 2 + t, -h / 2 + t], [-w / 2 + t, h / 2 - t], [w / 2, h / 2 - t], [w / 2, h / 2], [-w / 2, h / 2]].map((p) => p.join(",")).join(" ");
-    return <polygon points={pts} {...common} />;
+    const p = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, -h / 2 + t], [-w / 2 + t, -h / 2 + t], [-w / 2 + t, h / 2 - t], [w / 2, h / 2 - t], [w / 2, h / 2], [-w / 2, h / 2]].map((q) => q.join(",")).join(" ");
+    return <polygon points={p} {...common} />;
   }
-  return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={Math.min(10, Math.min(w, h) / 4)} {...common} />;
+  return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={Math.min(8, Math.min(w, h) / 5)} {...common} />;
+}
+
+// A simple top-down chair (seat + backrest), rotated to face a table edge.
+function Chair({ cx, cy, cw, ch, rot = 0, k }: { cx: number; cy: number; cw: number; ch: number; rot?: number; k: string }) {
+  return (
+    <g key={k} transform={`translate(${cx} ${cy}) rotate(${rot})`}>
+      <rect x={-cw / 2} y={-ch / 2} width={cw} height={ch} rx={cw * 0.22} fill="#3a2e24" stroke="#221911" strokeWidth="0.6" />
+      <rect x={-cw / 2} y={ch / 2 - ch * 0.26} width={cw} height={ch * 0.26} rx={2} fill="#221911" />
+    </g>
+  );
+}
+
+// Detailed, realistic top-down furniture so customers can picture the space.
+function Furniture({ el }: { el: FloorplanElement }) {
+  const w = el.width, h = el.height;
+  switch (el.type) {
+    case "pc": {
+      const deskH = h * 0.52, cs = Math.min(w * 0.55, h * 0.42);
+      return (
+        <g>
+          <Chair k="c" cx={0} cy={h * 0.24} cw={cs} ch={h * 0.34} />
+          <rect x={-w / 2} y={-h / 2} width={w} height={deskH} rx={3} fill="url(#fpWood)" stroke="#241813" strokeWidth="1.2" filter="url(#fpShadow)" />
+          <rect x={-w * 0.3} y={-h / 2 + h * 0.05} width={w * 0.6} height={deskH * 0.4} rx={2} fill="#0c1612" stroke="#2da66a" strokeWidth="0.8" />
+          <rect x={-w * 0.27} y={-h / 2 + h * 0.08} width={w * 0.54} height={deskH * 0.28} rx={1} fill="#143a2c" />
+          <rect x={-w * 0.2} y={-h / 2 + deskH * 0.62} width={w * 0.4} height={deskH * 0.22} rx={2} fill="#2a2320" />
+        </g>
+      );
+    }
+    case "ps5": {
+      return (
+        <g>
+          <Chair k="s" cx={0} cy={h * 0.28} cw={w * 0.6} ch={h * 0.3} />
+          <rect x={-w / 2} y={-h / 2} width={w} height={h * 0.46} rx={3} fill="#141018" stroke="#0a0810" strokeWidth="1.2" filter="url(#fpShadow)" />
+          <rect x={-w * 0.34} y={-h / 2 + h * 0.06} width={w * 0.68} height={h * 0.3} rx={2} fill="#0c1612" stroke="#7CFFB2" strokeWidth="0.8" />
+          <rect x={-w * 0.3} y={-h / 2 + h * 0.09} width={w * 0.6} height={h * 0.2} fill="#10302a" />
+          <rect x={w * 0.2} y={h * 0.04} width={w * 0.2} height={h * 0.16} rx={2} fill="#e8e8ee" stroke="#9a9aa2" strokeWidth="0.6" />
+        </g>
+      );
+    }
+    case "table":
+    case "long_table": {
+      const chairs: ReactNode[] = [];
+      const cw = Math.min(w, h) * 0.22, ch = Math.min(w, h) * 0.22;
+      if (el.type === "table") {
+        chairs.push(
+          <Chair k="t" cx={0} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
+          <Chair k="b" cx={0} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
+          <Chair k="l" cx={-w / 2 + cw * 0.4} cy={0} cw={ch} ch={cw} rot={90} />,
+          <Chair k="r" cx={w / 2 - cw * 0.4} cy={0} cw={ch} ch={cw} rot={270} />,
+        );
+      } else {
+        const n = Math.max(2, Math.floor(w / 46));
+        for (let i = 0; i < n; i++) {
+          const x = -w / 2 + (w / (n + 1)) * (i + 1);
+          chairs.push(
+            <Chair k={`tt${i}`} cx={x} cy={-h / 2 + ch * 0.4} cw={cw} ch={ch} rot={180} />,
+            <Chair k={`bb${i}`} cx={x} cy={h / 2 - ch * 0.4} cw={cw} ch={ch} />,
+          );
+        }
+      }
+      return (
+        <g>
+          {chairs}
+          {baseShape(el, "url(#fpWood)", "#241813")}
+          {el.shape === "round"
+            ? <ellipse rx={w * 0.36} ry={h * 0.36} fill="none" stroke="#8a6a45" strokeOpacity="0.35" />
+            : <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} rx={4} fill="none" stroke="#8a6a45" strokeOpacity="0.3" />}
+        </g>
+      );
+    }
+    case "counter":
+      return (
+        <g>
+          {baseShape(el, "url(#fpWood)", "#241813")}
+          {baseShape({ ...el, width: w * 0.74, height: h * 0.74 }, "none", "#8a6a45", 1)}
+        </g>
+      );
+    case "chair":
+      return <Chair k="c" cx={0} cy={0} cw={w} ch={h} />;
+    case "gaming_chair":
+      return (
+        <g filter="url(#fpShadow)">
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={w * 0.25} fill="#341c1a" stroke="#1c0e0c" strokeWidth="1" />
+          <rect x={-w * 0.4} y={-h / 2} width={w * 0.8} height={h * 0.24} rx={3} fill="#b04a44" />
+          <rect x={-w * 0.34} y={-h * 0.05} width={w * 0.68} height={h * 0.42} rx={4} fill="#241412" />
+        </g>
+      );
+    case "door":
+    case "restroom_door": {
+      const wood = el.type === "door" ? "#6b4f33" : "#3a5066";
+      return (
+        <g>
+          <rect x={-w / 2} y={-h / 2} width={w * 0.12} height={h} fill="#2a2018" />
+          <rect x={w / 2 - w * 0.12} y={-h / 2} width={w * 0.12} height={h} fill="#2a2018" />
+          <rect x={-w / 2 + w * 0.12} y={-h * 0.2} width={w * 0.76} height={h * 0.4} rx={1} fill={wood} stroke="#1c140c" strokeWidth="0.8" filter="url(#fpShadow)" />
+          <path d={`M ${-w / 2 + w * 0.12} ${h * 0.2} A ${w * 0.76} ${w * 0.76} 0 0 1 ${w / 2 - w * 0.12} ${-h * 0.55}`} fill="none" stroke="#8a7a68" strokeOpacity="0.4" strokeDasharray="3 3" strokeWidth="0.8" />
+        </g>
+      );
+    }
+    case "restroom":
+      return (
+        <g>
+          {baseShape(el, "#1a242c", "#5e7d96")}
+          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke="#5e7d96" strokeOpacity="0.22" />
+          <line x1={0} y1={-h / 2} x2={0} y2={h / 2} stroke="#5e7d96" strokeOpacity="0.22" />
+        </g>
+      );
+    default: {
+      if (el.shape === "rect") return baseShape(el, "#3a322a", "#241c16", 1.2); // wall
+      return (
+        <g filter="url(#fpShadow)">
+          <ellipse rx={w / 2} ry={h / 2} fill="#16210f" stroke="#243018" />
+          <circle r={Math.min(w, h) * 0.3} fill="#2e6b3a" />
+          <circle r={Math.min(w, h) * 0.15} fill="#46a055" />
+        </g>
+      );
+    }
+  }
 }
 
 export default function BranchFloorPlan({
@@ -164,7 +282,7 @@ export default function BranchFloorPlan({
 
   if (!elements || elements.length === 0) return null;
 
-  const pad = 40;
+  const pad = 60;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of elements) {
     const hw = Math.max(el.width, el.height) / 2;
@@ -186,7 +304,7 @@ export default function BranchFloorPlan({
       </p>
 
       <div className="mt-10 rounded-2xl border border-line-bright bg-bg-card p-3 md:p-5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-        <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} className="w-full h-auto" style={{ maxHeight: 620 }} role="img" aria-label={`Floor plan of ${branchName}`}>
+        <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} preserveAspectRatio="xMidYMid meet" className="w-full" style={{ aspectRatio: `${vbW} / ${vbH}`, maxHeight: "80vh" }} role="img" aria-label={`Floor plan of ${branchName}`}>
           <defs>
             <filter id="fpShadow" x="-40%" y="-40%" width="180%" height="180%">
               <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
@@ -194,6 +312,11 @@ export default function BranchFloorPlan({
             <filter id="fpGlow" x="-80%" y="-80%" width="260%" height="260%">
               <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#7CFFB2" floodOpacity="0.95" />
             </filter>
+            <linearGradient id="fpWood" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#6e5235" />
+              <stop offset="0.5" stopColor="#5a4129" />
+              <stop offset="1" stopColor="#46311e" />
+            </linearGradient>
             <pattern id="fpGrid" width="20" height="20" patternUnits="userSpaceOnUse">
               <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#ffffff" strokeOpacity="0.04" strokeWidth="1" />
             </pattern>
@@ -210,7 +333,7 @@ export default function BranchFloorPlan({
                 onClick={canBook(el) ? () => openBook(el) : undefined}
                 style={{ cursor: canBook(el) ? "pointer" : "default" }}
               >
-                <ShapeEl el={el} />
+                <Furniture el={el} />
                 {live && (
                   <rect x={-el.width / 2} y={-el.height / 2} width={el.width} height={el.height} rx={Math.min(10, Math.min(el.width, el.height) / 4)} fill="none" stroke={live.color} strokeWidth={2.5} />
                 )}
