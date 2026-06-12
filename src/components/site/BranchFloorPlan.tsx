@@ -39,6 +39,8 @@ const STYLE: Record<string, { fill: string; stroke: string; text: string }> = {
   gaming_chair: { fill: "#d9332e", stroke: "#911", text: "#ffffff" },
   counter: { fill: "#c4c4c4", stroke: "#777", text: "#2b2b2b" },
   decor: { fill: "#7fae6a", stroke: "#4e7a3a", text: "#22311a" },
+  door: { fill: "#c9a36b", stroke: "#6b4f2a", text: "#3a2a12" },
+  restroom: { fill: "#bcd3e6", stroke: "#5e7d96", text: "#24414f" },
 };
 
 function liveOf(el: FloorplanElement, now: number) {
