@@ -24,6 +24,8 @@ export interface FloorplanElement {
   min_order_amount: number;
   capacity: number;
   pc_station_id: number | null;
+  accept_online?: boolean | null;
+  accept_advance?: boolean | null;
   live_status?: string | null;
   live_ends_at?: string | null;
 }
@@ -70,6 +72,55 @@ export default function BranchFloorPlan({
 }) {
   const [elements, setElements] = useState(initial);
   const [now, setNow] = useState(() => Date.now());
+
+  // Online reservation modal state.
+  const [book, setBook] = useState<FloorplanElement | null>(null);
+  const [bName, setBName] = useState("");
+  const [bContact, setBContact] = useState("");
+  const [bStart, setBStart] = useState("");
+  const [bDur, setBDur] = useState(60);
+  const [bBusy, setBBusy] = useState(false);
+  const [bMsg, setBMsg] = useState<string | null>(null);
+
+  const canBook = (el: FloorplanElement) => !!(el.reservable && el.accept_online);
+  function openBook(el: FloorplanElement) {
+    setBook(el); setBName(""); setBContact(""); setBStart(""); setBDur(60); setBMsg(null);
+  }
+  function bookErr(code: string) {
+    return ({
+      time_unavailable: "That time is already taken on this spot.",
+      advance_not_allowed: "This spot only takes walk-in reservations, not advance ones.",
+      online_payment_unavailable: "Online payment isn't set up for this cafe yet.",
+      spot_not_reservable: "That spot can't be reserved online.",
+      bad_start_time: "Pick a valid start time.",
+      validation_failed: "Please check the details and try again.",
+    } as Record<string, string>)[code] || "Could not reserve. Please try again.";
+  }
+  async function submitBook() {
+    if (!book) return;
+    if (bName.trim().length < 1) { setBMsg("Enter your name."); return; }
+    const startIso = bStart ? new Date(bStart).toISOString() : new Date(Date.now() + 60_000).toISOString();
+    setBBusy(true); setBMsg(null);
+    try {
+      const res = await fetch("/api/floorplan-reservations/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId,
+          elementIdx: book.z_index,
+          customerName: bName.trim(),
+          customerContact: bContact.trim() || undefined,
+          startAt: startIso,
+          durationMin: bDur,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) { setBMsg(bookErr(j.error)); setBBusy(false); return; }
+      if (j.checkoutUrl) { window.location.href = j.checkoutUrl as string; return; }
+      setBMsg(`✓ Reserved! Your code is ${j.reservationCode}.${j.minOrder ? ` A minimum order of ₱${j.minOrder} applies at the cafe.` : ""}`);
+    } catch { setBMsg("Could not reserve — check your connection."); }
+    setBBusy(false);
+  }
 
   // Tick the countdown every second.
   useEffect(() => {
@@ -138,7 +189,12 @@ export default function BranchFloorPlan({
             const live = liveOf(el, now);
             const fontSize = Math.max(9, Math.min(13, el.height / 3));
             return (
-              <g key={el.id} transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}>
+              <g
+                key={el.id}
+                transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}
+                onClick={canBook(el) ? () => openBook(el) : undefined}
+                style={{ cursor: canBook(el) ? "pointer" : "default" }}
+              >
                 <ShapeEl el={el} />
                 {live && (
                   <rect x={-el.width / 2} y={-el.height / 2} width={el.width} height={el.height} rx={Math.min(10, Math.min(el.width, el.height) / 4)} fill="none" stroke={live.color} strokeWidth={3} />
@@ -161,6 +217,51 @@ export default function BranchFloorPlan({
           })}
         </svg>
       </div>
+      {elements.some(canBook) && (
+        <p className="mt-4 text-sm text-cream-dim">Tap a highlighted spot to reserve it online.</p>
+      )}
+
+      {book && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !bBusy && setBook(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-bg-card p-6 border border-line" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-2xl font-bold text-cream">Reserve {book.label || "spot"}</h3>
+            <p className="mt-1 text-sm text-cream-dim">
+              {book.billing_mode === "time_rate"
+                ? `₱${book.rate_per_hour}/hour — pay online to confirm.`
+                : `Minimum order ₱${book.min_order_amount} at the cafe.`}
+            </p>
+            <div className="mt-4 space-y-3">
+              <input className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" placeholder="Your name" value={bName} onChange={(e) => setBName(e.target.value)} maxLength={120} />
+              <input className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" placeholder="Phone or email (optional)" value={bContact} onChange={(e) => setBContact(e.target.value)} maxLength={60} />
+              {book.accept_advance ? (
+                <label className="block text-sm text-cream-dim">
+                  Start time
+                  <input type="datetime-local" className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" value={bStart} onChange={(e) => setBStart(e.target.value)} />
+                </label>
+              ) : (
+                <p className="text-xs text-cream-dim">Starts now (walk-in).</p>
+              )}
+              <label className="block text-sm text-cream-dim">
+                Minutes
+                <input type="number" min={15} step={15} className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" value={bDur} onChange={(e) => setBDur(Math.max(15, parseInt(e.target.value, 10) || 60))} />
+              </label>
+              {book.billing_mode === "time_rate" && (
+                <p className="text-sm font-semibold text-cream">Total: ₱{(Math.round((book.rate_per_hour || 0) * (bDur / 60) * 100) / 100).toLocaleString()}</p>
+              )}
+              {bMsg && <p className="text-sm text-amber">{bMsg}</p>}
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button className="flex-1 rounded-lg border border-line py-2 text-cream-dim" onClick={() => setBook(null)} disabled={bBusy} title="Cancel">Cancel</button>
+              <button className="flex-1 rounded-lg bg-phosphor py-2 font-semibold text-bg disabled:opacity-60" onClick={submitBook} disabled={bBusy} title="Confirm reservation">
+                {bBusy ? "…" : book.billing_mode === "time_rate" ? "Pay & reserve" : "Reserve"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

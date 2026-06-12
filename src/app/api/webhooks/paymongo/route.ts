@@ -182,7 +182,30 @@ export async function POST(request: Request) {
 
   // Find which entity this payment belongs to — Playcation reservation (initial payment), a
   // reservation balance payment, an order, a wallet top-up, or a per-branch cafe PC reservation.
-  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder] = await Promise.all([
+  const floorplanReservationP = (async () => {
+    try {
+      if (paymentIntentId) {
+        const { data } = await supabase
+          .from("floorplan_reservations")
+          .select("id, status, payment_status")
+          .eq("paymongo_payment_intent_id", paymentIntentId)
+          .maybeSingle();
+        if (data) return data;
+      }
+      if (linkOrPaymentId) {
+        const { data } = await supabase
+          .from("floorplan_reservations")
+          .select("id, status, payment_status")
+          .eq("paymongo_intent_id", linkOrPaymentId)
+          .maybeSingle();
+        if (data) return data;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  })();
+  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder, floorplanReservation] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -257,6 +280,7 @@ export async function POST(request: Request) {
         return null;
       }
     })(),
+    floorplanReservationP,
   ]);
 
   try {
@@ -362,6 +386,32 @@ export async function POST(request: Request) {
     // branch — picks it up and the cashier can find it by code on arrival. We DELIBERATELY do NOT
     // compute or apply any member bonus / balance here: PanCafe applies the real bonus when the
     // cashier loads the paid top-up (flowchart §G/§K). On failed/expired: release the held station.
+    // Floor-plan online reservation (PS5 prepay). On paid → confirm so the POS pulls it into its live
+    // board; on failed → cancel so the spot reopens.
+    if (floorplanReservation) {
+      switch (eventType) {
+        case "checkout_session.payment.paid":
+        case "link.payment.paid":
+        case "payment.paid":
+          await supabase
+            .from("floorplan_reservations")
+            .update({ status: "confirmed", payment_status: "paid" })
+            .eq("id", floorplanReservation.id)
+            .eq("status", "pending");
+          break;
+        case "checkout_session.payment.failed":
+        case "link.payment.failed":
+        case "payment.failed":
+          await supabase
+            .from("floorplan_reservations")
+            .update({ status: "cancelled" })
+            .eq("id", floorplanReservation.id)
+            .eq("status", "pending");
+          break;
+      }
+      return NextResponse.json({ ok: true, kind: "floorplan_reservation" });
+    }
+
     if (pcReservation) {
       switch (eventType) {
         // 'checkout_session.payment.paid' is the event a hosted Checkout Session fires (the new
