@@ -99,7 +99,7 @@ export default async function BranchDetailPage({
     const { data: fp } = await getSupabaseAdmin()
       .from("branch_floorplan_elements")
       .select(
-        "id, type, label, x, y, width, height, rotation, z_index, shape, reservable, billing_mode, rate_per_hour, min_order_amount, capacity, pc_station_id",
+        "id, type, label, x, y, width, height, rotation, z_index, shape, reservable, billing_mode, rate_per_hour, min_order_amount, capacity, pc_station_id, live_status, live_ends_at",
       )
       .eq("branch_id", branch.id)
       .order("z_index", { ascending: true });
@@ -307,7 +307,7 @@ export default async function BranchDetailPage({
           otherwise the legacy live PC grid renders as before.
           ============================================================ */}
       {hasFloorplan ? (
-        <BranchFloorPlan elements={floorplan} branchName={branch.name} />
+        <BranchFloorPlan elements={floorplan} branchName={branch.name} branchId={branch.id} />
       ) : (
         pcSnapshot && pcSnapshot.stations.length > 0 && (
           <LivePCStations
