@@ -30,27 +30,31 @@ export interface FloorplanElement {
   live_ends_at?: string | null;
 }
 
+// On-brand dark palette (espresso surfaces + phosphor/mocha accents) — matches the site's terminal look
+// instead of flat paint colors. Muted dark fills, clear strokes for definition, cream text.
 const STYLE: Record<string, { fill: string; stroke: string; text: string }> = {
-  pc: { fill: "#d3e6ff", stroke: "#3b82c4", text: "#12354f" },
-  ps5: { fill: "#2b2b3a", stroke: "#0c0c14", text: "#ffffff" },
-  table: { fill: "#e7c9a0", stroke: "#a9794a", text: "#4a3417" },
-  long_table: { fill: "#e7c9a0", stroke: "#a9794a", text: "#4a3417" },
-  chair: { fill: "#cdbfae", stroke: "#8a7a64", text: "#3a3128" },
-  gaming_chair: { fill: "#d9332e", stroke: "#911", text: "#ffffff" },
-  counter: { fill: "#c4c4c4", stroke: "#777", text: "#2b2b2b" },
-  decor: { fill: "#7fae6a", stroke: "#4e7a3a", text: "#22311a" },
-  door: { fill: "#c9a36b", stroke: "#6b4f2a", text: "#3a2a12" },
-  restroom: { fill: "#bcd3e6", stroke: "#5e7d96", text: "#24414f" },
-  restroom_door: { fill: "#9fb8cc", stroke: "#5e7d96", text: "#24414f" },
+  pc:           { fill: "#18241d", stroke: "#2da66a", text: "#dfeee6" },
+  ps5:          { fill: "#221b2b", stroke: "#7CFFB2", text: "#e7e0f0" },
+  table:        { fill: "#2e231b", stroke: "#8a7a68", text: "#f4ecdf" },
+  long_table:   { fill: "#2e231b", stroke: "#8a7a68", text: "#f4ecdf" },
+  chair:        { fill: "#241e18", stroke: "#5a4f43", text: "#c9bfae" },
+  gaming_chair: { fill: "#341c1a", stroke: "#b04a44", text: "#f0d8d4" },
+  counter:      { fill: "#262019", stroke: "#8a7a68", text: "#c9bfae" },
+  decor:        { fill: "#1a261a", stroke: "#2da66a", text: "#bcd6c2" },
+  door:         { fill: "#2a2016", stroke: "#8a7a68", text: "#c9bfae" },
+  restroom:     { fill: "#1a242c", stroke: "#5e7d96", text: "#bcd0dc" },
+  restroom_door:{ fill: "#1a242c", stroke: "#5e7d96", text: "#bcd0dc" },
 };
 
 function liveOf(el: FloorplanElement, now: number) {
   if (!el.reservable || el.live_status !== "active" || !el.live_ends_at) return null;
   const left = new Date(el.live_ends_at).getTime() - now;
-  if (left <= 0) return { over: true, text: "TIME UP", color: "#c0392b" };
+  if (left <= 0) return { over: true, text: "TIME UP", color: "#ff7a5c" };
   const t = Math.round(left / 1000);
-  return { over: false, text: `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`, color: "#1e8449" };
+  return { over: false, text: `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`, color: "#ffb547" };
 }
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 function ShapeEl({ el }: { el: FloorplanElement }) {
   const s = STYLE[el.type] ?? STYLE.decor;
@@ -177,25 +181,28 @@ export default function BranchFloorPlan({
       <p className="terminal-label">floor.plan</p>
       <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold tracking-tight text-cream">Find your spot</h2>
       <p className="mt-4 text-cream-dim max-w-2xl">
-        The real layout of {branchName}. A green dot marks what you can reserve
+        The real layout of {branchName}. A glowing dot marks what you can reserve
         {activeCount > 0 ? `, and ${activeCount} spot${activeCount > 1 ? "s are" : " is"} in use right now with the time left shown.` : "."}
       </p>
 
-      <div className="mt-10 rounded-2xl border border-line bg-[#f7f3ec] p-3 md:p-5 overflow-hidden">
+      <div className="mt-10 rounded-2xl border border-line-bright bg-bg-card p-3 md:p-5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
         <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} className="w-full h-auto" style={{ maxHeight: 620 }} role="img" aria-label={`Floor plan of ${branchName}`}>
           <defs>
-            <filter id="fpShadow" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.22" />
+            <filter id="fpShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
+            </filter>
+            <filter id="fpGlow" x="-80%" y="-80%" width="260%" height="260%">
+              <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#7CFFB2" floodOpacity="0.95" />
             </filter>
             <pattern id="fpGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e6ddcd" strokeWidth="1" />
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#ffffff" strokeOpacity="0.04" strokeWidth="1" />
             </pattern>
           </defs>
           <rect x={vbX} y={vbY} width={vbW} height={vbH} fill="url(#fpGrid)" />
           {sorted.map((el) => {
             const s = STYLE[el.type] ?? STYLE.decor;
             const live = liveOf(el, now);
-            const fontSize = Math.max(9, Math.min(13, el.height / 3));
+            const fontSize = Math.max(8, Math.min(12, el.height / 3.4));
             return (
               <g
                 key={el.id}
@@ -205,29 +212,41 @@ export default function BranchFloorPlan({
               >
                 <ShapeEl el={el} />
                 {live && (
-                  <rect x={-el.width / 2} y={-el.height / 2} width={el.width} height={el.height} rx={Math.min(10, Math.min(el.width, el.height) / 4)} fill="none" stroke={live.color} strokeWidth={3} />
+                  <rect x={-el.width / 2} y={-el.height / 2} width={el.width} height={el.height} rx={Math.min(10, Math.min(el.width, el.height) / 4)} fill="none" stroke={live.color} strokeWidth={2.5} />
                 )}
                 {el.label && (
-                  <text x={0} y={live ? -2 : fontSize / 3} textAnchor="middle" fontSize={fontSize} fontWeight={700} fill={s.text} style={{ pointerEvents: "none" }}>
-                    {el.label}
+                  <text x={0} y={live ? -2 : fontSize / 3} textAnchor="middle" fontSize={fontSize} fontWeight={700} fill={s.text} fontFamily={MONO} letterSpacing="0.5" style={{ pointerEvents: "none" }}>
+                    {el.label.toUpperCase()}
                   </text>
                 )}
                 {live && (
-                  <text x={0} y={el.height / 2 - 4} textAnchor="middle" fontSize={Math.max(9, Math.min(12, el.height / 3.5))} fontWeight={700} fill={live.color} style={{ pointerEvents: "none" }}>
+                  <text x={0} y={el.height / 2 - 4} textAnchor="middle" fontSize={Math.max(9, Math.min(12, el.height / 3.4))} fontWeight={700} fill={live.color} fontFamily={MONO} style={{ pointerEvents: "none" }}>
                     {live.text}
                   </text>
                 )}
                 {!live && el.reservable && (
-                  <circle cx={el.width / 2 - 6} cy={-el.height / 2 + 6} r={3.5} fill="#1e8449" stroke="#fff" strokeWidth={1} />
+                  <circle className="animate-pulse" cx={el.width / 2 - 6} cy={-el.height / 2 + 6} r={3} fill="#7CFFB2" filter="url(#fpGlow)" />
                 )}
               </g>
             );
           })}
         </svg>
       </div>
-      {elements.some(canBook) && (
-        <p className="mt-4 text-sm text-cream-dim">Tap a highlighted spot to reserve it online.</p>
-      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+        {elements.some(canBook) && (
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-phosphor shadow-[0_0_6px_var(--color-phosphor)]" />
+            <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">Reservable — tap to book</span>
+          </div>
+        )}
+        {activeCount > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber shadow-[0_0_6px_var(--color-amber)]" />
+            <span className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">In use — time left shown</span>
+          </div>
+        )}
+      </div>
 
       {book && (
         <div
