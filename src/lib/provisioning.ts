@@ -13,10 +13,13 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
-// Tiers that get a website branch + seating + attendance. The POS-only tier (pos/basic) gets none.
-// Both naming generations are honoured: post-merge (clockwork=₱499, unified=₱699) and legacy
-// (pancafe, ai). See migration 0055 — the 2026-06-11 POS↔Clockwork product-line rename.
-const BRANCHED_TIERS = new Set(["clockwork", "unified", "pancafe", "ai"]);
+// Tiers that get a website branch + seating + attendance. Under the 2026-06-12
+// model every PAID tier gets one — seating (₱299) IS the live-seating product,
+// pos (₱599) adds attendance clock-in, ai (₱799) everything. 'free' and legacy
+// 'basic' (₱199 POS-only) get none. Earlier naming generations stay honoured:
+// 2026-06-11 (clockwork/unified) and pre-merge (pancafe/ai). NB: 'pos' was a
+// branchless ₱199 id for one unshipped day — harmless to branch it now.
+const BRANCHED_TIERS = new Set(["seating", "pos", "ai", "clockwork", "unified", "pancafe"]);
 
 export class ProvisionError extends Error {
   code: string;
