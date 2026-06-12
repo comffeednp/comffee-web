@@ -5,6 +5,7 @@ import { euclideanDistance, isValidDescriptor } from "@/lib/face-match";
 import { evaluateClockGate, nextClockType } from "@/lib/attendance-gate";
 import { haversineMeters } from "@/lib/geo";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { verifyFaceQuality } from "@/lib/face-quality";
 
 const BUCKET = "attendance-selfies";
 
@@ -105,14 +106,21 @@ export async function POST(
   // failed and left a fake running timer. A definite, named error here means the page can show why
   // instead of spinning. The fix for the worker: sign in with the account that owns this phone, or have
   // the admin RESET the phone first. (A reset clears the old binding, so this check then passes.)
-  const { data: otherBinding } = await admin
+  // limit(1)+array (NOT maybeSingle) + an explicit error check: a duplicate device_token would make
+  // maybeSingle return data=null WITH an (ignored) error, silently SKIPPING this guard and letting a
+  // wrong-identity punch through. The 0048 unique index makes duplicates impossible going forward;
+  // this is the defense-in-depth so the guard can never be silently bypassed again.
+  const { data: otherBindings, error: otherBindErr } = await admin
     .from("device_bindings")
     .select("staff_id, branch_staff!inner(name, email)")
     .eq("device_token", deviceToken)
     .neq("staff_id", staff.id)
-    .maybeSingle();
-  if (otherBinding) {
-    const ob = otherBinding as unknown as { branch_staff?: { name?: string; email?: string } };
+    .limit(1);
+  if (otherBindErr) {
+    return NextResponse.json({ ok: false, error: "device_check_failed" }, { status: 500 });
+  }
+  if (otherBindings && otherBindings.length) {
+    const ob = otherBindings[0] as unknown as { branch_staff?: { name?: string; email?: string } };
     return NextResponse.json(
       {
         ok: false,
@@ -137,6 +145,19 @@ export async function POST(
     distanceM = haversineMeters(branch.lat, branch.lng, gpsLat, gpsLng);
   }
 
+  // ── Auto in/out: the previous record decides direction ──
+  // Resolved BEFORE the gate because the geofence rule now depends on it: clocking OUT is allowed
+  // from anywhere, clocking IN must be inside the branch area (owner 2026-06-03).
+  const { data: last } = await admin
+    .from("attendance_records")
+    .select("clock_type, recorded_at")
+    .eq("staff_id", staff.id)
+    .order("recorded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const clockType = nextClockType(last?.clock_type);
+
   // ── The decision (pure, loop-tested in attendance-gate.test.ts) ──
   const gate = evaluateClockGate({
     staffStatus: staff.status,
@@ -145,6 +166,7 @@ export async function POST(
     deviceBound: !!binding,
     deviceMatches: !!binding && binding.device_token === deviceToken,
     faceDistance: faceDist,
+    isClockIn: clockType === "clock_in",
     geofenceRequired: branch.geofence_required,
     haveLocation: gpsLat != null && gpsLng != null,
     distanceM,
@@ -161,15 +183,6 @@ export async function POST(
     return NextResponse.json({ ok: false, error: gate.error, ...extra }, { status: 403 });
   }
 
-  // ── Auto in/out: the previous record decides direction ──
-  const { data: last } = await admin
-    .from("attendance_records")
-    .select("clock_type, recorded_at")
-    .eq("staff_id", staff.id)
-    .order("recorded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
   // Idempotency window (2026-05-29): if this staffer clocked just seconds ago, treat this request as
   // a DUPLICATE — a double-tap, a slow-network retry, or a page reload firing the action again — and
   // return that SAME state WITHOUT inserting a new record. This is what stops the "reloaded and got
@@ -181,8 +194,6 @@ export async function POST(
       return NextResponse.json({ ok: true, clock_type: last.clock_type, deduped: true });
     }
   }
-
-  const clockType = nextClockType(last?.clock_type);
 
   // Reliever: on a clock-IN the worker may flag WHO they're covering for (a sudden absence). The
   // client list can be forged → re-validate it's a real APPROVED staffer at THIS branch, not self.
@@ -198,13 +209,27 @@ export async function POST(
     if (cov && cov.id !== staff.id) coveringForId = cov.id;
   }
 
-  // ── Store the audit selfie ──
+  // ── Server-side face-quality / liveness (2026-06-12) ──
+  // Don't trust the browser's claim that a real face was present. Run Vision FACE_DETECTION on the
+  // ACTUAL submitted selfie: a definitive bad verdict (no face / multiple / turned away / blurred)
+  // is rejected here BEFORE any record is written; an infra outage fails open (clocking is critical).
   const now = new Date();
-  const path = `${branch.id}/records/${staff.id}/${now.getTime()}.jpg`;
   const buffer = Buffer.from(await selfie.arrayBuffer());
-  await admin.storage
+  const fq = await verifyFaceQuality(buffer);
+  if (!fq.ok) {
+    return NextResponse.json({ ok: false, error: "face_quality", detail: fq.reason }, { status: 403 });
+  }
+
+  // ── Store the audit selfie ──
+  const path = `${branch.id}/records/${staff.id}/${now.getTime()}.jpg`;
+  // Don't let a storage hiccup BLOCK the punch — clocking is operationally critical (the cashier
+  // needs it to open their till). But DO check the result: if the upload failed, store NULL instead
+  // of a path to a file that doesn't exist, so the POS admin never sees a broken/blank audit image.
+  const { error: selfieErr } = await admin.storage
     .from(BUCKET)
     .upload(path, buffer, { contentType: "image/jpeg", upsert: false });
+  if (selfieErr) console.error("clock selfie upload failed", selfieErr.message);
+  const storedSelfiePath = selfieErr ? null : path;
 
   // ── Insert the record ── (PRIVATE bucket: store the path; sign on read in the POS)
   const { error: insErr } = await admin.from("attendance_records").insert({
@@ -212,7 +237,7 @@ export async function POST(
     staff_id: staff.id,
     clock_type: clockType,
     recorded_at: now.toISOString(),
-    selfie_url: path,
+    selfie_url: storedSelfiePath,
     face_match_score: faceDist,
     gps_lat: gpsLat,
     gps_lng: gpsLng,

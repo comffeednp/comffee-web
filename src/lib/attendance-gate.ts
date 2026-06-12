@@ -12,6 +12,7 @@ export type ClockGateInput = {
   deviceBound: boolean; // a phone is already bound to this staff
   deviceMatches: boolean; // the phone clocking in matches the bound one
   faceDistance: number; // distance between live face and enrolled face (lower = closer)
+  isClockIn: boolean; // direction this punch resolves to — geofence is enforced on clock-IN only
   geofenceRequired: boolean;
   haveLocation: boolean; // GPS was provided
   distanceM: number | null; // metres from the branch
@@ -37,7 +38,12 @@ export function evaluateClockGate(i: ClockGateInput): ClockGateResult {
   if (i.challengesCount < 2) return { ok: false, error: "liveness_incomplete" };
   if (i.deviceBound && !i.deviceMatches) return { ok: false, error: "device_mismatch" };
   if (i.faceDistance > FACE_MATCH_THRESHOLD) return { ok: false, error: "face_mismatch" };
-  if (i.geofenceRequired) {
+  // Geofence is enforced on CLOCK-IN only. Clocking OUT is allowed from anywhere (owner 2026-06-03:
+  // a worker may already be off the premises by the time they remember to end their shift). We still
+  // RECORD the GPS/distance on the way out for the audit — we just don't block on it. Clock-IN stays
+  // locked to the branch area so nobody can start a shift off-site. (Face + device are still checked
+  // for both directions above; only location is relaxed for clock-out.)
+  if (i.geofenceRequired && i.isClockIn) {
     if (!i.haveLocation || i.distanceM == null) return { ok: false, error: "no_location" };
     if (i.distanceM > i.radiusM) return { ok: false, error: "outside_geofence" };
   }
