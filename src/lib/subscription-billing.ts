@@ -5,15 +5,23 @@
 import crypto from "node:crypto";
 
 export const SUBSCRIPTION_TIERS = {
-  // Current product lines (the merged desktop's onboarding wizard sends these
-  // ids since 2026-06-11; they're also stored as the license `plan`).
-  pos: { amountPhp: 199, name: "Comffee POS" },
+  // Current product lines (2026-06-12 model — the timer itself is FREE and never
+  // billed here; these are the paid tiers the desktop's onboarding wizard sends,
+  // also stored as the license `plan`).
+  //   seating — live seating on the branch page + the membership system
+  //   pos     — everything except AI (the absorbed POS suite)
+  //   ai      — everything + the AI assistant
+  seating: { amountPhp: 299, name: "Comffee Seating" },
+  pos: { amountPhp: 599, name: "Comffee POS" },
+  ai: { amountPhp: 799, name: "Comffee AI" },
+  // Legacy ids — licenses issued before 2026-06-12 still renew under these.
+  // NB: 'pos' and 'ai' ids are REUSED by the new model (one day of pre-model
+  // 'pos'@₱199 / no shipped 'ai' installers existed, so nothing real renews at
+  // the old prices); 'basic'/'pancafe'/'clockwork'/'unified' keep theirs.
   clockwork: { amountPhp: 499, name: "Comffee Clockwork" },
   unified: { amountPhp: 699, name: "Comffee Unified" },
-  // Legacy ids — installers built before the merge still send these.
   basic: { amountPhp: 199, name: "Basic POS" },
   pancafe: { amountPhp: 499, name: "PanCafe-Integrated" },
-  ai: { amountPhp: 699, name: "AI-Integrated" },
 } as const;
 
 export type SubscriptionTier = keyof typeof SUBSCRIPTION_TIERS;
