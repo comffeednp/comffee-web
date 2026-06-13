@@ -55,27 +55,31 @@ function fmtLeft(ms: number): string {
   if (m > 0) return `${m}m left`;
   return "ending soon";
 }
-// Next 7 calendar days as { value: "YYYY-MM-DD", label }. Computed client-side only (the modal never
-// renders on the server), so no hydration mismatch from server/local timezone.
-function dayOptions(): Array<{ value: string; label: string }> {
+// Next 7 calendar days as { value: "YYYY-MM-DD", label = "Sat, Jun 14 (Today)" }. The label always shows
+// the real date and tags only the first two with (Today)/(Tomorrow) — clearer than a bare "Today".
+// "Today" is dropped once its last bookable slot (23:45) has passed, so booking past midnight forces
+// Tomorrow. Computed client-side only (the modal never renders on the server) → no hydration mismatch.
+function dayOptions(nowMs: number): Array<{ value: string; label: string }> {
   const out: Array<{ value: string; label: string }> = [];
-  const base = new Date();
+  const base = new Date(nowMs);
   for (let i = 0; i < 7; i++) {
     const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    if (i === 0 && nowMs > new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 45).getTime()) continue;
     const value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-    const label = i === 0 ? "Today" : i === 1 ? "Tomorrow"
-      : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-    out.push({ value, label });
+    const dl = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    out.push({ value, label: i === 0 ? `${dl} (Today)` : i === 1 ? `${dl} (Tomorrow)` : dl });
   }
   return out;
 }
-// 15-minute start times across the day (24h branch). value "HH:MM", label "h:mm AM/PM".
-function timeOptions(): Array<{ value: string; label: string }> {
+// 15-minute start times for the chosen day. For TODAY, only slots still in the future are offered
+// (11:30 PM → just 11:45 PM); future days show the full 24h. value "HH:MM", label "h:mm AM/PM".
+function timeOptions(dateStr: string, nowMs: number): Array<{ value: string; label: string }> {
   const out: Array<{ value: string; label: string }> = [];
   for (let mins = 0; mins < 24 * 60; mins += 15) {
     const h = Math.floor(mins / 60), m = mins % 60;
-    const d = new Date(2000, 0, 1, h, m);
-    out.push({ value: `${pad2(h)}:${pad2(m)}`, label: fmtClock(d) });
+    const value = `${pad2(h)}:${pad2(m)}`;
+    if (dateStr && !(new Date(`${dateStr}T${value}:00`).getTime() > nowMs)) continue;
+    out.push({ value, label: fmtClock(new Date(2000, 0, 1, h, m)) });
   }
   return out;
 }
@@ -103,6 +107,9 @@ export default function BookableSpots({
   const [bBusy, setBBusy] = useState(false);
   const [bMsg, setBMsg] = useState<string | null>(null);
   const [reserved, setReserved] = useState<Range[]>([]);
+  // "Now" captured when the modal opens — drives which day/time options are still bookable. Stable
+  // through the per-second tick so an open dropdown doesn't churn; live `now` still gates the Pay button.
+  const [bNow, setBNow] = useState(() => Date.now());
 
   const canBook = (el: FloorplanElement) => !!(el.reservable && el.accept_online);
 
@@ -118,6 +125,7 @@ export default function BookableSpots({
   }
   function openBook(el: FloorplanElement) {
     setBook(el); setBName(""); setBContact(""); setBDate(""); setBTime(""); setBDur(60); setBMsg(null);
+    setBNow(Date.now());
     loadAvailability(el);
   }
 
@@ -305,16 +313,16 @@ export default function BookableSpots({
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-sm text-cream-dim">
                   Date
-                  <select className={`mt-1 ${inputCls}`} value={bDate} onChange={(e) => setBDate(e.target.value)}>
+                  <select className={`mt-1 ${inputCls}`} value={bDate} onChange={(e) => { setBDate(e.target.value); setBTime(""); }}>
                     <option value="">Select…</option>
-                    {dayOptions().map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                    {dayOptions(bNow).map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                   </select>
                 </label>
                 <label className="block text-sm text-cream-dim">
                   Start time
-                  <select className={`mt-1 ${inputCls}`} value={bTime} onChange={(e) => setBTime(e.target.value)}>
-                    <option value="">Select…</option>
-                    {timeOptions().map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  <select className={`mt-1 ${inputCls}`} value={bTime} onChange={(e) => setBTime(e.target.value)} disabled={!bDate}>
+                    <option value="">{bDate ? "Select…" : "Pick a date first"}</option>
+                    {timeOptions(bDate, bNow).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </label>
               </div>
