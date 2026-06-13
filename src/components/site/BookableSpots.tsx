@@ -3,10 +3,15 @@
 // Numbered bookable spots (dining tables + PS5) for a cafe branch — shown as a simple numbered tile grid
 // in the SAME style as the live PC 1–12 board (owner 2026-06-13: dropped the visual aerial floor plan in
 // favour of plain numbering). Each spot tiles as "Table 1" / "PS5 1", shows live availability + remaining
-// time the POS pushes (live_status / live_ends_at), and — when the owner allows online booking — opens the
-// existing reservation flow (PS5 pay-online, tables reserve against a minimum order).
+// time the POS pushes (live_status / live_ends_at).
+//
+// Reservation flow (owner 2026-06-13): pick a DATE + START TIME from dropdowns (minutes allowed, not a
+// rigid hourly grid) — both REQUIRED, so Pay is blocked until a real slot is chosen (fixes "no time
+// selected still paid"). The modal shows the spot's already-RESERVED times for the chosen day and a clear
+// arrival policy. PS5 prepays through the branch's own PayMongo (manager's secret key); dining tables
+// pledge a minimum order. The DIY GCash QR stays a COUNTER-only payment — it is never used here.
 import { useEffect, useState } from "react";
-import { Gamepad2, UtensilsCrossed, Power } from "lucide-react";
+import { Gamepad2, UtensilsCrossed, Power, Clock } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export interface FloorplanElement {
@@ -26,14 +31,56 @@ export interface FloorplanElement {
 }
 
 const DINING = new Set(["table", "long_table"]);
+const DUR_OPTIONS = [
+  { m: 30, l: "30 minutes" },
+  { m: 60, l: "1 hour" },
+  { m: 90, l: "1 hour 30 minutes" },
+  { m: 120, l: "2 hours" },
+  { m: 180, l: "3 hours" },
+  { m: 240, l: "4 hours" },
+];
 
-function fmt(ms: number): string {
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function fmtClock(d: Date) {
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${pad2(m)} ${ap}`;
+}
+function fmtLeft(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m left`;
   if (m > 0) return `${m}m left`;
   return "ending soon";
 }
+// Next 7 calendar days as { value: "YYYY-MM-DD", label }. Computed client-side only (the modal never
+// renders on the server), so no hydration mismatch from server/local timezone.
+function dayOptions(): Array<{ value: string; label: string }> {
+  const out: Array<{ value: string; label: string }> = [];
+  const base = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    const value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const label = i === 0 ? "Today" : i === 1 ? "Tomorrow"
+      : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    out.push({ value, label });
+  }
+  return out;
+}
+// 15-minute start times across the day (24h branch). value "HH:MM", label "h:mm AM/PM".
+function timeOptions(): Array<{ value: string; label: string }> {
+  const out: Array<{ value: string; label: string }> = [];
+  for (let mins = 0; mins < 24 * 60; mins += 15) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    const d = new Date(2000, 0, 1, h, m);
+    out.push({ value: `${pad2(h)}:${pad2(m)}`, label: fmtClock(d) });
+  }
+  return out;
+}
+
+type Range = { start: number; ends: number };
 
 export default function BookableSpots({
   elements: initial,
@@ -50,19 +97,50 @@ export default function BookableSpots({
   const [book, setBook] = useState<FloorplanElement | null>(null);
   const [bName, setBName] = useState("");
   const [bContact, setBContact] = useState("");
-  const [bStart, setBStart] = useState("");
+  const [bDate, setBDate] = useState("");
+  const [bTime, setBTime] = useState("");
   const [bDur, setBDur] = useState(60);
   const [bBusy, setBBusy] = useState(false);
   const [bMsg, setBMsg] = useState<string | null>(null);
+  const [reserved, setReserved] = useState<Range[]>([]);
 
   const canBook = (el: FloorplanElement) => !!(el.reservable && el.accept_online);
-  function openBook(el: FloorplanElement) {
-    setBook(el); setBName(""); setBContact(""); setBStart(""); setBDur(60); setBMsg(null);
+
+  async function loadAvailability(el: FloorplanElement) {
+    setReserved([]);
+    try {
+      const r = await fetch(`/api/floorplan-reservations/availability?branchId=${encodeURIComponent(branchId)}&elementIdx=${el.z_index}`, { cache: "no-store" });
+      const j = await r.json();
+      if (r.ok && Array.isArray(j.reserved)) {
+        setReserved(j.reserved.map((x: { start: string; ends: string }) => ({ start: Date.parse(x.start), ends: Date.parse(x.ends) })).filter((x: Range) => x.ends > x.start));
+      }
+    } catch { /* show form anyway; the server still rejects a clash */ }
   }
+  function openBook(el: FloorplanElement) {
+    setBook(el); setBName(""); setBContact(""); setBDate(""); setBTime(""); setBDur(60); setBMsg(null);
+    loadAvailability(el);
+  }
+
+  // Selected window from the date + time dropdowns (local time). null until BOTH are chosen.
+  const startDate = bDate && bTime ? new Date(`${bDate}T${bTime}:00`) : null;
+  const startMs = startDate && !isNaN(startDate.getTime()) ? startDate.getTime() : null;
+  const endMs = startMs != null ? startMs + bDur * 60000 : null;
+  const isPast = startMs != null && startMs < now - 2 * 60000;
+  const clashes = startMs != null && endMs != null && reserved.some((r) => !(endMs <= r.start || startMs >= r.ends));
+  const nameOk = bName.trim().length >= 1;
+  const canPay = !!book && nameOk && startMs != null && !isPast && !clashes;
+  // Reserved ranges that fall on the chosen day (for the "already reserved" list).
+  const dayReserved = bDate
+    ? reserved.filter((r) => {
+        const d = new Date(r.start);
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` === bDate;
+      })
+    : [];
+
   function bookErr(code: string) {
     return ({
-      time_unavailable: "That time is already taken on this spot.",
-      advance_not_allowed: "This spot only takes walk-in reservations, not advance ones.",
+      time_unavailable: "That time was just taken — pick another.",
+      advance_not_allowed: "This spot only takes walk-in reservations.",
       online_payment_unavailable: "Online payment isn't set up for this cafe yet.",
       spot_not_reservable: "That spot can't be reserved online.",
       bad_start_time: "Pick a valid start time.",
@@ -70,9 +148,7 @@ export default function BookableSpots({
     } as Record<string, string>)[code] || "Could not reserve. Please try again.";
   }
   async function submitBook() {
-    if (!book) return;
-    if (bName.trim().length < 1) { setBMsg("Enter your name."); return; }
-    const startIso = bStart ? new Date(bStart).toISOString() : new Date(Date.now() + 60_000).toISOString();
+    if (!book || !canPay || startMs == null) return;
     setBBusy(true); setBMsg(null);
     try {
       const res = await fetch("/api/floorplan-reservations/create", {
@@ -83,19 +159,18 @@ export default function BookableSpots({
           elementIdx: book.z_index,
           customerName: bName.trim(),
           customerContact: bContact.trim() || undefined,
-          startAt: startIso,
+          startAt: new Date(startMs).toISOString(),
           durationMin: bDur,
         }),
       });
       const j = await res.json();
-      if (!res.ok) { setBMsg(bookErr(j.error)); setBBusy(false); return; }
+      if (!res.ok) { setBMsg(bookErr(j.error)); setBBusy(false); if (j.error === "time_unavailable") loadAvailability(book); return; }
       if (j.checkoutUrl) { window.location.href = j.checkoutUrl as string; return; }
       setBMsg(`✓ Reserved! Your code is ${j.reservationCode}.${j.minOrder ? ` A minimum order of ₱${j.minOrder} applies at the cafe.` : ""}`);
     } catch { setBMsg("Could not reserve — check your connection."); }
     setBBusy(false);
   }
 
-  // Tick the countdown every second.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -137,6 +212,9 @@ export default function BookableSpots({
     ...ps5.map((el, i) => ({ el, name: `PS5 ${i + 1}`, kind: "ps5" as const })),
     ...tables.map((el, i) => ({ el, name: `Table ${i + 1}`, kind: "table" as const })),
   ];
+  const bookName = book ? (book.type === "ps5" ? `PS5 ${ps5.indexOf(book) + 1}` : `Table ${tables.indexOf(book) + 1}`) : "";
+
+  const inputCls = "w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream";
 
   return (
     <section className="relative py-24 md:py-32 border-y border-line bg-bg-soft overflow-hidden">
@@ -185,7 +263,7 @@ export default function BookableSpots({
                   {busy ? (
                     <div>
                       <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">// in use</p>
-                      <span className="font-mono text-[0.7rem] text-amber">{fmt(left)}</span>
+                      <span className="font-mono text-[0.7rem] text-amber">{fmtLeft(left)}</span>
                     </div>
                   ) : bookable ? (
                     <button
@@ -212,38 +290,90 @@ export default function BookableSpots({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           onClick={() => !bBusy && setBook(null)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-bg-card p-6 border border-line" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-2xl font-bold text-cream">
-              Reserve {book.type === "ps5" ? "PS5" : "table"}
-            </h3>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-bg-card p-6 border border-line" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-2xl font-bold text-cream">Reserve {bookName}</h3>
             <p className="mt-1 text-sm text-cream-dim">
               {book.billing_mode === "time_rate"
                 ? `₱${book.rate_per_hour}/hour — pay online to confirm.`
                 : `Minimum order ₱${book.min_order_amount} at the cafe.`}
             </p>
+
             <div className="mt-4 space-y-3">
-              <input className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" placeholder="Your name" value={bName} onChange={(e) => setBName(e.target.value)} maxLength={120} />
-              <input className="w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" placeholder="Phone or email (optional)" value={bContact} onChange={(e) => setBContact(e.target.value)} maxLength={60} />
-              {book.accept_advance ? (
+              <input className={inputCls} placeholder="Your name" value={bName} onChange={(e) => setBName(e.target.value)} maxLength={120} />
+              <input className={inputCls} placeholder="Phone or email (optional)" value={bContact} onChange={(e) => setBContact(e.target.value)} maxLength={60} />
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-sm text-cream-dim">
+                  Date
+                  <select className={`mt-1 ${inputCls}`} value={bDate} onChange={(e) => setBDate(e.target.value)}>
+                    <option value="">Select…</option>
+                    {dayOptions().map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </label>
                 <label className="block text-sm text-cream-dim">
                   Start time
-                  <input type="datetime-local" className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" value={bStart} onChange={(e) => setBStart(e.target.value)} />
+                  <select className={`mt-1 ${inputCls}`} value={bTime} onChange={(e) => setBTime(e.target.value)}>
+                    <option value="">Select…</option>
+                    {timeOptions().map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
                 </label>
-              ) : (
-                <p className="text-xs text-cream-dim">Starts now (walk-in).</p>
-              )}
+              </div>
+
               <label className="block text-sm text-cream-dim">
-                Minutes
-                <input type="number" min={15} step={15} className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-cream" value={bDur} onChange={(e) => setBDur(Math.max(15, parseInt(e.target.value, 10) || 60))} />
+                How long
+                <select className={`mt-1 ${inputCls}`} value={bDur} onChange={(e) => setBDur(parseInt(e.target.value, 10))}>
+                  {DUR_OPTIONS.map((d) => <option key={d.m} value={d.m}>{d.l}</option>)}
+                </select>
               </label>
+
+              {/* Open / reserved times for the chosen day */}
+              {bDate && (
+                <div className="rounded-lg border border-line bg-bg px-3 py-2">
+                  <p className="font-mono text-[0.6rem] uppercase tracking-widest text-mocha">Already reserved</p>
+                  {dayReserved.length === 0 ? (
+                    <p className="mt-1 text-sm text-phosphor">No bookings yet — all times open.</p>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5">
+                      {dayReserved.map((r, i) => (
+                        <li key={i} className="text-sm text-amber">{fmtClock(new Date(r.start))} – {fmtClock(new Date(r.ends))}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* Arrival policy */}
+              <div className="flex gap-2 rounded-lg border border-amber/30 bg-amber/5 px-3 py-2">
+                <Clock className="h-4 w-4 text-amber shrink-0 mt-0.5" />
+                <p className="text-xs text-cream-dim leading-relaxed">
+                  Your time <span className="text-cream font-semibold">starts at the time you pick — not when you arrive</span>.
+                  Please be on time; if you&apos;re late, the session still ends at the scheduled time.
+                </p>
+              </div>
+
               {book.billing_mode === "time_rate" && (
                 <p className="text-sm font-semibold text-cream">Total: ₱{(Math.round((book.rate_per_hour || 0) * (bDur / 60) * 100) / 100).toLocaleString()}</p>
               )}
+
+              {/* Inline validation reason (also gates the button) */}
+              {!startMs ? (
+                <p className="text-xs text-cream-dim">Pick a date and start time to continue.</p>
+              ) : isPast ? (
+                <p className="text-sm text-amber">That time is in the past — pick a later time.</p>
+              ) : clashes ? (
+                <p className="text-sm text-amber">That time overlaps an existing reservation — pick another.</p>
+              ) : null}
               {bMsg && <p className="text-sm text-amber">{bMsg}</p>}
             </div>
+
             <div className="mt-5 flex gap-2">
               <button className="flex-1 rounded-lg border border-line py-2 text-cream-dim" onClick={() => setBook(null)} disabled={bBusy} title="Cancel reservation">Cancel</button>
-              <button className="flex-1 rounded-lg bg-phosphor py-2 font-semibold text-bg disabled:opacity-60" onClick={submitBook} disabled={bBusy} title="Confirm reservation">
+              <button
+                className="flex-1 rounded-lg bg-phosphor py-2 font-semibold text-bg disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={submitBook}
+                disabled={bBusy || !canPay}
+                title={canPay ? "Confirm reservation" : "Pick a date and time first"}
+              >
                 {bBusy ? "…" : book.billing_mode === "time_rate" ? "Pay & reserve" : "Reserve"}
               </button>
             </div>
