@@ -12,6 +12,7 @@ import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
 import RateConfigDisplay from "@/components/site/RateConfigDisplay";
 import LivePCStations from "@/components/site/LivePCStations";
+import BookableSpots from "@/components/site/BookableSpots";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import BranchChatContext from "@/components/site/BranchChatContext";
@@ -92,20 +93,20 @@ export default async function BranchDetailPage({
     ? null
     : await getPCStationsForBranch(branch.id);
 
-  // Designed floor plan (Phase 2): if the owner built one in the POS it's offered as a third "Layout"
-  // view inside the live board — it augments the grid/map, it does NOT replace them.
-  let floorplan: import("@/components/site/BranchFloorPlan").FloorplanElement[] = [];
+  // Bookable spots (dining tables + PS5) — shown as numbered tiles like the PC grid (the visual aerial
+  // floor plan was dropped 2026-06-13). Only the reservable rows matter here.
+  let spots: import("@/components/site/BookableSpots").FloorplanElement[] = [];
   if (!isPlay) {
     const { data: fp } = await getSupabaseAdmin()
       .from("branch_floorplan_elements")
       .select(
-        "id, type, label, x, y, width, height, rotation, z_index, shape, reservable, billing_mode, rate_per_hour, min_order_amount, capacity, pc_station_id, accept_online, accept_advance, live_status, live_ends_at",
+        "id, type, label, z_index, reservable, billing_mode, rate_per_hour, min_order_amount, capacity, accept_online, accept_advance, live_status, live_ends_at",
       )
       .eq("branch_id", branch.id)
       .order("z_index", { ascending: true });
-    floorplan = (fp ?? []) as import("@/components/site/BranchFloorPlan").FloorplanElement[];
+    spots = (fp ?? []) as import("@/components/site/BookableSpots").FloorplanElement[];
   }
-  const hasFloorplan = floorplan.length > 0;
+  const hasSpots = spots.some((s) => s.reservable && (s.type === "ps5" || s.type === "table" || s.type === "long_table"));
 
   // Availability data for playcation branches
   let blockedRanges: Array<{ check_in: string; check_out: string; source: string }> = [];
@@ -303,19 +304,23 @@ export default async function BranchDetailPage({
       )}
 
       {/* ============================================================
-          LIVE BOARD — grid + floor map + (when the owner designed one) the aerial floor plan,
-          all behind one view toggle. The floor plan augments the board, never replaces it.
+          LIVE PC BOARD — grid + floor map (numbered PC 1–12 tiles).
           ============================================================ */}
-      {((pcSnapshot && pcSnapshot.stations.length > 0) || hasFloorplan) && (
+      {pcSnapshot && pcSnapshot.stations.length > 0 && (
         <LivePCStations
           branchId={branch.id}
           branchSlug={branch.slug}
-          branchName={branch.name}
-          initialStations={pcSnapshot?.stations ?? []}
-          initialSyncedAt={pcSnapshot?.lastSyncedAt ?? null}
+          initialStations={pcSnapshot.stations}
+          initialSyncedAt={pcSnapshot.lastSyncedAt}
           canReserve={canReserveOnline}
-          floorplan={floorplan}
         />
+      )}
+
+      {/* ============================================================
+          TABLES & PS5 — numbered bookable tiles in the same style as the PC grid.
+          ============================================================ */}
+      {hasSpots && (
+        <BookableSpots elements={spots} branchName={branch.name} branchId={branch.id} />
       )}
 
       {/* ============================================================
