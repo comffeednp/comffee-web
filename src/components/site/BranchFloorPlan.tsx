@@ -120,22 +120,35 @@ function Chair({ cx, cy, cw, ch, rot = 0 }: { cx: number; cy: number; cw: number
   );
 }
 
-// Top-down racing/gaming chair: contoured backrest with coloured bolster wings + headrest + seat cushion.
+// Top-down racing/gaming chair. Orientation: the SEAT cushion is toward the desk (-y) and the backrest +
+// headrest are behind the player (+y), so a chair placed below a PC desk reads correctly (Claude-design
+// furniture pass, 2026-06-13 — corrects the earlier flipped orientation).
 function GamingChair({ cx, cy, w, h, rot = 0, accent = "#c0504a" }: { cx: number; cy: number; w: number; h: number; rot?: number; accent?: string }) {
   return (
     <g transform={`translate(${cx} ${cy}) rotate(${rot})`} filter="url(#fpShadow)">
       {/* base / wheel spread */}
-      <ellipse cx={0} cy={h * 0.06} rx={w * 0.5} ry={h * 0.5} fill="#140d0b" opacity="0.85" />
-      {/* backrest shell */}
-      <rect x={-w * 0.44} y={-h / 2} width={w * 0.88} height={h * 0.56} rx={w * 0.2} fill="#241715" stroke="#0d0807" strokeWidth="0.8" />
+      <ellipse cx={0} cy={h * 0.04} rx={w * 0.5} ry={h * 0.46} fill="#140d0b" opacity="0.85" />
+      {/* backrest shell (behind the player, +y) */}
+      <rect x={-w * 0.46} y={h * 0.02} width={w * 0.92} height={h * 0.46} rx={w * 0.2} fill="#241715" stroke="#0d0807" strokeWidth="0.8" />
       {/* coloured side bolsters */}
-      <rect x={-w * 0.44} y={-h / 2 + h * 0.04} width={w * 0.18} height={h * 0.5} rx={w * 0.08} fill={accent} />
-      <rect x={w * 0.26} y={-h / 2 + h * 0.04} width={w * 0.18} height={h * 0.5} rx={w * 0.08} fill={accent} />
+      <rect x={-w * 0.46} y={h * 0.05} width={w * 0.16} height={h * 0.4} rx={w * 0.07} fill={accent} />
+      <rect x={w * 0.30} y={h * 0.05} width={w * 0.16} height={h * 0.4} rx={w * 0.07} fill={accent} />
       {/* headrest */}
-      <rect x={-w * 0.17} y={-h / 2 - h * 0.08} width={w * 0.34} height={h * 0.18} rx={3} fill={accent} stroke="#0d0807" strokeWidth="0.6" />
-      {/* seat cushion */}
-      <rect x={-w * 0.34} y={h * 0.02} width={w * 0.68} height={h * 0.44} rx={w * 0.14} fill="#2c1d19" />
-      <rect x={-w * 0.22} y={h * 0.08} width={w * 0.44} height={h * 0.3} rx={4} fill="#3a2620" />
+      <rect x={-w * 0.17} y={h * 0.4} width={w * 0.34} height={h * 0.16} rx={w * 0.06} fill={accent} stroke="#0d0807" strokeWidth="0.6" />
+      {/* seat cushion (toward the desk, -y) */}
+      <rect x={-w * 0.36} y={-h * 0.42} width={w * 0.72} height={h * 0.5} rx={w * 0.16} fill="#2c1d19" />
+      <rect x={-w * 0.24} y={-h * 0.34} width={w * 0.48} height={h * 0.34} rx={w * 0.1} fill="#3a2620" />
+    </g>
+  );
+}
+
+// Glowing top-down screen (monitor / TV). `accent` lets it tint green when free / amber when in use.
+function Screen({ x, y, w, h, accent = "#2da66a" }: { x: number; y: number; w: number; h: number; accent?: string }) {
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={h} rx={2.5} fill="#0a1410" stroke={accent} strokeWidth="1.1" filter="url(#fpScreen)" />
+      <rect x={x + w * 0.08} y={y + h * 0.16} width={w * 0.84} height={h * 0.52} rx={1.5} fill={accent} opacity="0.28" />
+      <rect x={x + w * 0.08} y={y + h * 0.16} width={w * 0.4} height={h * 0.1} rx={1} fill={accent} opacity="0.5" />
     </g>
   );
 }
@@ -144,32 +157,32 @@ function Furniture({ el }: { el: FloorplanElement }) {
   const w = el.width, h = el.height;
   switch (el.type) {
     case "pc": {
-      const deskH = h * 0.5, gc = Math.min(w * 0.82, h * 0.5);
+      const dD = h * 0.5, top = -h / 2, gc = Math.min(w * 0.82, h * 0.5);
       return (
         <g>
           <GamingChair cx={0} cy={h * 0.26} w={gc} h={h * 0.42} />
           {/* desk */}
-          <rect x={-w / 2} y={-h / 2} width={w} height={deskH} rx={3} fill="url(#fpWood)" stroke="#241813" strokeWidth="1.2" filter="url(#fpShadow)" />
-          {/* monitor */}
-          <rect x={-w * 0.32} y={-h / 2 + h * 0.05} width={w * 0.64} height={deskH * 0.46} rx={2} fill="#0a1410" stroke="#2da66a" strokeWidth="0.9" filter="url(#fpScreen)" />
-          <rect x={-w * 0.28} y={-h / 2 + h * 0.08} width={w * 0.56} height={deskH * 0.3} rx={1} fill="#163f30" />
+          <rect x={-w / 2} y={top} width={w} height={dD} rx={3} fill="url(#fpWood)" stroke="#241813" strokeWidth="1.2" filter="url(#fpShadow)" />
+          {/* monitor stand + glowing screen */}
+          <rect x={-w * 0.04} y={top + dD * 0.5} width={w * 0.08} height={dD * 0.22} fill="#2da66a" opacity="0.5" />
+          <Screen x={-w * 0.3} y={top + dD * 0.1} w={w * 0.6} h={dD * 0.5} />
           {/* keyboard */}
-          <rect x={-w * 0.22} y={-h / 2 + deskH * 0.66} width={w * 0.44} height={deskH * 0.2} rx={2} fill="#2a2320" stroke="#161210" strokeWidth="0.5" />
+          <rect x={-w * 0.22} y={top + dD * 0.7} width={w * 0.44} height={dD * 0.18} rx={2} fill="#2a2320" stroke="#161210" strokeWidth="0.5" />
         </g>
       );
     }
     case "ps5": {
+      const dD = h * 0.44, top = -h / 2;
       return (
         <g>
           <GamingChair cx={0} cy={h * 0.3} w={w * 0.78} h={h * 0.38} accent="#5a4cc0" />
           {/* media unit */}
-          <rect x={-w / 2} y={-h / 2} width={w} height={h * 0.44} rx={3} fill="#141018" stroke="#0a0810" strokeWidth="1.2" filter="url(#fpShadow)" />
+          <rect x={-w / 2} y={top} width={w} height={dD} rx={3} fill="#141018" stroke="#0a0810" strokeWidth="1.2" filter="url(#fpShadow)" />
           {/* TV */}
-          <rect x={-w * 0.36} y={-h / 2 + h * 0.05} width={w * 0.72} height={h * 0.3} rx={2} fill="#0a1410" stroke="#7CFFB2" strokeWidth="0.9" filter="url(#fpScreen)" />
-          <rect x={-w * 0.32} y={-h / 2 + h * 0.08} width={w * 0.64} height={h * 0.2} fill="#123630" />
+          <Screen x={-w * 0.36} y={top + dD * 0.12} w={w * 0.72} h={dD * 0.6} accent="#7CFFB2" />
           {/* console tower */}
-          <rect x={w * 0.22} y={h * 0.02} width={w * 0.18} height={h * 0.18} rx={2} fill="#eef0f4" stroke="#9a9aa2" strokeWidth="0.6" />
-          <line x1={w * 0.31} y1={h * 0.02} x2={w * 0.31} y2={h * 0.2} stroke="#3a4cc0" strokeWidth="1.2" />
+          <rect x={w * 0.22} y={top + dD * 0.5} width={w * 0.18} height={dD * 0.5} rx={2} fill="#eef0f4" stroke="#9a9aa2" strokeWidth="0.6" />
+          <line x1={w * 0.31} y1={top + dD * 0.5} x2={w * 0.31} y2={top + dD} stroke="#3a4cc0" strokeWidth="1.2" />
         </g>
       );
     }
