@@ -32,7 +32,6 @@ export interface FloorplanElement {
 
 const DINING = new Set(["table", "long_table"]);
 const DUR_OPTIONS = [
-  { m: 30, l: "30 minutes" },
   { m: 60, l: "1 hour" },
   { m: 90, l: "1 hour 30 minutes" },
   { m: 120, l: "2 hours" },

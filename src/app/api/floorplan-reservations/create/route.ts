@@ -22,7 +22,7 @@ const schema = z.object({
   customerName: z.string().min(1).max(120),
   customerContact: z.string().max(60).optional().or(z.literal("")),
   startAt: z.string().datetime(),
-  durationMin: z.number().int().min(15).max(1440),
+  durationMin: z.number().int().min(60).max(1440),
 });
 
 function makeCode(): string {
