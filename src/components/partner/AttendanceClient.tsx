@@ -126,6 +126,11 @@ declare global {
   interface Window {
     google?: typeof google;
     __gmapsLoading?: Promise<void>;
+    // Google calls this on ANY Maps auth failure (bad/missing key, this domain not on the key's
+    // allow-list = RefererNotAllowedMapError, or billing/quota off). Critically, the <script> still
+    // fires onload in these cases — so without this hook the page sits on a blank grey map and looks
+    // like "the website, not the map". We use it to surface the real reason instead. (2026-06-13)
+    gm_authFailure?: () => void;
   }
 }
 
@@ -946,6 +951,19 @@ export default function AttendanceClient({
 
     let cancelled = false;
 
+    // Catch the silent failure mode: Maps loads its script fine but rejects the domain/key/billing at
+    // runtime. Without this the map is a blank grey panel (the reported "background is the website,
+    // not the map" bug). Flip to a clear, actionable error naming the host that wasn't authorized.
+    window.gm_authFailure = () => {
+      if (cancelled) return;
+      setPhase("error");
+      setErrMsg(
+        `This map can't load on "${window.location.hostname}". This address isn't authorized on the ` +
+          `Google Maps key (or Maps billing is off). Open the clock-in page from comffee.org, or ask ` +
+          `the owner to authorize this address on the Maps key.`,
+      );
+    };
+
     loadGoogleMaps()
       .then(() => {
         if (cancelled || !mapDivRef.current) return;
@@ -1005,6 +1023,7 @@ export default function AttendanceClient({
 
     return () => {
       cancelled = true;
+      window.gm_authFailure = undefined;
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }

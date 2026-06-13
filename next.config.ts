@@ -74,6 +74,23 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],
   },
+  // Canonicalize the host. The production app is served on three domains (comffee.org, www.comffee.org,
+  // comffee-web.vercel.app) but the Google Maps key only authorizes the comffee.org domains — so opening
+  // the staff clock-in page via the *.vercel.app URL hit RefererNotAllowedMapError and the map rendered
+  // blank ("the background is the website, not the map", owner-reported 2026-06-13). Send the bare Vercel
+  // alias to comffee.org (path preserved) so every entry point lands where Maps + OAuth are authorized.
+  // Scoped to the EXACT production alias only — preview deploys (comffee-web-<hash>.vercel.app) are
+  // untouched, so this never interferes with testing.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "comffee-web.vercel.app" }],
+        destination: "https://comffee.org/:path*",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       // Base headers on every route.
