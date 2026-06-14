@@ -1031,10 +1031,14 @@ export default function AttendanceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The three guards for revealing the live GCash QR. POS already enforces "is the open shift's
-  // cashier" before writing the row. We add clocked-in + inside-geofence here. If geofenceRequired
-  // is OFF for this branch, the inside check is skipped (matches the existing clock-in policy).
-  const qrGuardsPass = !!activeQr && isClockedIn && (geofenceRequired ? inside : true);
+  // Guards for revealing the live GCash QR. The POS already enforces "is the open shift's cashier"
+  // before writing the row (and RLS scopes it to this signed-in staffer), so clocked-in is the only
+  // gate we add here. We deliberately do NOT require inside-geofence: the QR pays into the cafe's own
+  // GCash regardless of where the cashier stands, and indoor GPS drift was false-hiding it at the
+  // counter. Clock-IN stays geofenced (geofenceBlocksClock below + the server punch) — only the QR is
+  // decoupled. [owner 2026-06-15: "DIY QR should appear even if not inside the geofence; staff still
+  // must not be able to clock in from home."]
+  const qrGuardsPass = !!activeQr && isClockedIn;
 
   // Geofence policy (owner 2026-06-03): clocking IN must be inside the branch area, but clocking OUT
   // is allowed from anywhere — a worker may already be off-site when they remember to end their shift.
