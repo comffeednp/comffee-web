@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   cancelReservation,
-  requestApproval,
+  confirmPaidReservation,
   getReservationByBalanceIntent,
   getReservationByIntent,
   markBalancePaid,
@@ -16,8 +16,7 @@ import {
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
 import { mintLicenseKey, renewLicense, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
-import { sendBalancePaidReceipt, sendBookingRequestReceived, sendOrderConfirmation, sendSubscriptionKey, sendSubscriptionRenewed } from "@/lib/email";
-import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
+import { sendBalancePaidReceipt, sendOrderConfirmation, sendSubscriptionKey, sendSubscriptionRenewed } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -482,43 +481,16 @@ export async function POST(request: Request) {
       switch (eventType) {
         case "link.payment.paid":
         case "payment.paid": {
-          // Request-to-book: payment does NOT confirm the booking. It moves the
-          // booking to "waiting for the owner to accept/reject" and holds the
-          // dates. The "you're booked" confirmation email now fires on ACCEPT
-          // (admin action in _actions/bookings.ts), never here.
-          await requestApproval(reservation.id, actualPaymentId ?? undefined);
+          // Playcation = INSTANT confirm on payment. No host approval / request-to-book
+          // (that step is for internet-cafe reservations, not playcation venues — owner
+          // 2026-06-15). This flips the paid hold straight to confirmed and sends the
+          // booking-confirmation email; the owner no longer has to accept/reject.
+          await confirmPaidReservation(reservation.id, actualPaymentId ?? undefined);
           // Purge branch page cache so the calendar shows the dates as taken
           {
             const { data: b } = await supabase.from("branches").select("slug").eq("id", reservation.branch_id).maybeSingle();
             if (b?.slug) revalidatePath(`/branches/${b.slug}`);
           }
-          // Tell the guest the request is in and awaiting approval (best effort)
-          if (reservation.guest_email) {
-            const { data: branch } = await supabase
-              .from("branches")
-              .select("name")
-              .eq("id", reservation.branch_id)
-              .maybeSingle();
-            sendBookingRequestReceived({
-              to: reservation.guest_email,
-              guestName: reservation.guest_name ?? "there",
-              branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
-              checkIn: reservation.check_in,
-              checkOut: reservation.check_out,
-              totalPhp: Number(reservation.total_php ?? 0),
-              reservationId: reservation.id,
-            }).catch((e) => console.error("[email] request received failed", e));
-          }
-          // Alert the owner to accept/reject — push + chat + email (best effort)
-          notifyOwnerOfBookingRequest({
-            id: reservation.id,
-            branchId: reservation.branch_id,
-            guestName: reservation.guest_name ?? null,
-            checkIn: reservation.check_in,
-            checkOut: reservation.check_out,
-            totalPhp: Number(reservation.total_php ?? 0),
-            memberId: reservation.member_id ?? null,
-          }).catch((e) => console.error("[notify] owner request failed", e));
           break;
         }
         case "link.payment.failed":

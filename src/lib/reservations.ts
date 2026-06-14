@@ -11,6 +11,8 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ReservationStatus } from "@/lib/supabase/types";
 import { nightsBetween } from "@/lib/dates";
+import { sendBookingConfirmation } from "@/lib/email";
+import { listInstructionPhotos } from "@/lib/branch-instructions";
 
 const HOLD_WINDOW_MINUTES = 20;
 
@@ -192,6 +194,77 @@ export async function requestApproval(reservationId: string, paymentId?: string)
     .update(patch)
     .eq("id", reservationId);
   if (error) throw new Error(`requestApproval failed: ${error.message}`);
+}
+
+/**
+ * Playcation INSTANT-CONFIRM on payment. Playcation venues do NOT use the
+ * request-to-book / host-approval step — that's an internet-cafe behaviour (owner
+ * 2026-06-15: "approval only should be for internet cafes, not a playcation branch").
+ * Flips a paid hold straight to confirmed, records the payment, and sends the SAME
+ * booking-confirmation email the owner's Accept used to send. Idempotent: only acts
+ * on a row still pending_hold/pending_approval, so a duplicate webhook can't
+ * double-send. Returns false if nothing flipped (already handled).
+ */
+export async function confirmPaidReservation(
+  reservationId: string,
+  paymentId?: string,
+): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const patch: Record<string, unknown> = {
+    status: "confirmed" as ReservationStatus,
+    payment_status: "paid",
+    hold_expires_at: null,
+    approval_requested_at: null,
+  };
+  if (paymentId) patch.paymongo_payment_id = paymentId;
+  const { data, error } = await supabase
+    .from("reservations")
+    .update(patch)
+    .eq("id", reservationId)
+    .in("status", ["pending_hold", "pending_approval"])
+    .select(
+      "guest_email, guest_name, num_guests, total_php, check_in, check_out, branch_id",
+    );
+  if (error) throw new Error(`confirmPaidReservation failed: ${error.message}`);
+  const r = data && data[0];
+  if (!r) return false; // already handled / not in a confirmable state
+
+  // Booking confirmation email (best effort — never block the webhook on email).
+  if (r.guest_email && r.branch_id) {
+    try {
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
+        .eq("id", r.branch_id)
+        .maybeSingle();
+      const rates = (
+        (branch as { branch_rates?: Array<{ check_in_time: string | null; check_out_time: string | null; sort_order: number }> } | null)
+          ?.branch_rates ?? []
+      ).sort((a, b) => a.sort_order - b.sort_order);
+      const rateWithTime = rates.find((x) => x.check_in_time);
+      await sendBookingConfirmation({
+        to: r.guest_email,
+        guestName: r.guest_name ?? "there",
+        branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
+        branchSlug: (branch as { slug?: string } | null)?.slug ?? "",
+        branchAddress: (branch as { address?: string | null } | null)?.address ?? null,
+        checkIn: r.check_in,
+        checkOut: r.check_out,
+        checkInTime: rateWithTime?.check_in_time ?? null,
+        checkOutTime: rateWithTime?.check_out_time ?? null,
+        numGuests: r.num_guests ?? 1,
+        totalPhp: Number(r.total_php ?? 0),
+        reservationId,
+        instructionPhotos: (await listInstructionPhotos(r.branch_id)).map((p) => ({
+          label: p.label,
+          url: p.signedUrl,
+        })),
+      });
+    } catch (e) {
+      console.error("[email] confirmation failed", e);
+    }
+  }
+  return true;
 }
 
 /**

@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   attachPaymentIntent,
   computePlaycationTotal,
-  requestApproval,
+  confirmPaidReservation,
   createHold,
 } from "@/lib/reservations";
 import { addDays, nightsBetween } from "@/lib/dates";
@@ -16,8 +16,6 @@ import {
 } from "@/lib/paymongo";
 import { recordRedemption, validatePromoCode } from "@/lib/promo-codes";
 import { guardMutating } from "@/lib/security";
-import { sendBookingRequestReceived } from "@/lib/email";
-import { notifyOwnerOfBookingRequest } from "@/lib/booking-notify";
 
 export const runtime = "nodejs";
 
@@ -202,34 +200,14 @@ export async function POST(request: Request) {
   // Purge the branch page cache so availability calendar updates immediately
   revalidatePath(`/branches/${branch.slug}`);
 
-  // Dev mode — no PayMongo configured. Mirror production: a "paid" booking goes
-  // to WAITING-for-owner-approval, not instant confirm (no real payment id in dev).
+  // Dev mode — no PayMongo configured. Mirror production: a "paid" playcation booking
+  // INSTANT-confirms (no host approval — owner 2026-06-15) and sends the confirmation email.
   if (!isPaymongoConfigured()) {
     try {
-      await requestApproval(hold.id);
+      await confirmPaidReservation(hold.id);
     } catch (e) {
-      console.error("simulated requestApproval failed", e);
+      console.error("simulated confirmPaidReservation failed", e);
     }
-    if (v.guestEmail) {
-      sendBookingRequestReceived({
-        to: v.guestEmail,
-        guestName: v.guestName,
-        branchName: branch.name,
-        checkIn: v.checkIn,
-        checkOut: v.checkOut,
-        totalPhp: total,
-        reservationId: hold.id,
-      }).catch((e) => console.error("[email] request received failed", e));
-    }
-    notifyOwnerOfBookingRequest({
-      id: hold.id,
-      branchId: branch.id,
-      guestName: v.guestName,
-      checkIn: v.checkIn,
-      checkOut: v.checkOut,
-      totalPhp: total,
-      memberId: member.id,
-    }).catch((e) => console.error("[notify] owner failed", e));
     return NextResponse.json({
       ok: true,
       simulated: true,
