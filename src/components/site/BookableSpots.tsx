@@ -26,11 +26,24 @@ export interface FloorplanElement {
   capacity: number;
   accept_online?: boolean | null;
   accept_advance?: boolean | null;
+  included_controllers?: number | null;
+  extra_controller_price?: number | null;
+  max_controllers?: number | null;
   live_status?: string | null;
   live_ends_at?: string | null;
 }
 
 const DINING = new Set(["table", "long_table"]);
+// A PS5 with a controller cap > 1 offers a controller picker.
+const isConsole = (el: FloorplanElement) => el.type === "ps5" && (Number(el.max_controllers) || 0) > 1;
+// Base price (per the element's billing) + flat surcharge for controllers beyond the included count.
+function spotPrice(el: FloorplanElement, durMin: number, controllers: number) {
+  const base = el.billing_mode === "time_rate" ? (Number(el.rate_per_hour) || 0) * (durMin / 60) : 0;
+  const inc = Number(el.included_controllers) || 0;
+  const extra = Number(el.extra_controller_price) || 0;
+  const c = Math.max(0, controllers || 0);
+  return Math.round((base + Math.max(0, c - inc) * extra) * 100) / 100;
+}
 const DUR_OPTIONS = [
   { m: 60, l: "1 hour" },
   { m: 90, l: "1 hour 30 minutes" },
@@ -103,6 +116,7 @@ export default function BookableSpots({
   const [bDate, setBDate] = useState("");
   const [bTime, setBTime] = useState("");
   const [bDur, setBDur] = useState(60);
+  const [bCtrl, setBCtrl] = useState(1);
   const [bBusy, setBBusy] = useState(false);
   const [bMsg, setBMsg] = useState<string | null>(null);
   const [reserved, setReserved] = useState<Range[]>([]);
@@ -124,6 +138,7 @@ export default function BookableSpots({
   }
   function openBook(el: FloorplanElement) {
     setBook(el); setBName(""); setBContact(""); setBDate(""); setBTime(""); setBDur(60); setBMsg(null);
+    setBCtrl(Math.max(1, Number(el.included_controllers) || 1));
     setBNow(Date.now());
     loadAvailability(el);
   }
@@ -168,6 +183,7 @@ export default function BookableSpots({
           customerContact: bContact.trim() || undefined,
           startAt: new Date(startMs).toISOString(),
           durationMin: bDur,
+          controllers: isConsole(book) ? bCtrl : undefined,
         }),
       });
       const j = await res.json();
@@ -333,6 +349,20 @@ export default function BookableSpots({
                 </select>
               </label>
 
+              {isConsole(book) && (
+                <label className="block text-sm text-cream-dim">
+                  Controllers
+                  <select className={`mt-1 ${inputCls}`} value={bCtrl} onChange={(e) => setBCtrl(parseInt(e.target.value, 10))} title="Choose how many controllers">
+                    {Array.from({ length: Number(book.max_controllers) || 1 }, (_, i) => i + 1).map((c) => {
+                      const inc = Number(book.included_controllers) || 0;
+                      const extra = Number(book.extra_controller_price) || 0;
+                      const add = extra > 0 && c > inc ? ` (+₱${((c - inc) * extra).toLocaleString()})` : (c <= inc ? " (included)" : "");
+                      return <option key={c} value={c}>{c} controller{c > 1 ? "s" : ""}{add}</option>;
+                    })}
+                  </select>
+                </label>
+              )}
+
               {/* Open / reserved times for the chosen day */}
               {bDate && (
                 <div className="rounded-lg border border-line bg-bg px-3 py-2">
@@ -359,7 +389,12 @@ export default function BookableSpots({
               </div>
 
               {book.billing_mode === "time_rate" && (
-                <p className="text-sm font-semibold text-cream">Total: ₱{(Math.round((book.rate_per_hour || 0) * (bDur / 60) * 100) / 100).toLocaleString()}</p>
+                <p className="text-sm font-semibold text-cream">
+                  Total: ₱{spotPrice(book, bDur, bCtrl).toLocaleString()}
+                  {isConsole(book) && bCtrl > (Number(book.included_controllers) || 0) && (
+                    <span className="text-cream-dim font-normal"> ({bCtrl} controllers)</span>
+                  )}
+                </p>
               )}
 
               {/* Inline validation reason (also gates the button) */}

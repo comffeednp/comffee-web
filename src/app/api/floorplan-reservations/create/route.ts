@@ -23,6 +23,7 @@ const schema = z.object({
   customerContact: z.string().max(60).optional().or(z.literal("")),
   startAt: z.string().datetime(),
   durationMin: z.number().int().min(60).max(1440),
+  controllers: z.number().int().min(1).max(16).optional(),
 });
 
 function makeCode(): string {
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
 
   const { data: el } = await supabase
     .from("branch_floorplan_elements")
-    .select("idx, label, reservable, accept_online, accept_advance, billing_mode, rate_per_hour, min_order_amount")
+    .select("idx, label, reservable, accept_online, accept_advance, billing_mode, rate_per_hour, min_order_amount, included_controllers, extra_controller_price, max_controllers")
     .eq("branch_id", v.branchId)
     .eq("idx", v.elementIdx)
     .maybeSingle();
@@ -93,7 +94,17 @@ export async function POST(request: Request) {
   }
 
   const isPaid = el.billing_mode === "time_rate";
-  const amountPhp = isPaid ? Math.round((Number(el.rate_per_hour) || 0) * (v.durationMin / 60) * 100) / 100 : 0;
+  // Controllers: clamp to the element's config (default = included count, cap = max_controllers); each
+  // controller beyond the included count adds a flat surcharge to the base (time_rate) price.
+  const inc = Number(el.included_controllers) || 0;
+  const extraCtrlPrice = Number(el.extra_controller_price) || 0;
+  const maxCtrl = Number(el.max_controllers) || 0;
+  let controllers = Math.max(1, v.controllers || Math.max(1, inc));
+  if (maxCtrl > 0) controllers = Math.min(controllers, maxCtrl);
+  const ctrlSurcharge = Math.max(0, controllers - inc) * extraCtrlPrice;
+  const amountPhp = isPaid
+    ? Math.round(((Number(el.rate_per_hour) || 0) * (v.durationMin / 60) + ctrlSurcharge) * 100) / 100
+    : 0;
   const minOrder = el.billing_mode === "min_order" ? Number(el.min_order_amount) || 0 : 0;
   const code = makeCode();
 
@@ -109,6 +120,7 @@ export async function POST(request: Request) {
     ends_at: ends.toISOString(),
     amount_php: amountPhp,
     min_order_php: minOrder,
+    controllers,
     reservation_code: code,
   };
 
