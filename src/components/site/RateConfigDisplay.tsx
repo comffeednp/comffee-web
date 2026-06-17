@@ -1,4 +1,4 @@
-import { Cpu, Crown, CreditCard, Coins, Gift, Sparkles } from "lucide-react";
+import { Cpu, Crown, CreditCard, Coins, Gift, Sparkles, Monitor, Gauge, MousePointer2 } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import type { RateConfig, RateCategory, RateTier } from "@/lib/supabase/types";
 
@@ -69,6 +69,42 @@ function CategoryCard({ category }: { category: RateCategory }) {
           ))}
         </div>
       )}
+
+      <PcSpecs specs={category.pc_specs} />
+    </div>
+  );
+}
+
+// Per-tier PC spec sheet (set in the POS). monitor/refresh/DPI are fixed values; model+RAM free text;
+// description an AI-written/editable blurb. Renders nothing when the tier has no specs (back-compat).
+function PcSpecs({ specs }: { specs?: RateCategory["pc_specs"] }) {
+  if (!specs) return null;
+  const { monitor, refresh_hz, mouse_dpi, model, ram, description } = specs;
+  if (!monitor && !refresh_hz && !mouse_dpi && !model && !ram && !description) return null;
+  const hardware = [model, ram ? `${ram} RAM` : null].filter(Boolean).join(" · ");
+  return (
+    <div className="mt-5 pt-5 border-t border-line space-y-2.5">
+      {(monitor || refresh_hz || mouse_dpi) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[0.7rem] uppercase tracking-widest text-mocha">
+          {monitor && (
+            <span className="inline-flex items-center gap-1.5">
+              <Monitor className="h-3.5 w-3.5 text-phosphor" /> {monitor}
+            </span>
+          )}
+          {refresh_hz && (
+            <span className="inline-flex items-center gap-1.5">
+              <Gauge className="h-3.5 w-3.5 text-phosphor" /> {refresh_hz}
+            </span>
+          )}
+          {mouse_dpi && (
+            <span className="inline-flex items-center gap-1.5">
+              <MousePointer2 className="h-3.5 w-3.5 text-phosphor" /> {mouse_dpi}
+            </span>
+          )}
+        </div>
+      )}
+      {hardware && <p className="text-sm text-cream font-medium">{hardware}</p>}
+      {description && <p className="text-sm text-cream-dim leading-relaxed italic">{description}</p>}
     </div>
   );
 }

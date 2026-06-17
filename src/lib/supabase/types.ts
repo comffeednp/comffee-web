@@ -81,12 +81,25 @@ export interface RateTier {
   price: number | null;
 }
 
+// Per-tier PC specs, authored in the POS Reservation editor (2026-06-17). monitor/refresh_hz/mouse_dpi
+// are fixed dropdown strings (stored verbatim, e.g. "27\" 1440p", "144 Hz", "up to 16,000 DPI"); model
+// + ram are free text; description is the AI-written (editable) public blurb. All optional/back-compat.
+export interface RatePcSpecs {
+  monitor?: string;
+  refresh_hz?: string;
+  mouse_dpi?: string;
+  model?: string;
+  ram?: string;
+  description?: string;
+}
+
 export interface RateCategory {
   name: string;
   color: string;            // hex string for the colored dot
   pc_count: number | null;  // stations in this category
   member_rate: number | null; // member ₱ per hour (display)
   tiers: RateTier[];
+  pc_specs?: RatePcSpecs | null;  // per-tier spec sheet (optional; older rows have none)
 }
 
 export interface RateMembership {
