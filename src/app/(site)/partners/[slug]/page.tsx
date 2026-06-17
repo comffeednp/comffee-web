@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { marked } from "marked";
-import { getBranchBySlug, getPublishedBranches } from "@/lib/branches";
+import { getBranchBySlug } from "@/lib/branches";
 import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
 import AmenityIcon from "@/components/site/AmenityIcon";
@@ -27,14 +27,13 @@ import {
 // branch's static info once the first partner cafe is approved through the POS Reservation tab
 // ([[comffee-saas-vision]]).
 
-export const revalidate = 60;
-
-export async function generateStaticParams() {
-  // Only the partner-category branches — Comffee franchises live at /branches/<slug> and must NOT
-  // ALSO get a prerendered page under /partners/<slug>.
-  const partners = await getPublishedBranches("partner_cafe");
-  return partners.map((p) => ({ slug: p.slug }));
-}
+// Render on demand (SSR) — same as the sibling /branches/[slug] and /playcation/[slug] routes.
+// This is the ONLY public [slug] page that reads via the anon client alone (no cookies/headers), so
+// Next would otherwise mark it SSG. An SSG dynamic route whose generateStaticParams is empty at build
+// time — the normal case, since a brand-new install has no partner cafe yet — 500s on every on-demand
+// render in production (works in dev, which has no SSG). Forcing dynamic keeps it consistent with the
+// other branch pages and renders correctly the moment the first partner is approved through the POS.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
