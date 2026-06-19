@@ -448,6 +448,11 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 <strong className="text-cream"> there are no refunds</strong>.
               </span>
             </label>
+            <p className="text-[0.7rem] leading-relaxed text-mocha">
+              If we can&rsquo;t deliver (e.g. a temporary outage), your payment is{" "}
+              <strong className="text-cream-dim">credited within 24 hours</strong> — or{" "}
+              <strong className="text-cream-dim">fully refunded</strong>.
+            </p>
             {payMsg && (
               <div className="flex items-start gap-3 rounded-lg border border-red-700 bg-red-950/20 p-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 text-red-400" />
@@ -504,6 +509,8 @@ function humanError(code: unknown): string {
     package_unavailable: "One of those packages is no longer available — please re-add it.",
     invalid_amount: "Something's off with the total — please rebuild your order.",
     checkout_failed: "Couldn't start checkout — please try again.",
+    fulfilment_unavailable:
+      "Top-ups are paused right now — our supplier is temporarily unreachable, so we can't take payment. You haven't been charged; please try again shortly.",
     rate_limited: "Too many attempts — please wait a moment.",
   };
   return (typeof code === "string" && map[code]) || "Something went wrong — please try again.";

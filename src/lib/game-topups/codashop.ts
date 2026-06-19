@@ -61,3 +61,20 @@ export async function fetchCodashopVpPrices(url: string): Promise<Record<number,
     return null;
   }
 }
+
+/** Lightweight "is Codashop up" check used at PAYMENT time — we must not take money if Codashop is down,
+ *  because we can't buy the points. Returns true ONLY on a 2xx within a short timeout; any non-2xx /
+ *  network error / timeout → false (fail-CLOSED for payments). The pay route gates on this. */
+export async function isCodashopReachable(url: string): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "User-Agent": UA, Accept: "text/html" },
+      signal: AbortSignal.timeout(9_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

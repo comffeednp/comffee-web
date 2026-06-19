@@ -22,6 +22,7 @@ export async function saveTopupSettingsAction(formData: FormData) {
   ];
   const rows = [
     { key: "gt_enabled", value: formData.get("gt_enabled") ? "true" : "false" },
+    { key: "gt_require_codashop_up", value: formData.get("gt_require_codashop_up") ? "true" : "false" },
     ...numeric.map((k) => ({ key: k, value: String(formData.get(k) ?? "").trim() })),
   ];
   const { error } = await sb.from("site_settings").upsert(rows, { onConflict: "key" });

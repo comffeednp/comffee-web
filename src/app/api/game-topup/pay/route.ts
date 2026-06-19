@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { guardMutating } from "@/lib/security";
 import { createCheckoutSession, bookingPaymentMethods } from "@/lib/paymongo";
 import { getTopupSettings } from "@/lib/game-topups/config";
+import { isCodashopReachable } from "@/lib/game-topups/codashop";
 import { isPhAllowed } from "@/lib/game-topups/geo";
 
 export const runtime = "nodejs";
@@ -60,6 +61,23 @@ export async function POST(request: Request) {
     .eq("order_id", orderId);
   const amount = (lines ?? []).reduce((s, l) => s + Number(l.customer_price), 0);
   if (!(amount > 0)) return NextResponse.json({ error: "invalid_amount" }, { status: 409 });
+
+  // Don't take money if Codashop is down — we can't buy the points to fulfil (owner rule 2026-06-20).
+  // Fail-CLOSED: any non-2xx / timeout blocks the payment. The owner can flip gt_require_codashop_up off
+  // in admin if this ever false-blocks (e.g. Codashop blocks our server IP). Outages AFTER payment are
+  // covered by the 24h credit-or-refund SLA.
+  if (settings.requireCodashopUp) {
+    const { data: gameRow } = await admin
+      .from("game_topup_games")
+      .select("codashop_url")
+      .eq("slug", order.game)
+      .maybeSingle();
+    const codaUrl =
+      (gameRow as { codashop_url?: string | null } | null)?.codashop_url || "https://www.codashop.com/en-ph/";
+    if (!(await isCodashopReachable(codaUrl))) {
+      return NextResponse.json({ error: "fulfilment_unavailable" }, { status: 503 });
+    }
+  }
 
   await admin
     .from("game_topup_orders")

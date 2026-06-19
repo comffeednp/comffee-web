@@ -14,6 +14,7 @@ export interface TopupSettings {
   ocrLockMinutes2: number;
   slaMinutes: number;
   priceFreezeThresholdPct: number;
+  requireCodashopUp: boolean;
 }
 
 export const TOPUP_SETTINGS_DEFAULTS: TopupSettings = {
@@ -23,8 +24,9 @@ export const TOPUP_SETTINGS_DEFAULTS: TopupSettings = {
   visionDailyCap: 500,
   ocrLockMinutes1: 15,
   ocrLockMinutes2: 1440, // 24h
-  slaMinutes: 60,
+  slaMinutes: 1440, // 24h — the "credited within 24h or fully refunded" window (owner T&C)
   priceFreezeThresholdPct: 20,
+  requireCodashopUp: true, // don't accept payment if Codashop is unreachable (we can't buy the points)
 };
 
 const num = (v: unknown, d: number): number => {
@@ -57,6 +59,10 @@ export async function getTopupSettings(): Promise<TopupSettings> {
       ocrLockMinutes2: num(map.gt_ocr_lock_minutes_2, TOPUP_SETTINGS_DEFAULTS.ocrLockMinutes2),
       slaMinutes: num(map.gt_sla_minutes, TOPUP_SETTINGS_DEFAULTS.slaMinutes),
       priceFreezeThresholdPct: num(map.gt_price_freeze_threshold_pct, TOPUP_SETTINGS_DEFAULTS.priceFreezeThresholdPct),
+      requireCodashopUp:
+        map.gt_require_codashop_up !== undefined
+          ? !(map.gt_require_codashop_up === "false" || map.gt_require_codashop_up === "0")
+          : TOPUP_SETTINGS_DEFAULTS.requireCodashopUp,
     };
   } catch {
     return TOPUP_SETTINGS_DEFAULTS;

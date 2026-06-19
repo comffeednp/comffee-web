@@ -46,6 +46,12 @@ export default async function GameTopupSettingsPage({
           <input type="checkbox" name="gt_enabled" defaultChecked={settings.enabled} className="h-4 w-4 accent-amber" />
           <span className="font-mono text-sm text-cream">Game top-ups enabled (storefront live)</span>
         </label>
+        <label className="flex items-start gap-3">
+          <input type="checkbox" name="gt_require_codashop_up" defaultChecked={settings.requireCodashopUp} className="mt-0.5 h-4 w-4 accent-amber" />
+          <span className="font-mono text-sm text-cream">
+            Block payment when Codashop is down <span className="text-mocha">(recommended — never take money we can&rsquo;t fulfil; turn off only if this ever wrongly blocks sales)</span>
+          </span>
+        </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <Labeled label="Default discount % (global)">
             <input className={inputCls} name="gt_discount_pct" type="number" min={0} max={90} step={0.5} defaultValue={settings.discountPctGlobal} />

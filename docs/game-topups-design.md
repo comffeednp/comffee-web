@@ -133,9 +133,16 @@ fail-CLOSED on a definitive name mismatch.
 `customer_price = round(codashop_price × (1 − discount%))`. Freeze + alert on fetch fail / parse fail /
 >±20% move (configurable). Discount % (global + per-game) editable in admin.
 
-### Refunds / SLA
-`/api/cron/game-topup-sla-sweep`: orders stuck in `pending`/`processing` past `sla_due_at` →
-`issueRefund({ ... })` → `failed`→`refunded`. Verified-correct delivered order → no refund (proof on file).
+### Refunds / SLA / customer terms
+- **Never take money we can't fulfil:** the pay route calls `isCodashopReachable` before creating a
+  checkout (fail-CLOSED — any non-2xx/timeout blocks payment; the customer isn't charged). Owner override
+  `gt_require_codashop_up` (default on) in admin in case Codashop ever blocks our server IP.
+- **24h credit-or-refund (shown at checkout as the term):** a paid order not delivered within
+  `gt_sla_minutes` (default **1440 = 24h**) is auto-refunded by `/api/cron/game-topup-sla-sweep`, which
+  ONLY sweeps `pending` orders (nothing delivered → full refund is safe) with an atomic claim before the
+  PayMongo call; `processing` orders past SLA go to manual review (avoids deliver-AND-refund and
+  partial-combo over-refund). Card refunds via the API; QR Ph refunds are flagged for a manual GCash/InstaPay transfer.
+- Verified-correct **delivered** order → no refund (screenshot proof on file).
 
 ### Admin settings (`site_settings` keys, `/admin/game-topups/settings`)
 `gt_discount_pct` (global), `gt_discount_pct_<game>` (override), `gt_vision_daily_cap`,
