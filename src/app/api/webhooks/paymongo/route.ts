@@ -17,6 +17,7 @@ import {
 import { verifyWebhookSignature } from "@/lib/paymongo";
 import { mintLicenseKey, renewLicense, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
 import { sendBalancePaidReceipt, sendOrderConfirmation, sendSubscriptionKey, sendSubscriptionRenewed } from "@/lib/email";
+import { getTopupSettings } from "@/lib/game-topups/config";
 
 export const runtime = "nodejs";
 
@@ -204,7 +205,7 @@ export async function POST(request: Request) {
       return null;
     }
   })();
-  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder, floorplanReservation] = await Promise.all([
+  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder, floorplanReservation, gameTopup] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -280,9 +281,60 @@ export async function POST(request: Request) {
       }
     })(),
     floorplanReservationP,
+    (async () => {
+      // Game Top-Up order (PLATFORM key). Match by the pi_ the paid webhook carries, then the cs_ id.
+      try {
+        if (paymentIntentId) {
+          const { data } = await supabase
+            .from("game_topup_orders")
+            .select("id, status")
+            .eq("paymongo_payment_intent_id", paymentIntentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        if (linkOrPaymentId) {
+          const { data } = await supabase
+            .from("game_topup_orders")
+            .select("id, status")
+            .eq("paymongo_checkout_id", linkOrPaymentId)
+            .maybeSingle();
+          if (data) return data;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })(),
   ]);
 
   try {
+    // Game Top-Up payment (PLATFORM key, Comffee's money). On paid: flip verified→pending (idempotent
+    // guard on status='verified') + stamp paid_at and the SLA deadline so the staff console picks it up
+    // and the SLA sweeper can auto-refund if it's never fulfilled. A failed/expired payment leaves the
+    // order 'verified' so the customer can retry. No fulfilment side effect here — staff buy on Codashop.
+    if (gameTopup) {
+      switch (eventType) {
+        case "checkout_session.payment.paid":
+        case "link.payment.paid":
+        case "payment.paid": {
+          const { slaMinutes } = await getTopupSettings();
+          const now = new Date();
+          await supabase
+            .from("game_topup_orders")
+            .update({
+              status: "pending",
+              paymongo_payment_id: actualPaymentId ?? null,
+              paid_at: now.toISOString(),
+              sla_due_at: new Date(now.getTime() + slaMinutes * 60000).toISOString(),
+            })
+            .eq("id", gameTopup.id)
+            .eq("status", "verified");
+          break;
+        }
+      }
+      return NextResponse.json({ ok: true, kind: "game_topup" });
+    }
+
     // Partner-Cafe SaaS subscription payment (platform key). On paid: mark paid, then either mint a
     // license key in the LICENSE project + stamp it here (kind='new' — the POS polls
     // /api/billing/subscribe/status and auto-activates with it), or extend the existing license via

@@ -31,6 +31,8 @@ export const navLinks: NavItem[] = [
   },
   { label: "Playcation", href: "/playcation" },
   { label: "Menu", href: "/menu" },
+  // Valorant/League points store — customer pays online, staff fulfil on Codashop. [[game-topups]]
+  { label: "Game Top-Ups", href: "/game-topups" },
   // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
   { label: "Software", href: "/softwares" },
   { label: "About", href: "/about" },

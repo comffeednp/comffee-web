@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/balance-sweep",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/game-topup-price-sync",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/game-topup-sla-sweep",
+      "schedule": "0 2 * * *"
     }
   ]
 }

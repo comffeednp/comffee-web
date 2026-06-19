@@ -18,6 +18,7 @@ const navLinks = [
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/pc-reservations", label: "PC Reservations" },
   { href: "/admin/topups", label: "Top-ups" },
+  { href: "/admin/game-topups", label: "Game Top-Ups" },
   { href: "/admin/internet-reservations", label: "Stations" },
   { href: "/admin/airbnb-calendars", label: "Airbnb" },
   { href: "/admin/menu", label: "Menu" },

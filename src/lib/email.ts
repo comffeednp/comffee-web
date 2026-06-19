@@ -1049,3 +1049,80 @@ export async function sendSubscriptionRenewed(input: SubscriptionRenewedInput) {
     text: `Your Comffee POS subscription has been renewed — your ${input.tierName} plan is active until ${untilDate}. Amount paid: ${formatPHP(input.amountPhp)}. Your existing license key keeps working.`,
   });
 }
+
+/* ---------------- Game Top-Ups: branded delivery receipt ---------------- */
+
+interface GameTopupReceiptInput {
+  to: string;
+  orderId: string;
+  game: string;
+  riotId: string; // "Name#TAG"
+  totalVp: number;
+  amountPhp: number;
+  statusToken: string;
+  lines: Array<{ vp: number; pricePhp: number }>;
+}
+
+// Sent the moment every line of a Game Top-Up order is confirmed delivered (all Codashop purchases
+// landed). This is OUR receipt — our logo, our email — the customer never sees Codashop's. [[design]]
+export async function sendGameTopupReceipt(input: GameTopupReceiptInput) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  const statusUrl = `${siteUrl}/game-topups/status/${input.statusToken}`;
+  const gameLabel = input.game ? input.game.charAt(0).toUpperCase() + input.game.slice(1) : "Game";
+  const linesHtml = input.lines
+    .map(
+      (l) =>
+        `<tr>
+          <td style="padding:6px 0;color:#1a0f06;font-size:14px;">✅ ${escapeHtml(l.vp.toLocaleString())} VP</td>
+          <td style="padding:6px 0;color:#5a4a3c;font-size:13px;text-align:right;">${escapeHtml(formatPHP(l.pricePhp))}</td>
+        </tr>`,
+    )
+    .join("");
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Delivered — top-up complete.
+    </h1>
+    <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      Your ${escapeHtml(gameLabel)} top-up for <strong>${escapeHtml(input.riotId)}</strong> has been delivered in full. Thanks for topping up with Comffee!
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Game", gameLabel)}
+      ${receiptRow("Riot ID", input.riotId)}
+      ${receiptRow("Total delivered", input.totalVp.toLocaleString() + " VP", true)}
+    </table>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // packages
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e8dcc4;">
+      ${linesHtml}
+    </table>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;border-top:2px solid #ff8a3d;padding-top:12px;">
+      ${receiptRow("Amount paid", formatPHP(input.amountPhp), true)}
+    </table>
+
+    <p style="margin:20px 0 0;color:#2e7d32;font-size:14px;font-weight:700;">PAID — complete.</p>
+
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+      // order_id
+    </p>
+    <p style="margin:0;color:#1a0f06;font-size:13px;font-family:'JetBrains Mono',monospace;word-break:break-all;">
+      ${escapeHtml(input.orderId)}
+    </p>
+  `;
+
+  return sendEmail({
+    to: input.to,
+    subject: `Your ${gameLabel} top-up is delivered · ${input.totalVp.toLocaleString()} VP`,
+    html: chrome({
+      preheader: `${input.totalVp.toLocaleString()} VP delivered to ${input.riotId}`,
+      bodyHtml: body,
+      ctaLabel: "View order",
+      ctaHref: statusUrl,
+    }),
+    text: `Your ${gameLabel} top-up for ${input.riotId} is delivered: ${input.totalVp} VP total, ${formatPHP(input.amountPhp)} paid. Status: PAID — complete. Order ID: ${input.orderId}. View: ${statusUrl}`,
+  });
+}
