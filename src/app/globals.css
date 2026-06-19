@@ -518,3 +518,36 @@ textarea:focus-visible {
 .prose-comffe strong { color: var(--color-cream); font-weight: 600; }
 .prose-comffe em { font-style: italic; }
 .prose-comffe hr { border-color: var(--color-line-bright); margin: 1.5rem 0; }
+
+/* ── "Game Top-Ups" nav highlight ─────────────────────────────────────────
+   An amber button that glows + sweeps a shine so it's the most eye-catching
+   thing in the headbar the moment the page loads. The global reduced-motion
+   block above already disables these animations (animation-duration !important). */
+@keyframes gtnav-glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(255,181,71,0.45), inset 0 0 0 1px rgba(255,181,71,0.5); }
+  50%      { box-shadow: 0 0 18px rgba(255,138,61,0.85), inset 0 0 0 1px rgba(255,181,71,0.95); }
+}
+@keyframes gtnav-sweep {
+  0%        { transform: translateX(-130%); }
+  55%, 100% { transform: translateX(240%); }
+}
+.nav-shine {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  color: #1a0f06;
+  background: linear-gradient(90deg, #ffb547, #ff8a3d);
+  font-weight: 700;
+  animation: gtnav-glow 1.8s ease-in-out infinite;
+}
+.nav-shine:hover { filter: brightness(1.07); }
+.nav-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.7), transparent);
+  transform: translateX(-130%);
+  animation: gtnav-sweep 2.6s ease-in-out infinite;
+  pointer-events: none;
+}

@@ -105,7 +105,11 @@ export default function MobileNav({ links, memberHref, memberLabel }: Props) {
                       <Link
                         href={link.href!}
                         title={`Go to ${link.label}`}
-                        className={itemClass(pathname === link.href)}
+                        className={
+                          link.highlight
+                            ? "nav-shine block px-4 py-3 font-mono text-sm uppercase tracking-[0.18em]"
+                            : itemClass(pathname === link.href)
+                        }
                       >
                         → {link.label}
                       </Link>

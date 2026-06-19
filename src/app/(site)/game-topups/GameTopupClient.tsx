@@ -287,6 +287,25 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </p>
         </div>
 
+        {/* Email — collected up front (required to pay); this is where the receipt is sent. */}
+        <div>
+          <Field label="email — required *">
+            <input
+              type="email"
+              required
+              aria-required="true"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="gt-input"
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </Field>
+          <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
+            // your receipt &amp; order status are emailed here — double-check it&rsquo;s correct
+          </p>
+        </div>
+
         {/* Verify */}
         <div>
           <p className="terminal-label">// prove it&rsquo;s your account</p>
@@ -421,21 +440,6 @@ export default function GameTopupClient({ catalog, games }: Props) {
 
         {verified && (
           <div className="space-y-4 border-t border-line-bright pt-4">
-            <Field label="email — required *">
-              <input
-                type="email"
-                required
-                aria-required="true"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="gt-input"
-                placeholder="you@example.com"
-                autoComplete="email"
-              />
-              <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
-                // your receipt &amp; order status are emailed here — double-check it&rsquo;s correct
-              </p>
-            </Field>
             <label className="flex cursor-pointer items-start gap-3 text-xs text-cream-dim">
               <input
                 type="checkbox"

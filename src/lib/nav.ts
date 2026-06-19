@@ -13,6 +13,8 @@ export interface NavItem {
   href?: string;
   /** When present, the item renders as a dropdown and `href` is ignored. */
   children?: NavChild[];
+  /** Renders the item as a glowing, shining amber pill so it stands out in the headbar. */
+  highlight?: boolean;
 }
 
 export const navLinks: NavItem[] = [
@@ -32,7 +34,8 @@ export const navLinks: NavItem[] = [
   { label: "Playcation", href: "/playcation" },
   { label: "Menu", href: "/menu" },
   // Valorant/League points store — customer pays online, staff fulfil on Codashop. [[game-topups]]
-  { label: "Game Top-Ups", href: "/game-topups" },
+  // highlight = shining amber pill: this is the new money-maker, make it impossible to miss.
+  { label: "Game Top-Ups", href: "/game-topups", highlight: true },
   // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
   { label: "Software", href: "/softwares" },
   { label: "About", href: "/about" },

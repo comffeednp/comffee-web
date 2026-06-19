@@ -39,6 +39,15 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
           {navLinks.map((link) =>
             link.children ? (
               <NavDropdown key={link.label} label={link.label} items={link.children} />
+            ) : link.highlight ? (
+              <Link
+                key={link.href}
+                href={link.href!}
+                title={`Go to ${link.label}`}
+                className="nav-shine font-mono text-xs uppercase tracking-[0.18em] px-3 py-2 ml-1 focus-visible:outline-none"
+              >
+                {link.label}
+              </Link>
             ) : (
               <Link
                 key={link.href}
