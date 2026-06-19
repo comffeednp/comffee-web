@@ -16,6 +16,9 @@ import {
 import { formatPHP } from "@/lib/utils";
 import { gameArt } from "@/lib/game-topups/games-art";
 
+// Small keyboard-key chip used in the "how to paste" steps.
+const kbdCls = "rounded border border-line-bright bg-bg-card px-1.5 py-0.5 text-cream-dim";
+
 interface CatalogItem {
   sku: string;
   game: string;
@@ -416,9 +419,28 @@ export default function GameTopupClient({ catalog, games }: Props) {
               document.body,
             )}
 
+          {/* How to paste a screenshot — 4 simple steps */}
+          <ol className="mt-4 space-y-1.5 font-mono text-[0.72rem] leading-relaxed text-mocha">
+            <li>
+              <span className="text-amber">1.</span> Press <kbd className={kbdCls}>Print Screen</kbd>{" "}
+              <span className="text-mocha/80">(or <kbd className={kbdCls}>Win</kbd>+<kbd className={kbdCls}>Shift</kbd>+<kbd className={kbdCls}>S</kbd> to snip)</span>
+            </li>
+            <li>
+              <span className="text-amber">2.</span> Capture your <span className="text-cream-dim">Riot ID &amp; #tag</span> (your account menu)
+            </li>
+            <li>
+              <span className="text-amber">3.</span> <span className="text-cream-dim">Click the box below</span>, then press <kbd className={kbdCls}>Ctrl</kbd>+<kbd className={kbdCls}>V</kbd> to paste
+            </li>
+            <li>
+              <span className="text-amber">4.</span> Press <span className="text-cream-dim">Verify account</span>
+            </li>
+          </ol>
+
           <div
             onPaste={onPaste}
-            className="mt-3 rounded-xl border border-dashed border-line-bright bg-bg p-4"
+            tabIndex={0}
+            aria-label="Click here, then press Ctrl + V to paste your screenshot"
+            className="mt-3 cursor-pointer rounded-xl border border-dashed border-line-bright bg-bg p-4 outline-none transition focus:border-amber/70 focus-visible:ring-2 focus-visible:ring-amber"
           >
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -426,7 +448,9 @@ export default function GameTopupClient({ catalog, games }: Props) {
             ) : (
               <div className="py-8 text-center">
                 <Upload className="mx-auto h-7 w-7 text-mocha" />
-                <p className="mt-2 font-mono text-xs text-mocha">paste an image, or pick a file</p>
+                <p className="mt-2 font-mono text-xs text-mocha">
+                  click here, then <span className="text-cream-dim">Ctrl + V</span> to paste — or pick a file
+                </p>
               </div>
             )}
             <input
