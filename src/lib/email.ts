@@ -1126,3 +1126,59 @@ export async function sendGameTopupReceipt(input: GameTopupReceiptInput) {
     text: `Your ${gameLabel} top-up for ${input.riotId} is delivered: ${input.totalVp} VP total, ${formatPHP(input.amountPhp)} paid. Status: PAID — complete. Order ID: ${input.orderId}. View: ${statusUrl}`,
   });
 }
+
+/* ---------------- Game Top-Ups: price-sync alert (owner) ---------------- */
+
+interface GameTopupPriceAlertInput {
+  frozen: Array<{ sku: string; oldPrice: number; newPrice: number }>;
+  readFailures: string[]; // game slugs whose Codashop page couldn't be read this run
+}
+
+// Sent by the daily price-sync when it FROZE a package (Codashop price moved past the threshold — we did
+// NOT change the price or sell at the new rate) or couldn't read a Codashop page. The owner reviews and
+// unfreezes in admin. Goes to ADMIN_NOTIFICATION_EMAIL.
+export async function sendGameTopupPriceAlert(input: GameTopupPriceAlertInput) {
+  const recipients = (process.env.ADMIN_NOTIFICATION_EMAIL ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!recipients.length) return { ok: false, error: "no_admin_email" };
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+
+  const frozenRows = input.frozen
+    .map((f) => receiptRow(f.sku, `${formatPHP(f.oldPrice)} → ${formatPHP(f.newPrice)}`, true))
+    .join("");
+
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
+      Game top-up price check — needs your eyes
+    </h1>
+    <p style="margin:0 0 16px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      The daily Codashop price check flagged something. <strong>Nothing was sold at the new rate</strong> —
+      the affected packages are frozen at their current price until you review them.
+    </p>
+    ${
+      input.frozen.length
+        ? `<p style="margin:16px 0 6px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">// Codashop price moved past your threshold (frozen)</p>
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">${frozenRows}</table>`
+        : ""
+    }
+    ${
+      input.readFailures.length
+        ? `<p style="margin:16px 0 0;color:#5a4a3c;font-size:14px;line-height:1.6;">Couldn't read Codashop for: <strong>${escapeHtml(input.readFailures.join(", "))}</strong> — prices were left unchanged. If this keeps happening, set those prices manually.</p>`
+        : ""
+    }
+  `;
+
+  return sendEmail({
+    to: recipients,
+    subject: `Game top-up price check — ${input.frozen.length} frozen${input.readFailures.length ? `, ${input.readFailures.length} unreadable` : ""}`,
+    html: chrome({
+      preheader: "Codashop price-sync flagged a package — review needed",
+      bodyHtml: body,
+      ctaLabel: "Review prices",
+      ctaHref: `${siteUrl}/admin/game-topups/settings`,
+    }),
+    text: `Game top-up price check. Frozen (old → new): ${input.frozen.map((f) => `${f.sku} ${f.oldPrice}→${f.newPrice}`).join("; ") || "none"}. Unreadable: ${input.readFailures.join(", ") || "none"}. Review: ${siteUrl}/admin/game-topups/settings`,
+  });
+}
