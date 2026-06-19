@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Check,
@@ -87,6 +88,22 @@ export default function GameTopupClient({ catalog, games }: Props) {
   const [consent, setConsent] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payMsg, setPayMsg] = useState<string | null>(null);
+  const [sampleZoom, setSampleZoom] = useState(false);
+
+  // While the enlarged sample is open: close on Escape + lock body scroll behind it.
+  useEffect(() => {
+    if (!sampleZoom) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSampleZoom(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sampleZoom]);
 
   const game = games.find((g) => g.slug === gameSlug) ?? games[0];
   const currency = game?.currency ?? "VP";
@@ -342,19 +359,62 @@ export default function GameTopupClient({ catalog, games }: Props) {
             . We read it to make sure the points land on the right account.
           </p>
 
-          {/* Sample so customers know exactly what to upload */}
+          {/* Sample so customers know exactly what to upload — tap to enlarge */}
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/games/game-topups-sample-profile.svg"
-              alt="Example: your game account menu showing your name and #tag — copy it exactly"
-              className="h-24 w-auto shrink-0 rounded-md border border-line-bright"
-            />
+            <button
+              type="button"
+              onClick={() => setSampleZoom(true)}
+              title="Tap to enlarge the example"
+              className="group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line-bright transition hover:border-amber/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/games/game-topups-sample-profile.svg"
+                alt="Example: your game account menu showing your name and #tag — copy it exactly"
+                className="h-24 w-auto"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute bottom-1 right-1 rounded bg-bg/85 px-1.5 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-cream-dim"
+              >
+                ⤢ enlarge
+              </span>
+            </button>
             <p className="font-mono text-[0.7rem] leading-relaxed text-mocha">
               <span className="text-cream-dim">Like this</span> — your name <span className="text-cream-dim">and #tag</span>{" "}
-              must be clearly readable in the shot.
+              must be clearly readable in the shot. <span className="text-cream-dim">Tap the image to enlarge.</span>
             </p>
           </div>
+
+          {/* Enlarged sample lightbox (centered) — portal so a transformed ancestor can't trap it */}
+          {sampleZoom &&
+            createPortal(
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Example game profile, enlarged"
+                onClick={() => setSampleZoom(false)}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-bg/90 p-4 backdrop-blur-sm"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSampleZoom(false)}
+                  title="Close"
+                  aria-label="Close enlarged example"
+                  className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-line-bright bg-bg-card text-cream-dim transition hover:border-amber/60 hover:text-amber"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/games/game-topups-sample-profile.svg"
+                  alt="Example: your game account menu showing your name and #tag — copy it exactly"
+                  onClick={(e) => e.stopPropagation()}
+                  className="max-h-[85vh] w-auto max-w-[92vw] cursor-default rounded-xl border border-line-bright shadow-2xl"
+                />
+              </div>,
+              document.body,
+            )}
 
           <div
             onPaste={onPaste}
