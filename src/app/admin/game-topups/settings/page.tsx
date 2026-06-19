@@ -3,7 +3,7 @@ import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getTopupSettings } from "@/lib/game-topups/config";
 import { formatPHP } from "@/lib/utils";
-import { saveTopupSettingsAction, saveCatalogRowAction } from "./_actions";
+import { saveTopupSettingsAction, saveCatalogRowAction, syncPricesNowAction } from "./_actions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +33,11 @@ export default async function GameTopupSettingsPage({
         </Link>
         <h1 className="mt-2 font-display text-2xl font-bold text-cream">Game Top-Up prices &amp; settings</h1>
         <p className="mt-1 text-sm text-cream-dim">
-          Set your discount and per-package prices below. Your selling price = Codashop price × (1 − discount%).
+          Codashop prices auto-pull daily (hit <span className="text-amber">Pull now</span> to refresh anytime). Set your discount — your selling price = Codashop price × (1 − discount%).
         </p>
       </div>
 
-      {sp.ok && <p className="rounded-lg border border-phosphor/40 bg-phosphor/10 px-4 py-2 font-mono text-xs text-phosphor">// saved</p>}
+      {sp.ok && <p className="rounded-lg border border-phosphor/40 bg-phosphor/10 px-4 py-2 font-mono text-xs text-phosphor">// {sp.ok === "1" ? "saved" : sp.ok}</p>}
       {sp.error && <p className="rounded-lg border border-red-700 bg-red-950/20 px-4 py-2 font-mono text-xs text-red-400">// {sp.error}</p>}
 
       {/* Settings */}
@@ -79,9 +79,16 @@ export default async function GameTopupSettingsPage({
 
       {/* Catalog */}
       <div className="space-y-3">
-        <h2 className="font-display text-lg font-bold text-cream">Catalog</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-bold text-cream">Catalog</h2>
+          <form action={syncPricesNowAction}>
+            <button type="submit" title="Pull the latest Codashop prices right now" className="key-cap">
+              ⟳ Pull Codashop prices now
+            </button>
+          </form>
+        </div>
         <p className="font-mono text-xs text-mocha">
-          // customer price = Codashop price × (1 − discount%). Frozen rows are hidden from the store + skipped by price-sync until unfrozen.
+          // prices auto-pull from Codashop daily; customer price = Codashop price × (1 − discount%). A suspicious jump freezes the row (hidden from the store + skipped by price-sync) until you unfreeze it.
         </p>
         <div className="space-y-2">
           {(catalog ?? []).map((c) => (
@@ -96,8 +103,13 @@ export default async function GameTopupSettingsPage({
                 <p className="font-mono text-[0.65rem] uppercase text-mocha">
                   {c.game as string} · {c.region as string} · sells {formatPHP(Number(c.customer_price))}
                 </p>
+                <p className="font-mono text-[0.6rem] text-mocha/80">
+                  {c.last_synced_at
+                    ? `auto-pulled ${new Date(c.last_synced_at as string).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}`
+                    : "not pulled yet"}
+                </p>
               </div>
-              <Labeled label="Codashop ₱">
+              <Labeled label="Codashop ₱ (auto)">
                 <input className={inputCls} name="codashop_price" type="number" min={0} step={1} defaultValue={Number(c.codashop_price)} />
               </Labeled>
               <Labeled label="Discount %">

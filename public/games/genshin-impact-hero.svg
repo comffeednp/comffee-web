@@ -1,0 +1,80 @@
+<svg viewBox="0 0 1200 420" width="100%" height="auto" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Genshin Impact key art — Genesis Crystals discounted at Comffee" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gi-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15212E"/>
+      <stop offset="0.5" stop-color="#1B2A3A"/>
+      <stop offset="1" stop-color="#101A26"/>
+    </linearGradient>
+    <linearGradient id="gi-word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFDF6"/>
+      <stop offset="0.55" stop-color="#F3ECDD"/>
+      <stop offset="1" stop-color="#D8CBAE"/>
+    </linearGradient>
+    <linearGradient id="gi-slash" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD56A"/>
+      <stop offset="1" stop-color="#E8C26B"/>
+    </linearGradient>
+    <linearGradient id="gi-gem" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9FE7F5"/>
+      <stop offset="0.5" stop-color="#5BC0DE"/>
+      <stop offset="1" stop-color="#B79CE0"/>
+    </linearGradient>
+    <linearGradient id="gi-gem-dk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5BC0DE"/>
+      <stop offset="1" stop-color="#8E74C4"/>
+    </linearGradient>
+    <radialGradient id="gi-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#9DDBF0" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#B79CE0" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#B79CE0" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="gi-grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#5BC0DE" stroke-width="1" opacity="0.2"/>
+    </pattern>
+    <filter id="gi-blur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="gi-soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#gi-bg)"/>
+  <rect width="1200" height="420" fill="url(#gi-grid)"/>
+  <rect y="118" width="1200" height="1.5" fill="#5BC0DE" opacity="0.07"/>
+  <rect y="300" width="1200" height="1.5" fill="#FFD56A" opacity="0.06"/>
+
+  <polygon points="0,0 188,0 96,420 0,420" fill="url(#gi-slash)" opacity="0.9"/>
+  <polygon points="150,0 214,0 132,420 78,420" fill="#FFD56A" opacity="0.12"/>
+
+  <rect x="8" y="8" width="1184" height="404" fill="none" stroke="#F3ECDD" stroke-width="2" opacity="0.12"/>
+
+  <text x="70" y="212" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="82" letter-spacing="6" fill="url(#gi-word)">GENSHIN IMPACT</text>
+  <rect x="72" y="238" width="556" height="3" fill="#FFD56A"/>
+  <text x="72" y="284" font-family="Consolas, 'Courier New', monospace" font-size="22" letter-spacing="2.5"><tspan fill="#5BC0DE">// </tspan><tspan fill="#F3ECDD">GENESIS CRYSTALS — discounted at Comffee</tspan></text>
+
+  <!-- Right currency motif: Genesis Crystal -->
+  <g transform="translate(985,210)">
+    <circle r="150" fill="url(#gi-glow)" filter="url(#gi-soft)"/>
+    <g filter="url(#gi-blur)" opacity="0.85">
+      <polygon points="0,-118 64,-20 0,118 -64,-20" fill="url(#gi-gem)"/>
+    </g>
+    <g>
+      <polygon points="0,-118 64,-20 0,0 -64,-20" fill="url(#gi-gem)"/>
+      <polygon points="-64,-20 0,0 0,118" fill="url(#gi-gem-dk)" opacity="0.92"/>
+      <polygon points="64,-20 0,0 0,118" fill="#7FD2EA" opacity="0.95"/>
+      <polygon points="0,-118 0,0 -64,-20" fill="#C9B4ED" opacity="0.9"/>
+      <polygon points="0,-118 64,-20 0,0" fill="#BFEAF5" opacity="0.9"/>
+      <polygon points="0,-118 64,-20 0,118 -64,-20" fill="none" stroke="#F3ECDD" stroke-width="1.4" opacity="0.55"/>
+    </g>
+    <polygon points="-20,-58 6,-46 -8,-30" fill="#FFFFFF" opacity="0.85"/>
+    <text x="0" y="34" text-anchor="middle" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="58" letter-spacing="2" fill="#F3ECDD" opacity="0.96">GC</text>
+    <g stroke="#FFD56A" stroke-width="1.6" opacity="0.85">
+      <path d="M-2,-150 L18,-150 M-2,-150 L-2,-132"/>
+    </g>
+  </g>
+  <g stroke="#5BC0DE" stroke-width="1.6" opacity="0.7">
+    <path d="M1150,40 L1182,40 M1182,40 L1182,72" fill="none"/>
+    <path d="M1182,380 L1150,380 M1150,380 L1150,348" fill="none"/>
+  </g>
+</svg>

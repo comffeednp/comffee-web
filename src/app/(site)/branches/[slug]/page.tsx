@@ -16,6 +16,7 @@ import BookableSpots from "@/components/site/BookableSpots";
 import AvailabilityCalendar from "@/components/site/AvailabilityCalendar";
 import Reveal from "@/components/site/Reveal";
 import BranchChatContext from "@/components/site/BranchChatContext";
+import GameTopupBanner from "@/components/site/GameTopupBanner";
 import {
   ArrowRight,
   Clock,
@@ -161,6 +162,9 @@ export default async function BranchDetailPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+
+      {/* Game Top-Ups promo — first thing on every branch page; links to the store. */}
+      <GameTopupBanner />
 
       {/* ============================================================
           HERO

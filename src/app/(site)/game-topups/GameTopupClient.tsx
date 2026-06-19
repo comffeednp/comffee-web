@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   AlertTriangle,
   Check,
@@ -12,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
+import { gameArt } from "@/lib/game-topups/games-art";
 
 interface CatalogItem {
   sku: string;
@@ -88,6 +90,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
 
   const game = games.find((g) => g.slug === gameSlug) ?? games[0];
   const currency = game?.currency ?? "VP";
+  const art = gameArt(gameSlug);
+  // Scope the whole store to this game's signature color: overriding --color-amber re-tints every
+  // `amber` utility (tiles, prices, total, focus ring) for the selected game. Falls back to brand amber.
+  const accent = art?.accent ?? "#ffb547";
   const packages = useMemo(
     () => catalog.filter((c) => c.game === gameSlug).sort((a, b) => a.vp - b.vp),
     [catalog, gameSlug],
@@ -207,9 +213,22 @@ export default function GameTopupClient({ catalog, games }: Props) {
     : null;
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.4fr_1fr]">
+    <div
+      className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.4fr_1fr]"
+      style={{ "--color-amber": accent } as CSSProperties}
+    >
       {/* ── LEFT: build the order + verify ─────────────────────────────── */}
       <div className="space-y-8 rounded-2xl border border-line-bright bg-bg-card p-6 md:p-8">
+        {/* Per-game key art — themes the whole store to the selected game */}
+        {art && (
+          <div
+            role="img"
+            aria-label={`${game?.name ?? art.name} — top up ${currency}`}
+            className="w-full overflow-hidden rounded-xl border border-line-bright bg-cover bg-center shadow-lg"
+            style={{ backgroundImage: `url(${art.art})`, aspectRatio: "1200 / 420" }}
+          />
+        )}
+
         {/* Game */}
         {games.length > 1 && (
           <div>
@@ -327,8 +346,8 @@ export default function GameTopupClient({ catalog, games }: Props) {
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/game-topups-sample-profile.svg"
-              alt="Example screenshot: a game profile with the name and tag visible, like Westbourne#SEA"
+              src="/games/game-topups-sample-profile.svg"
+              alt="Example: your game account menu showing your name and #tag — copy it exactly"
               className="h-24 w-auto shrink-0 rounded-md border border-line-bright"
             />
             <p className="font-mono text-[0.7rem] leading-relaxed text-mocha">

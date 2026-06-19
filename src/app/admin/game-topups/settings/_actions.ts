@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireFullAdmin } from "@/lib/auth/require-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { computeCustomerPrice } from "@/lib/game-topups/pricing";
+import { runPriceSync } from "@/lib/game-topups/price-sync";
 
 // Game Top-Up admin config. Settings live as gt_* keys in site_settings (mirrors the site settings
 // pattern); the catalog editor recomputes customer_price from codashop_price × discount on save.
@@ -30,6 +31,25 @@ export async function saveTopupSettingsAction(formData: FormData) {
   revalidatePath("/admin/game-topups/settings");
   revalidatePath("/game-topups");
   redirect("/admin/game-topups/settings?ok=1");
+}
+
+// On-demand "Pull now" — runs the same Codashop price-sync the daily cron does, so the owner can refresh
+// the auto-pulled prices immediately instead of waiting for the nightly run.
+export async function syncPricesNowAction(_formData?: FormData) {
+  await requireFullAdmin();
+  let msg: string;
+  try {
+    const r = await runPriceSync();
+    msg =
+      `prices pulled — ${r.updated} updated` +
+      (r.froze ? `, ${r.froze} frozen (review them)` : "") +
+      (r.readFailures.length ? `, couldn't read: ${r.readFailures.join(", ")}` : "");
+  } catch (e) {
+    msg = `pull failed: ${e instanceof Error ? e.message : "unknown error"}`;
+  }
+  revalidatePath("/admin/game-topups/settings");
+  revalidatePath("/game-topups");
+  redirect(`/admin/game-topups/settings?ok=${encodeURIComponent(msg)}`);
 }
 
 export async function saveCatalogRowAction(formData: FormData) {

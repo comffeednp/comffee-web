@@ -1,0 +1,66 @@
+<svg viewBox="0 0 1200 420" width="100%" height="auto" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Wild Rift key art — buy Wild Cores discounted at Comffee" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wr-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10171A"/>
+      <stop offset="0.55" stop-color="#0E2A2E"/>
+      <stop offset="1" stop-color="#1E2328"/>
+    </linearGradient>
+    <linearGradient id="wr-word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.5" stop-color="#EAF6F4"/>
+      <stop offset="1" stop-color="#BFD8D4"/>
+    </linearGradient>
+    <linearGradient id="wr-slash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0AC8B9"/>
+      <stop offset="1" stop-color="#0397AB"/>
+    </linearGradient>
+    <linearGradient id="wr-gem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5FF4E6"/>
+      <stop offset="0.5" stop-color="#0AC8B9"/>
+      <stop offset="1" stop-color="#0397AB"/>
+    </linearGradient>
+    <radialGradient id="wr-core" cx="0.5" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.4" stop-color="#7CFCEF"/>
+      <stop offset="1" stop-color="#0AC8B9"/>
+    </radialGradient>
+    <radialGradient id="wr-halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0AC8B9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#0AC8B9" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="wr-grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#0AC8B9" stroke-width="1" opacity="0.2"/>
+    </pattern>
+    <filter id="wr-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#wr-bg)"/>
+  <rect width="1200" height="420" fill="url(#wr-grid)"/>
+  <rect x="0" y="150" width="1200" height="1.5" fill="#0AC8B9" opacity="0.07"/>
+  <rect x="0" y="300" width="1200" height="1.5" fill="#0AC8B9" opacity="0.07"/>
+  <rect x="8" y="8" width="1184" height="404" fill="none" stroke="#C8AA6E" stroke-width="2" opacity="0.18"/>
+
+  <polygon points="0,0 150,0 60,420 0,420" fill="url(#wr-slash)" opacity="0.9"/>
+  <polygon points="150,0 196,0 106,420 60,420" fill="#0397AB" opacity="0.25"/>
+
+  <text x="70" y="218" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="104" letter-spacing="6" fill="url(#wr-word)">WILD RIFT</text>
+  <rect x="72" y="240" width="470" height="3" fill="#0AC8B9"/>
+  <text x="72" y="284" font-family="Consolas, 'Courier New', monospace" font-size="22" letter-spacing="2.5"><tspan fill="#C8AA6E">// </tspan><tspan fill="#EAF6F4">WILD CORES — discounted at Comffee</tspan></text>
+
+  <g transform="translate(980,210)">
+    <circle r="150" fill="url(#wr-halo)"/>
+    <g filter="url(#wr-glow)">
+      <polygon points="0,-110 78,-30 0,120 -78,-30" fill="url(#wr-gem)" stroke="#C8AA6E" stroke-width="3"/>
+      <polygon points="0,-110 78,-30 0,5 -78,-30" fill="url(#wr-core)" opacity="0.92"/>
+      <line x1="-78" y1="-30" x2="0" y2="5" stroke="#EAF6F4" stroke-width="1.2" opacity="0.55"/>
+      <line x1="78" y1="-30" x2="0" y2="5" stroke="#EAF6F4" stroke-width="1.2" opacity="0.55"/>
+      <line x1="0" y1="-110" x2="0" y2="120" stroke="#EAF6F4" stroke-width="1" opacity="0.4"/>
+    </g>
+    <text x="0" y="14" text-anchor="middle" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="58" letter-spacing="3" fill="#EAF6F4">WC</text>
+    <path d="M120,-120 h26 v26" fill="none" stroke="#0AC8B9" stroke-width="2" opacity="0.7"/>
+    <path d="M-120,140 h-26 v-26" fill="none" stroke="#0AC8B9" stroke-width="2" opacity="0.7"/>
+  </g>
+</svg>

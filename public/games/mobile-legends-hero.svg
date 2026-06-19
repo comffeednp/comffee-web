@@ -1,0 +1,71 @@
+<svg viewBox="0 0 1200 420" width="100%" height="auto" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Mobile Legends Bang Bang key art — Diamonds discounted at Comffee, featuring a glowing blue faceted diamond gem on a royal purple-blue background" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ml-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14102E"/>
+      <stop offset="0.5" stop-color="#1A1145"/>
+      <stop offset="1" stop-color="#2A1A5E"/>
+    </linearGradient>
+    <linearGradient id="ml-word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.55" stop-color="#F4ECDF"/>
+      <stop offset="1" stop-color="#D8C9A8"/>
+    </linearGradient>
+    <linearGradient id="ml-slash" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD54F"/>
+      <stop offset="1" stop-color="#FFC107"/>
+    </linearGradient>
+    <linearGradient id="ml-gem" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4FC3F7"/>
+      <stop offset="1" stop-color="#1976D2"/>
+    </linearGradient>
+    <linearGradient id="ml-gem-top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E3F4FE"/>
+      <stop offset="1" stop-color="#4FC3F7"/>
+    </linearGradient>
+    <radialGradient id="ml-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4FC3F7" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#1976D2" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#1976D2" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="ml-grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#FFD54F" stroke-width="0.5" opacity="0.2"/>
+    </pattern>
+    <filter id="ml-blur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#ml-bg)"/>
+  <rect width="1200" height="420" fill="url(#ml-grid)"/>
+  <rect x="0" y="150" width="1200" height="1.5" fill="#4FC3F7" opacity="0.06"/>
+  <rect x="0" y="300" width="1200" height="1.5" fill="#FFD54F" opacity="0.06"/>
+  <rect x="10" y="10" width="1180" height="400" fill="none" stroke="#FFD54F" stroke-width="2" opacity="0.18"/>
+
+  <polygon points="0,0 150,0 60,420 0,420" fill="url(#ml-slash)" opacity="0.9"/>
+  <polygon points="150,0 200,0 110,420 60,420" fill="#FFD54F" opacity="0.12"/>
+
+  <text x="70" y="205" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="80" letter-spacing="5" fill="url(#ml-word)">MOBILE LEGENDS</text>
+  <rect x="72" y="226" width="560" height="3" fill="#FFC107"/>
+  <text x="72" y="262" font-family="Consolas, 'Courier New', monospace" font-size="20" letter-spacing="2.5"><tspan fill="#4FC3F7">// </tspan><tspan fill="#F4ECDF">DIAMONDS — discounted at Comffee</tspan></text>
+
+  <g transform="translate(975,210)">
+    <ellipse cx="0" cy="0" rx="150" ry="150" fill="url(#ml-glow)"/>
+    <g filter="url(#ml-blur)" opacity="0.7">
+      <polygon points="0,-95 70,-30 0,105 -70,-30" fill="#4FC3F7"/>
+    </g>
+    <polygon points="-70,-30 -32,-30 0,-95 -32,-30" fill="url(#ml-gem-top)"/>
+    <polygon points="-32,-30 32,-30 0,-95" fill="#BBE6FB"/>
+    <polygon points="32,-30 70,-30 0,-95" fill="url(#ml-gem-top)"/>
+    <polygon points="-70,-30 -32,-30 0,105" fill="#1976D2"/>
+    <polygon points="-32,-30 0,-30 0,105" fill="#2A8FE0"/>
+    <polygon points="0,-30 32,-30 0,105" fill="url(#ml-gem)"/>
+    <polygon points="32,-30 70,-30 0,105" fill="#155FA8"/>
+    <polygon points="0,-95 14,-50 0,-30 -14,-50" fill="#FFFFFF" opacity="0.85"/>
+    <polygon points="0,-95 70,-30 0,105 -70,-30" fill="none" stroke="#FFD54F" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="8" text-anchor="middle" font-family="Arial Narrow, Impact, sans-serif" font-weight="900" font-size="44" letter-spacing="2" fill="#F4ECDF">DIA</text>
+    <path d="M-150,-110 h26 M-150,-110 v26" stroke="#4FC3F7" stroke-width="2" opacity="0.6" fill="none"/>
+    <path d="M150,130 h-26 M150,130 v-26" stroke="#4FC3F7" stroke-width="2" opacity="0.6" fill="none"/>
+    <circle cx="95" cy="-95" r="2.5" fill="#E53935"/>
+    <circle cx="-100" cy="100" r="2.5" fill="#E53935"/>
+  </g>
+</svg>

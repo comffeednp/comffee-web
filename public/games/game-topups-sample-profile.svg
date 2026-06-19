@@ -1,0 +1,84 @@
+<svg viewBox="0 0 360 276" width="360" height="276" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Example: a game account menu showing the player name and #tag">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#100c0d"/>
+      <stop offset="1" stop-color="#0a0807"/>
+    </linearGradient>
+    <radialGradient id="redBlur" cx="0.74" cy="0.32" r="0.6">
+      <stop offset="0" stop-color="#ff4655" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#ff4655" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#ff4655" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2128"/>
+      <stop offset="1" stop-color="#15181d"/>
+    </linearGradient>
+    <radialGradient id="avatar" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#1a1f26"/>
+      <stop offset="1" stop-color="#0e1116"/>
+    </radialGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+    <clipPath id="avClip"><circle cx="64" cy="80" r="33"/></clipPath>
+    <clipPath id="avClipSm"><circle cx="258" cy="42" r="14"/></clipPath>
+  </defs>
+
+  <!-- backdrop: dark with a soft red Valorant-ish bloom -->
+  <rect width="360" height="276" fill="url(#bg)"/>
+  <ellipse cx="266" cy="88" rx="150" ry="120" fill="url(#redBlur)" filter="url(#blur)"/>
+
+  <!-- ============ TOP-RIGHT mini profile (faint, for realism) ============ -->
+  <g opacity="0.85">
+    <circle cx="258" cy="42" r="14" fill="url(#avatar)"/>
+    <g clip-path="url(#avClipSm)" fill="#dfe2e6">
+      <circle cx="258" cy="38" r="5.4"/>
+      <path d="M249 52 a9 9 0 0 1 18 0 z"/>
+    </g>
+    <circle cx="268" cy="51" r="3.4" fill="#3BA55D" stroke="#100c0d" stroke-width="1.5"/>
+    <text x="280" y="39" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" fill="#eef0f2">Westbourne</text>
+    <text x="280" y="53" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" fill="#8a9099">Online</text>
+    <!-- collapse arrow -->
+    <g stroke="#cfd3d8" stroke-width="1.6" fill="none" stroke-linecap="round">
+      <path d="M338 36 l7 6 -7 6"/><path d="M348 35 v14"/>
+    </g>
+    <!-- tab bar with red underline under first -->
+    <rect x="248" y="66" width="104" height="24" rx="8" fill="#11151a"/>
+    <g fill="#9aa0a8"><circle cx="266" cy="78" r="3"/><circle cx="300" cy="78" r="3"/><circle cx="334" cy="78" r="3"/></g>
+    <rect x="258" y="88" width="16" height="2.4" rx="1.2" fill="#ff4655"/>
+  </g>
+
+  <!-- ============ LEFT account panel (the part that shows the Riot ID) ============ -->
+  <rect x="16" y="16" width="214" height="244" rx="16" fill="url(#panel)" stroke="#2a2f37" stroke-width="1"/>
+  <rect x="16" y="16" width="214" height="244" rx="16" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1" transform="translate(0,1)"/>
+
+  <!-- avatar + online dot -->
+  <circle cx="64" cy="80" r="33" fill="url(#avatar)"/>
+  <g clip-path="url(#avClip)" fill="#e9eaec">
+    <circle cx="64" cy="71" r="12"/>
+    <path d="M44 104 a20 20 0 0 1 40 0 z"/>
+  </g>
+  <circle cx="86" cy="102" r="8" fill="#3BA55D" stroke="#15181d" stroke-width="3.5"/>
+
+  <!-- name + #tag (THE thing to copy) with an amber highlight ring -->
+  <rect x="34" y="126" width="176" height="30" rx="7" fill="#ffb547" fill-opacity="0.10" stroke="#ffb547" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="42" y="148" font-family="'Segoe UI',Arial,sans-serif" font-size="21" font-weight="800" fill="#f3f4f5">Westbourne<tspan fill="#8a9099" font-weight="700">#SEA</tspan></text>
+  <text x="42" y="176" font-family="'Segoe UI',Arial,sans-serif" font-size="13" fill="#8a9099">Online</text>
+
+  <!-- menu rows (dim, like the real client) -->
+  <g font-family="'Segoe UI',Arial,sans-serif" font-size="14" fill="#c4c8ce">
+    <text x="42" y="206">Account Details</text>
+    <text x="42" y="232">Account Security</text>
+    <text x="42" y="252" font-size="13" fill="#9aa0a8">Settings</text>
+  </g>
+  <g stroke="#9aa0a8" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.8">
+    <path d="M198 198 l7 -7 m0 0 h-5 m5 0 v5"/>
+    <path d="M198 224 l7 -7 m0 0 h-5 m5 0 v5"/>
+  </g>
+
+  <!-- callout pointing at the highlighted Riot ID -->
+  <g font-family="ui-monospace,Consolas,'Courier New',monospace" fill="#ffb547">
+    <path d="M250 138 q-12 0 -22 2" stroke="#ffb547" stroke-width="1.6" fill="none" marker-end=""/>
+    <path d="M214 140 l-8 0 m0 0 l4 -3 m-4 3 l4 3" stroke="#ffb547" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <text x="244" y="132" font-size="12" font-weight="700">YOUR RIOT ID</text>
+    <text x="244" y="150" font-size="10.5" fill="#cbb083">copy name + #tag</text>
+  </g>
+</svg>

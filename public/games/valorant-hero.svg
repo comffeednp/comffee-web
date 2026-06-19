@@ -1,0 +1,90 @@
+<svg viewBox="0 0 1200 420" width="100%" height="auto" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Valorant Points — discounted at Comffee" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111820"/>
+      <stop offset="0.55" stop-color="#0F1923"/>
+      <stop offset="1" stop-color="#0A1118"/>
+    </linearGradient>
+    <linearGradient id="redSlash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF4655"/>
+      <stop offset="1" stop-color="#B81E2C"/>
+    </linearGradient>
+    <linearGradient id="steelEdge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2A3441"/>
+      <stop offset="1" stop-color="#0F1923" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="coinGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FF4655" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#FF4655" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FF4655" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coinFace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF6470"/>
+      <stop offset="0.5" stop-color="#FF4655"/>
+      <stop offset="1" stop-color="#A81824"/>
+    </linearGradient>
+    <linearGradient id="wordmarkFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ECE8E1"/>
+      <stop offset="1" stop-color="#B9B6AF"/>
+    </linearGradient>
+    <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#2A3441" stroke-width="1" opacity="0.22"/>
+    </pattern>
+    <pattern id="scan" width="6" height="6" patternUnits="userSpaceOnUse">
+      <rect width="6" height="1" fill="#ECE8E1" opacity="0.05"/>
+    </pattern>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- base -->
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <rect width="1200" height="420" fill="url(#grid)"/>
+  <rect width="1200" height="420" fill="url(#scan)"/>
+
+  <!-- tactical diagonal slashes -->
+  <g opacity="0.9">
+    <polygon points="0,0 150,0 60,420 -90,420" fill="url(#redSlash)" opacity="0.16"/>
+    <polygon points="120,0 138,0 36,420 18,420" fill="#FF4655" opacity="0.7"/>
+  </g>
+  <polygon points="980,0 1200,0 1200,80 1120,80" fill="url(#steelEdge)" opacity="0.7"/>
+  <polygon points="0,360 1200,300 1200,420 0,420" fill="#111820" opacity="0.6"/>
+
+  <!-- chevron accents -->
+  <g fill="none" stroke="#FF4655" stroke-width="3" opacity="0.85">
+    <path d="M70 196 L92 208 L70 220"/>
+    <path d="M94 196 L116 208 L94 220" opacity="0.5"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="70" y="208" font-family="Arial Narrow, Impact, sans-serif" font-weight="900"
+        font-size="118" letter-spacing="14" fill="url(#wordmarkFade)"
+        style="font-stretch:condensed">VALORANT</text>
+  <rect x="72" y="232" width="640" height="3" fill="#FF4655"/>
+
+  <!-- mono sub-line -->
+  <text x="74" y="276" font-family="Consolas, 'Courier New', monospace" font-size="22"
+        letter-spacing="4" fill="#1FB8CD">//</text>
+  <text x="104" y="276" font-family="Consolas, 'Courier New', monospace" font-size="22"
+        letter-spacing="2.5" fill="#ECE8E1" opacity="0.9">VALORANT POINTS — discounted at Comffee</text>
+
+  <!-- VP coin / diamond motif -->
+  <g transform="translate(1000 210)">
+    <circle r="160" fill="url(#coinGlow)"/>
+    <g filter="url(#glow)">
+      <polygon points="0,-118 102,0 0,118 -102,0" fill="#0F1923" stroke="#FF4655" stroke-width="3"/>
+      <polygon points="0,-92 80,0 0,92 -80,0" fill="url(#coinFace)"/>
+      <polygon points="0,-92 80,0 0,0" fill="#FFFFFF" opacity="0.12"/>
+    </g>
+    <text x="0" y="20" text-anchor="middle" font-family="Arial Narrow, Impact, sans-serif"
+          font-weight="900" font-size="78" letter-spacing="2" fill="#ECE8E1"
+          style="font-stretch:condensed">VP</text>
+    <polyline points="-150,-150 -120,-150 -120,-122" fill="none" stroke="#1FB8CD" stroke-width="2" opacity="0.8"/>
+    <polyline points="150,150 120,150 120,122" fill="none" stroke="#1FB8CD" stroke-width="2" opacity="0.8"/>
+  </g>
+
+  <!-- thin frame -->
+  <rect x="6" y="6" width="1188" height="408" fill="none" stroke="#2A3441" stroke-width="2" opacity="0.5"/>
+</svg>
