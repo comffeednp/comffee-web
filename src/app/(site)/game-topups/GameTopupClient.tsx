@@ -53,11 +53,22 @@ async function shrinkImage(file: File, maxDim = 1600, quality = 0.85): Promise<B
   }
 }
 
+// Split a combined Riot ID ("Name#TAG") into its parts. Riot game names can't contain '#', so we split
+// at the first '#'. Returns null until BOTH a name (>=3 chars) and a tag are present.
+function splitRiotId(full: string): { name: string; tag: string } | null {
+  const s = (full || "").trim();
+  const i = s.indexOf("#");
+  if (i < 1) return null;
+  const name = s.slice(0, i).trim();
+  const tag = s.slice(i + 1).trim().replace(/^#+/, "");
+  if (name.length < 3 || tag.length < 1) return null;
+  return { name, tag };
+}
+
 export default function GameTopupClient({ catalog, games }: Props) {
   const [gameSlug, setGameSlug] = useState(games[0]?.slug ?? catalog[0]?.game ?? "valorant");
   const [cart, setCart] = useState<CatalogItem[]>([]);
-  const [riotId, setRiotId] = useState("");
-  const [tag, setTag] = useState("");
+  const [riotIdFull, setRiotIdFull] = useState(""); // single field — "Name#TAG"
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -84,7 +95,8 @@ export default function GameTopupClient({ catalog, games }: Props) {
   const totalVp = cart.reduce((s, c) => s + c.vp, 0);
   const totalPrice = cart.reduce((s, c) => s + c.price, 0);
 
-  const detailsReady = cart.length > 0 && riotId.trim().length >= 3 && tag.trim().length >= 2;
+  const parsedRiot = splitRiotId(riotIdFull);
+  const detailsReady = cart.length > 0 && !!parsedRiot;
 
   // Any change to the cart/game while NOT yet verified must drop the server draft binding: the OCR route
   // froze the order lines on the first attempt, so reusing that orderId would charge/deliver the OLD cart
@@ -123,15 +135,16 @@ export default function GameTopupClient({ catalog, games }: Props) {
   };
 
   const verify = async () => {
-    if (!detailsReady || !file) return;
+    const parsed = splitRiotId(riotIdFull);
+    if (!parsed || !file) return;
     setVerifying(true);
     setVerifyMsg(null);
     setBlockedUntil(null);
     try {
       const shrunk = await shrinkImage(file);
       const fd = new FormData();
-      fd.append("riotId", riotId.trim());
-      fd.append("tag", tag.trim().replace(/^#/, ""));
+      fd.append("riotId", parsed.name);
+      fd.append("tag", parsed.tag);
       fd.append("skus", JSON.stringify(cart.map((c) => c.sku)));
       if (orderId) fd.append("orderId", orderId);
       fd.append("image", shrunk, "screenshot.jpg");
@@ -156,7 +169,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
       const left = typeof data.triesLeft === "number" ? data.triesLeft : null;
       setVerifyMsg(
         left !== null && left > 0
-          ? `That screenshot doesn't show "${riotId.trim()}". ${left} ${left === 1 ? "try" : "tries"} left — make sure your in-game profile name is visible.`
+          ? `That screenshot doesn't show "${parsed.name}". ${left} ${left === 1 ? "try" : "tries"} left — make sure your in-game name and tag are clearly visible.`
           : "We couldn't match that screenshot to your Riot ID.",
       );
     } catch {
@@ -251,39 +264,59 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         </div>
 
-        {/* Riot ID */}
-        <div className="grid gap-5 sm:grid-cols-[2fr_1fr]">
-          <Field label="riot id (in-game name) *">
+        {/* Riot ID — ONE field, must include the #tag */}
+        <div>
+          <Field label="riot id — include your #tag *">
             <input
               type="text"
-              value={riotId}
-              onChange={(e) => setRiotId(e.target.value)}
+              value={riotIdFull}
+              onChange={(e) => {
+                setRiotIdFull(e.target.value);
+                resetVerifyDraft();
+              }}
               disabled={verified}
               className="gt-input"
-              placeholder="Westbourne"
+              placeholder="Westbourne#SEA"
               autoComplete="off"
+              spellCheck={false}
             />
           </Field>
-          <Field label="#tag *">
-            <input
-              type="text"
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              disabled={verified}
-              className="gt-input"
-              placeholder="SEA"
-              autoComplete="off"
-            />
-          </Field>
+          <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
+            Type it exactly as in-game, <span className="text-cream-dim">including the # and your tag</span> — e.g.{" "}
+            <span className="text-cream-dim">Westbourne#SEA</span>.
+          </p>
         </div>
 
         {/* Verify */}
         <div>
           <p className="terminal-label">// prove it&rsquo;s your account</p>
           <p className="mt-2 text-sm text-cream-dim">
-            Paste or upload a screenshot of your in-game profile showing <strong>{riotId.trim() || "your name"}</strong>.
-            We read the name to make sure the points land on the right account.
+            Paste or upload a screenshot of your in-game profile clearly showing your <strong>name and #tag</strong>
+            {parsedRiot ? (
+              <>
+                {" "}(
+                <strong className="text-cream">
+                  {parsedRiot.name}#{parsedRiot.tag}
+                </strong>
+                )
+              </>
+            ) : null}
+            . We read it to make sure the points land on the right account.
           </p>
+
+          {/* Sample so customers know exactly what to upload */}
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/game-topups-sample-profile.svg"
+              alt="Example screenshot: a game profile with the name and tag visible, like Westbourne#SEA"
+              className="h-24 w-auto shrink-0 rounded-md border border-line-bright"
+            />
+            <p className="font-mono text-[0.7rem] leading-relaxed text-mocha">
+              <span className="text-cream-dim">Like this</span> — your name <span className="text-cream-dim">and #tag</span>{" "}
+              must be clearly readable in the shot.
+            </p>
+          </div>
 
           <div
             onPaste={onPaste}

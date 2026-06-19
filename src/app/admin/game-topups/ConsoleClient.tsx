@@ -127,8 +127,7 @@ export default function ConsoleClient({ orders, otps }: { orders: OrderRow[]; ot
                     <span className="font-display text-lg font-bold text-cream">
                       {o.riotId}<span className="text-mocha">#{o.tag}</span>
                     </span>
-                    <CopyButton value={`${o.riotId}#${o.tag}`} label="Riot ID" />
-                    <CopyButton value={o.riotId} label="name only" />
+                    <CopyButton value={`${o.riotId}#${o.tag}`} label="Riot ID + tag" />
                   </div>
                   <p className="mt-1 font-mono text-xs uppercase text-mocha">
                     {o.game} · {o.region} · {o.targetVp.toLocaleString()} VP · {formatPHP(o.amountPhp)} · {ageMin}m ago
