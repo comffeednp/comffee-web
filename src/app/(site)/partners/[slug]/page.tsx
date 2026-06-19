@@ -9,7 +9,6 @@ import AmenityIcon from "@/components/site/AmenityIcon";
 import RateCardList from "@/components/site/RateCardList";
 import RateConfigDisplay from "@/components/site/RateConfigDisplay";
 import Reveal from "@/components/site/Reveal";
-import GameTopupBanner from "@/components/site/GameTopupBanner";
 import {
   ArrowRight,
   Clock,
@@ -94,9 +93,6 @@ export default async function PartnerCafeDetailPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-
-      {/* Game Top-Ups promo — the first thing on every partner-cafe page (links to the store). */}
-      <GameTopupBanner />
 
       {/* HERO */}
       <HeroParallax src={branch.hero_image_url} alt={branch.name} height="screen">
