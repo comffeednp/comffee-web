@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Get discounted game credits here — Comffee Game Top-Ups (Valorant and League points)">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14100d"/>
+      <stop offset="0.55" stop-color="#1c1714"/>
+      <stop offset="1" stop-color="#0a0807"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb547"/>
+      <stop offset="1" stop-color="#ff8a3d"/>
+    </linearGradient>
+    <radialGradient id="glowG" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7CFFB2" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7CFFB2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#58e1ff" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#58e1ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowM" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff3864" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ff3864" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0 H0 V40" fill="none" stroke="#3d3430" stroke-width="1" opacity="0.18"/>
+    </pattern>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1200" height="260" fill="url(#bg)"/>
+  <rect width="1200" height="260" fill="url(#grid)"/>
+  <rect x="0" y="0" width="1200" height="3" fill="url(#amber)"/>
+
+  <!-- neon glows behind the art -->
+  <ellipse cx="960" cy="80" rx="180" ry="130" fill="url(#glowG)"/>
+  <ellipse cx="1095" cy="175" rx="160" ry="125" fill="url(#glowC)"/>
+  <ellipse cx="850" cy="195" rx="140" ry="105" fill="url(#glowM)"/>
+
+  <!-- crystals (Valorant-style angular shards) -->
+  <g stroke-linejoin="round">
+    <polygon points="975,38 1028,98 975,158 922,98" fill="#1c1714" stroke="#7CFFB2" stroke-width="3"/>
+    <polygon points="975,38 1028,98 975,98" fill="#7CFFB2" opacity="0.20"/>
+    <polygon points="1092,92 1132,138 1092,184 1052,138" fill="#1c1714" stroke="#58e1ff" stroke-width="3"/>
+    <polygon points="1092,92 1132,138 1092,138" fill="#58e1ff" opacity="0.20"/>
+    <polygon points="900,128 930,166 900,204 870,166" fill="#1c1714" stroke="#ff3864" stroke-width="2.5"/>
+  </g>
+
+  <!-- credit coins -->
+  <g text-anchor="middle" font-family="Consolas, 'JetBrains Mono', monospace" font-weight="700">
+    <circle cx="1010" cy="205" r="24" fill="url(#amber)"/>
+    <text x="1010" y="211" font-size="15" fill="#1a0f06">VP</text>
+    <circle cx="868" cy="78" r="19" fill="url(#amber)" opacity="0.92"/>
+    <text x="868" y="83" font-size="13" fill="#1a0f06">&#8369;</text>
+  </g>
+
+  <!-- copy -->
+  <text x="60" y="66" font-family="Consolas, 'JetBrains Mono', monospace" font-size="15" letter-spacing="3" fill="#8a7a68">COMFFEE &#9679; GAME TOP-UPS</text>
+  <text x="58" y="132" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="46" font-weight="800" fill="#f4ecdf">Get <tspan fill="#ffb547">discounted</tspan> game credits here!</text>
+  <text x="60" y="170" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#c9bfae">Valorant &amp; League points — paid online, delivered straight to your account.</text>
+
+  <!-- CTA pill -->
+  <g>
+    <rect x="60" y="194" width="208" height="46" rx="23" fill="url(#amber)"/>
+    <text x="164" y="223" text-anchor="middle" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#1a0f06">Top up now  &#8594;</text>
+  </g>
+</svg>

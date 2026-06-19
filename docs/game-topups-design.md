@@ -144,20 +144,36 @@ fail-CLOSED on a definitive name mismatch.
 
 ---
 
-## Go-live checklist (owner)
+## Deployment status — LIVE since 2026-06-20
 
-**External facts to supply (§19 of the spec) — code ships with safe configurable defaults until then:**
-1. ✅ Repo confirmed: `comffee-web`.
-2. ⬜ OTP sender ID + digit count (one real OTP SMS) → tune the SMS parser regex.
-3. ⬜ One real Codashop receipt email (personal bits blanked, layout intact) → tune the inbound receipt parser.
-4. ⬜ Codashop public price-page URLs per game/region → seed `game_topup_games.codashop_url` + per-SKU `source_url`.
+**Done:**
+- ✅ Repo `comffee-web`; committed `a8c22c2` + pushed `main` → Vercel production; redeployed so env is live.
+- ✅ Migration `0059` applied to live Supabase `uioeefxnugnqhvthaxjf` (`node scripts/apply-migration.mjs 0059`) —
+     verified: catalog seeded (5 Valorant packages), Valorant active, League hidden, order tables empty.
+- ✅ Env set in Vercel (production + preview + development): `TOPUP_RELAY_TOKEN`, `TOPUP_INBOUND_TOKEN`
+     (values stored locally only, NOT in this repo). Reuses `PAYMONGO_*`, `GOOGLE_VISION_API_KEY`,
+     `RESEND_API_KEY`/`RESEND_FROM`, `CRON_SECRET`. Optional later: `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`.
+- ✅ Storefront live at `https://www.comffee.org/game-topups`; "Game Top-Ups" headbar tab + a promo banner at
+     the top of every partner-cafe page (`/partners/[slug]`) linking to the store.
 
-**Owner setup / approvals (hard stops — NOT done in this build):**
-- ⬜ Apply migration `0059` to live Supabase `uioeefxnugnqhvthaxjf` (`node scripts/apply-migration.mjs 0059`).
-- ⬜ Set env in Vercel: `TOPUP_RELAY_TOKEN`, `TOPUP_INBOUND_TOKEN` (new); optional `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`.
-      Reuses existing `PAYMONGO_*`, `GOOGLE_VISION_API_KEY`, `RESEND_API_KEY`/`RESEND_FROM`, `CRON_SECRET`.
-- ⬜ Inbound email: forward the Codashop operator inbox → `/api/game-topup/confirm/email` (Cloudflare Email
-      Routing / Resend inbound / a forwarder) with the bearer token.
-- ⬜ MacroDroid: SMS-received → POST OTP to `/api/game-topup/otp` with the bearer token.
-- ⬜ Activate **card** on the PayMongo account if card checkout is wanted (QRPh already live).
-- ⬜ Deploy (commit + push `main`).
+**⚠ Canonical host — use `www.comffee.org` for the relay/inbound endpoints.** The apex `comffee.org` 307-
+redirects to `www`, and that redirect **strips the `Authorization` header** → 401. Browsers follow it fine
+(the storefront works on both), but a simple HTTP client (MacroDroid) must POST directly to `www.comffee.org`.
+
+**Where to set the discount:** `https://www.comffee.org/admin/game-topups/settings` → **"Default discount %
+(global)"** (seeded 8%); per-package overrides in the **Catalog** editor on the same page (each row has a
+Discount % field). `customer_price = round(codashop_price × (1 − discount%))`, so the customer price is
+*intentionally lower* than Codashop retail (that IS the discount you give customers) — your margin is the gap
+between the cheap SIM carrier-billing cost and your selling price. 0% = same as Codashop. (Seed example:
+475 VP = Codashop ₱199 → ₱183 at 8%.)
+
+**Remaining to switch on hands-off AUTO-fulfilment (manual fulfilment via the console works now):**
+1. ⬜ MacroDroid: SMS-received → POST to `https://www.comffee.org/api/game-topup/otp` (+ `/confirm/sms`),
+      header `Authorization: Bearer <TOPUP_RELAY_TOKEN>`.
+2. ⬜ Inbound email: forward the Codashop operator inbox → `https://www.comffee.org/api/game-topup/confirm/email`,
+      header `Authorization: Bearer <TOPUP_INBOUND_TOKEN>` (Cloudflare Email Routing / Resend inbound / a forwarder).
+3. ⬜ Supply the 3 external facts (§19) to finish parsing + live pricing: one real OTP SMS (sender + digit count);
+      one real Codashop receipt email (PII blanked); Codashop price-page URLs per game → then implement
+      `fetchCodashopPrice` (price-sync is a discount-only recompute until then).
+4. ⬜ Activate **card** on the PayMongo account if card checkout is wanted (QRPh already live).
+5. ⬜ Wire `/api/cron/game-topup-sla-sweep` into the every-15-min Windows Scheduled Task (Vercel crons are daily).
