@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Settings } from "lucide-react";
 import { requireEditor } from "@/lib/auth/require-admin";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import ConsoleClient from "./ConsoleClient";
@@ -64,15 +66,25 @@ export default async function GameTopupConsolePage() {
   }));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-[0.18em] text-mocha">/admin/game-topups</p>
-        <h1 className="mt-1 font-display text-2xl font-bold text-cream">Game Top-Up fulfilment</h1>
-        <p className="mt-1 text-sm text-cream-dim">
-          Buy each package on Codashop, then tick it here. The customer is emailed our receipt when every line is delivered.
-        </p>
+    <section className="container-edge max-w-6xl py-12 space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-mocha">/admin/game-topups</p>
+          <h1 className="mt-1 font-display text-2xl font-bold text-cream">Game Top-Up fulfilment</h1>
+          <p className="mt-1 max-w-xl text-sm text-cream-dim">
+            Buy each package on Codashop, then tick it here. The customer is emailed our receipt when every line is delivered.
+          </p>
+        </div>
+        <Link
+          href="/admin/game-topups/settings"
+          title="Game Top-Up prices, discount & catalog settings"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-line-bright bg-bg px-4 py-2 font-mono text-xs uppercase tracking-widest text-cream-dim transition hover:border-amber/60 hover:text-cream"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Prices &amp; settings
+        </Link>
       </div>
       <ConsoleClient orders={shaped} otps={(otps ?? []).map((o) => ({ id: o.id as string, otp: o.otp as string, sim: (o.sim as string | null) ?? null, createdAt: o.created_at as string }))} />
-    </div>
+    </section>
   );
 }

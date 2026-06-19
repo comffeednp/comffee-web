@@ -26,12 +26,15 @@ export default async function GameTopupSettingsPage({
     .order("sort_order", { ascending: true });
 
   return (
-    <div className="max-w-4xl space-y-8">
+    <section className="container-edge max-w-5xl py-12 space-y-8">
       <div>
         <Link href="/admin/game-topups" title="Back to fulfilment" className="font-mono text-xs uppercase tracking-widest text-cream-dim hover:text-amber">
           ← Fulfilment
         </Link>
-        <h1 className="mt-2 font-display text-2xl font-bold text-cream">Game Top-Up settings</h1>
+        <h1 className="mt-2 font-display text-2xl font-bold text-cream">Game Top-Up prices &amp; settings</h1>
+        <p className="mt-1 text-sm text-cream-dim">
+          Set your discount and per-package prices below. Your selling price = Codashop price × (1 − discount%).
+        </p>
       </div>
 
       {sp.ok && <p className="rounded-lg border border-phosphor/40 bg-phosphor/10 px-4 py-2 font-mono text-xs text-phosphor">// saved</p>}
@@ -109,7 +112,7 @@ export default async function GameTopupSettingsPage({
           ))}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
