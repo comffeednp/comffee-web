@@ -405,6 +405,10 @@ export default function AttendanceClient({
         const data = await res.json();
         if (data?.ok) {
           setStatus(data.status as AttendanceStatus);
+          // Keep the CLOCK state live too, so an admin force-clock-out (or force-in) flips the button +
+          // timer on this page on its own — no manual reload (owner 2026-06-19).
+          setClockType(data.lastClockType ?? null);
+          setClockAt(data.lastClockAt ?? null);
           setEnrolled(data.enrolled);
           setConsentVersion(data.consentVersion ?? null);
           setDeviceState(data.deviceState ?? "none");
