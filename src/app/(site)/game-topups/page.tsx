@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getTopupSettings } from "@/lib/game-topups/config";
-import GameTopupClient from "./GameTopupClient";
+import GameGrid, { type GameCardData } from "./GameGrid";
 import { type LucideIcon, ArrowLeft, BadgePercent, Clock, CreditCard, Gamepad2, ListChecks, Mail, Send, ShieldCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -10,45 +10,39 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Game Top-Ups",
   description:
-    "Buy Valorant & League points at Comffee. Pay with GCash or card from your phone — we deliver straight to your account. Philippines only.",
+    "Buy game credits at Comffee — Valorant, League, Mobile Legends, Genshin & more. Pay with GCash or card from your phone; we deliver straight to your account at 8% off. Philippines only.",
 };
 
 export default async function GameTopupsPage() {
-  // Service-role: catalog/games have no public-read policy (it would leak our cost/margin via the anon
-  // key). We select only customer-safe columns below.
   const supabase = getSupabaseAdmin();
-  const [{ data: catalog }, { data: games }, settings] = await Promise.all([
-    supabase
-      .from("game_topup_catalog")
-      // codashop_price is the PUBLIC Codashop retail price (also what we advertise "8% below"), used to show
-      // the customer their savings. discount_pct stays hidden. Catalog still has no public-read RLS.
-      .select("sku, game, region, vp_amount, label, customer_price, codashop_price")
-      .eq("active", true)
-      .eq("frozen", false)
-      .order("sort_order", { ascending: true }),
+  const [{ data: games }, { data: catalog }, settings] = await Promise.all([
     supabase
       .from("game_topup_games")
-      .select("slug, name, region_default, currency_label")
+      .select("slug, name, region_default, currency_label, sort_order")
       .eq("active", true)
       .order("sort_order", { ascending: true }),
+    // Cheapest active price per game → a "from ₱X" teaser on each card. Service-role + customer-safe cols only.
+    supabase.from("game_topup_catalog").select("game, customer_price").eq("active", true).eq("frozen", false),
     getTopupSettings(),
   ]);
 
-  const cat = (catalog ?? []).map((c) => ({
-    sku: c.sku as string,
-    game: c.game as string,
-    region: c.region as string,
-    vp: Number(c.vp_amount),
-    label: c.label as string,
-    price: Number(c.customer_price),
-    original: Number(c.codashop_price),
-  }));
-  const gameList = (games ?? []).map((g) => ({
-    slug: g.slug as string,
-    name: g.name as string,
-    region: g.region_default as string,
-    currency: g.currency_label as string,
-  }));
+  const fromByGame = new Map<string, number>();
+  for (const c of catalog ?? []) {
+    const g = c.game as string;
+    const p = Number(c.customer_price);
+    if (!Number.isFinite(p) || p <= 0) continue;
+    const cur = fromByGame.get(g);
+    if (cur == null || p < cur) fromByGame.set(g, p);
+  }
+  // Only list games that actually have something to sell.
+  const cards: GameCardData[] = (games ?? [])
+    .filter((g) => fromByGame.has(g.slug as string))
+    .map((g) => ({
+      slug: g.slug as string,
+      name: g.name as string,
+      currency: g.currency_label as string,
+      fromPrice: fromByGame.get(g.slug as string) ?? null,
+    }));
 
   return (
     <>
@@ -71,14 +65,13 @@ export default async function GameTopupsPage() {
                 Game credits, delivered to your account.
               </h1>
               <p className="mt-3 max-w-2xl text-lg text-cream-dim">
-                Top up Valorant &amp; more at <span className="font-semibold text-cream">8% off the original price</span>.
-                Pay with GCash or card — our team tops up your account and emails your receipt, usually within
-                minutes.
+                Pick your game below. Pay with GCash or card at{" "}
+                <span className="font-semibold text-cream">8% off the original price</span> — our team tops up your
+                account and emails your receipt, usually within minutes.
               </p>
             </div>
           </div>
 
-          {/* trust band */}
           <div className="mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
             <TrustBadge icon={ShieldCheck} title="Secure payment" sub="GCash & cards · PayMongo" />
             <TrustBadge icon={Send} title="To your account" sub="Topped up by our team" />
@@ -88,36 +81,39 @@ export default async function GameTopupsPage() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ──────────────────────────────────────────────── */}
-      <section className="border-b border-line bg-bg">
-        <div className="container-edge py-10">
-          <p className="terminal-label">// how it works</p>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <Step n={1} icon={ListChecks} title="Pick your top-up" sub="Choose your game and amount, then enter your in-game ID." />
-            <Step n={2} icon={CreditCard} title="Pay securely" sub="GCash or card, processed by PayMongo — we verify your account first." />
-            <Step n={3} icon={Mail} title="Get topped up" sub="We add the credits to your account and email your receipt." />
-          </div>
+      {/* ── GAME GRID ─────────────────────────────────────────────────── */}
+      <section className="container-edge py-12 md:py-16">
+        <p className="terminal-label">// choose your game</p>
+        <div className="mt-5">
+          {settings.enabled && cards.length > 0 ? (
+            <GameGrid games={cards} />
+          ) : (
+            <div className="mx-auto max-w-2xl rounded-2xl border border-line-bright bg-bg-card p-10 text-center">
+              <p className="font-mono text-sm text-cream-dim">
+                // game top-ups are temporarily unavailable — please check back soon.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* ── STORE ─────────────────────────────────────────────────────── */}
-      <section className="container-edge py-12 md:py-16">
-        {settings.enabled && cat.length > 0 ? (
-          <GameTopupClient catalog={cat} games={gameList} />
-        ) : (
-          <div className="mx-auto max-w-2xl rounded-2xl border border-line-bright bg-bg-card p-10 text-center">
-            <p className="font-mono text-sm text-cream-dim">
-              // game top-ups are temporarily unavailable — please check back soon.
-            </p>
+      {/* ── HOW IT WORKS ──────────────────────────────────────────────── */}
+      <section className="border-t border-line bg-bg">
+        <div className="container-edge py-10">
+          <p className="terminal-label">// how it works</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <Step n={1} icon={ListChecks} title="Pick your game & amount" sub="Open a game, enter your in-game ID, and choose how much to top up." />
+            <Step n={2} icon={CreditCard} title="Pay securely" sub="GCash or card, processed by PayMongo — we verify your account first." />
+            <Step n={3} icon={Mail} title="Get topped up" sub="We add the credits to your account and email your receipt." />
           </div>
-        )}
 
-        <p className="mx-auto mt-12 max-w-2xl text-center text-xs leading-relaxed text-mocha">
-          Game Top-Ups by <span className="text-cream-dim">Comffee</span> — the internet-cafe network. Payments
-          are secured by PayMongo. Top-ups are fulfilled by our team and delivered to your in-game account; if we
-          can&rsquo;t deliver within 24 hours, you&rsquo;re fully refunded. Philippines only. Comffee is an
-          independent top-up service and is not affiliated with or endorsed by the game publishers.
-        </p>
+          <p className="mx-auto mt-12 max-w-2xl text-center text-xs leading-relaxed text-mocha">
+            Game Top-Ups by <span className="text-cream-dim">Comffee</span> — the internet-cafe network. Payments
+            are secured by PayMongo. Top-ups are fulfilled by our team and delivered to your in-game account; if we
+            can&rsquo;t deliver within 24 hours, you&rsquo;re fully refunded. Philippines only. Comffee is an
+            independent top-up service and is not affiliated with or endorsed by the game publishers.
+          </p>
+        </div>
       </section>
     </>
   );

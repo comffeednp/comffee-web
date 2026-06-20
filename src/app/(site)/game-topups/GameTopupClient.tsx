@@ -611,10 +611,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
             <button
               type="button"
               onClick={addAnother}
-              title="Top up another game or another account in the same payment"
+              title="Top up another account in the same payment"
               className="mt-4 inline-flex items-center gap-2 rounded-lg border border-line-bright bg-bg px-3.5 py-2 font-mono text-xs text-cream-dim transition hover:border-amber/60 hover:text-cream"
             >
-              <Plus className="h-3.5 w-3.5 text-amber" /> Add another game / account
+              <Plus className="h-3.5 w-3.5 text-amber" /> {games.length > 1 ? "Add another game / account" : "Add another account"}
             </button>
           )}
         </div>
