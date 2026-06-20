@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Check,
   CreditCard,
+  Gem,
   Loader2,
   Plus,
   ShieldCheck,
@@ -254,15 +255,26 @@ export default function GameTopupClient({ catalog, games }: Props) {
     >
       {/* ── LEFT: build the order + verify ─────────────────────────────── */}
       <div className="space-y-8 rounded-2xl border border-line-bright bg-bg-card p-6 md:p-8">
-        {/* Per-game key art — themes the whole store to the selected game */}
-        {art && (
-          <div
-            role="img"
-            aria-label={`${game?.name ?? art.name} — top up ${currency}`}
-            className="w-full overflow-hidden rounded-xl border border-line-bright bg-cover bg-center shadow-lg"
-            style={{ backgroundImage: `url(${art.art})`, aspectRatio: "1200 / 420" }}
-          />
-        )}
+        {/* Game header — clean + branded with the game's own accent color (no third-party logos/art) */}
+        <div
+          className="flex items-center gap-3 rounded-xl border p-4"
+          style={{ borderColor: `${accent}55`, background: `linear-gradient(90deg, ${accent}1f, transparent 72%)` }}
+        >
+          <span
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: `${accent}26` }}
+          >
+            <Gem className="h-6 w-6" style={{ color: accent }} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-display text-lg font-bold leading-tight text-cream">
+              {game?.name ?? "Game"} top-up
+            </p>
+            <p className="mt-0.5 font-mono text-[0.7rem] uppercase tracking-wide text-mocha">
+              {currency} · delivered to your account · 8% below Codashop
+            </p>
+          </div>
+        </div>
 
         {/* Game */}
         {games.length > 1 && (
