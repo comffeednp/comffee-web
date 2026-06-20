@@ -35,9 +35,9 @@ export interface GameAccountConfig {
 const RIOT: GameAccountConfig = {
   mode: "riot",
   idLabel: "your account ID — include your #tag",
-  idPlaceholder: "Westbourne#SEA",
+  idPlaceholder: "Comffee#256",
   idKind: "text",
-  idHint: "Type it exactly as in-game, including the # and your tag — e.g. Westbourne#SEA.",
+  idHint: "Type it exactly as in-game, including the # and your tag — e.g. Comffee#256.",
   proofWhat: "your name and #tag",
   showSample: true,
 };

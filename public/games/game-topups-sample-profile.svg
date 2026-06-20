@@ -34,7 +34,7 @@
       <path d="M249 52 a9 9 0 0 1 18 0 z"/>
     </g>
     <circle cx="268" cy="51" r="3.4" fill="#3BA55D" stroke="#100c0d" stroke-width="1.5"/>
-    <text x="280" y="39" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" fill="#eef0f2">Westbourne</text>
+    <text x="280" y="39" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" fill="#eef0f2">Comffee</text>
     <text x="280" y="53" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" fill="#8a9099">Online</text>
     <!-- collapse arrow -->
     <g stroke="#cfd3d8" stroke-width="1.6" fill="none" stroke-linecap="round">
@@ -60,7 +60,7 @@
 
   <!-- name + #tag (THE thing to copy) with an amber highlight ring -->
   <rect x="34" y="126" width="176" height="30" rx="7" fill="#ffb547" fill-opacity="0.10" stroke="#ffb547" stroke-width="2" stroke-dasharray="5 4"/>
-  <text x="42" y="148" font-family="'Segoe UI',Arial,sans-serif" font-size="21" font-weight="800" fill="#f3f4f5">Westbourne<tspan fill="#8a9099" font-weight="700">#SEA</tspan></text>
+  <text x="42" y="148" font-family="'Segoe UI',Arial,sans-serif" font-size="21" font-weight="800" fill="#f3f4f5">Comffee<tspan fill="#8a9099" font-weight="700">#256</tspan></text>
   <text x="42" y="176" font-family="'Segoe UI',Arial,sans-serif" font-size="13" fill="#8a9099">Online</text>
 
   <!-- menu rows (dim, like the real client) -->
