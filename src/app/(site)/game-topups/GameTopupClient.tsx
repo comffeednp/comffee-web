@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import { gameArt } from "@/lib/game-topups/games-art";
+import { accountConfig, buildIdentity, formatIdentity } from "@/lib/game-topups/accounts";
 
 // Small keyboard-key chip used in the "how to paste" steps.
 const kbdCls = "rounded border border-line-bright bg-bg-card px-1.5 py-0.5 text-cream-dim";
@@ -62,22 +63,12 @@ async function shrinkImage(file: File, maxDim = 1600, quality = 0.85): Promise<B
   }
 }
 
-// Split a combined Riot ID ("Name#TAG") into its parts. Riot game names can't contain '#', so we split
-// at the first '#'. Returns null until BOTH a name (>=3 chars) and a tag are present.
-function splitRiotId(full: string): { name: string; tag: string } | null {
-  const s = (full || "").trim();
-  const i = s.indexOf("#");
-  if (i < 1) return null;
-  const name = s.slice(0, i).trim();
-  const tag = s.slice(i + 1).trim().replace(/^#+/, "");
-  if (name.length < 3 || tag.length < 1) return null;
-  return { name, tag };
-}
-
 export default function GameTopupClient({ catalog, games }: Props) {
   const [gameSlug, setGameSlug] = useState(games[0]?.slug ?? catalog[0]?.game ?? "valorant");
   const [cart, setCart] = useState<CatalogItem[]>([]);
-  const [riotIdFull, setRiotIdFull] = useState(""); // single field — "Name#TAG"
+  const [riotIdFull, setRiotIdFull] = useState(""); // riot-mode combined field — "Name#TAG"
+  const [acctId, setAcctId] = useState(""); // pair-mode id (Genshin UID / MLBB User ID)
+  const [acctTag, setAcctTag] = useState(""); // pair-mode tag (Genshin server / MLBB Zone)
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -130,8 +121,11 @@ export default function GameTopupClient({ catalog, games }: Props) {
   const totalSavings = Math.max(0, totalOriginal - totalPrice);
   const savingsPct = totalOriginal > 0 ? Math.round((totalSavings / totalOriginal) * 100) : 0;
 
-  const parsedRiot = splitRiotId(riotIdFull);
-  const detailsReady = cart.length > 0 && !!parsedRiot;
+  const cfg = accountConfig(gameSlug);
+  const parsedAcct = buildIdentity(gameSlug, { combined: riotIdFull, id: acctId, tag: acctTag });
+  const accountStarted = cfg.mode === "riot" ? !!riotIdFull.trim() : !!(acctId.trim() && acctTag.trim());
+  const canAddPackages = accountStarted && !!email.trim();
+  const detailsReady = cart.length > 0 && !!parsedAcct;
 
   // Any change to the cart/game while NOT yet verified must drop the server draft binding: the OCR route
   // froze the order lines on the first attempt, so reusing that orderId would charge/deliver the OLD cart
@@ -183,7 +177,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
   };
 
   const verify = async () => {
-    const parsed = splitRiotId(riotIdFull);
+    const parsed = parsedAcct;
     if (!parsed || !file) return;
     setVerifying(true);
     setVerifyMsg(null);
@@ -191,7 +185,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
     try {
       const shrunk = await shrinkImage(file);
       const fd = new FormData();
-      fd.append("riotId", parsed.name);
+      fd.append("riotId", parsed.accountId);
       fd.append("tag", parsed.tag);
       fd.append("skus", JSON.stringify(cart.map((c) => c.sku)));
       if (orderId) fd.append("orderId", orderId);
@@ -217,8 +211,8 @@ export default function GameTopupClient({ catalog, games }: Props) {
       const left = typeof data.triesLeft === "number" ? data.triesLeft : null;
       setVerifyMsg(
         left !== null && left > 0
-          ? `That screenshot doesn't show "${parsed.name}". ${left} ${left === 1 ? "try" : "tries"} left — make sure your in-game name and tag are clearly visible.`
-          : "We couldn't match that screenshot to your Riot ID.",
+          ? `That screenshot doesn't show "${parsed.accountId}". ${left} ${left === 1 ? "try" : "tries"} left — make sure ${cfg.proofWhat} is clearly visible.`
+          : "We couldn't match that screenshot to your account.",
       );
     } catch {
       setVerifyMsg("Network error — please try again.");
@@ -295,6 +289,9 @@ export default function GameTopupClient({ catalog, games }: Props) {
                     if (verified) return;
                     setGameSlug(g.slug);
                     setCart([]);
+                    setRiotIdFull("");
+                    setAcctId("");
+                    setAcctTag("");
                     resetVerifyDraft();
                   }}
                   title={`Choose ${g.name}`}
@@ -313,29 +310,87 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         )}
 
-        {/* ACCOUNT FIRST: account ID + email are filled BEFORE any package can be added. */}
-        {/* Riot ID — ONE field, must include the #tag */}
-        <div>
-          <Field label="1 · your account id — include your #tag *">
-            <input
-              type="text"
-              value={riotIdFull}
-              onChange={(e) => {
-                setRiotIdFull(e.target.value);
-                resetVerifyDraft();
-              }}
-              disabled={verified}
-              className="gt-input"
-              placeholder="Westbourne#SEA"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </Field>
-          <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
-            Type it exactly as in-game, <span className="text-cream-dim">including the # and your tag</span> — e.g.{" "}
-            <span className="text-cream-dim">Westbourne#SEA</span>.
-          </p>
-        </div>
+        {/* ACCOUNT FIRST: account ID + email are filled BEFORE any package can be added. Fields are
+            per-game (Riot Name#TAG / Genshin UID+server / MLBB User ID+Zone) — see accounts.ts. */}
+        {cfg.mode === "riot" ? (
+          <div>
+            <Field label={`1 · ${cfg.idLabel} *`}>
+              <input
+                type="text"
+                value={riotIdFull}
+                onChange={(e) => {
+                  setRiotIdFull(e.target.value);
+                  resetVerifyDraft();
+                }}
+                disabled={verified}
+                className="gt-input"
+                placeholder={cfg.idPlaceholder}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
+            <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">{cfg.idHint}</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <Field label={`1 · ${cfg.idLabel} *`}>
+                <input
+                  type="text"
+                  inputMode={cfg.idKind === "tel" ? "numeric" : "text"}
+                  value={acctId}
+                  onChange={(e) => {
+                    setAcctId(e.target.value);
+                    resetVerifyDraft();
+                  }}
+                  disabled={verified}
+                  className="gt-input"
+                  placeholder={cfg.idPlaceholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+              <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">{cfg.idHint}</p>
+            </div>
+            <div>
+              <Field label={`${cfg.tagLabel} *`}>
+                {cfg.tagOptions ? (
+                  <select
+                    value={acctTag}
+                    onChange={(e) => {
+                      setAcctTag(e.target.value);
+                      resetVerifyDraft();
+                    }}
+                    disabled={verified}
+                    className="gt-input"
+                  >
+                    <option value="">Select your server…</option>
+                    {cfg.tagOptions.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    inputMode={cfg.tagKind === "tel" ? "numeric" : "text"}
+                    value={acctTag}
+                    onChange={(e) => {
+                      setAcctTag(e.target.value);
+                      resetVerifyDraft();
+                    }}
+                    disabled={verified}
+                    className="gt-input"
+                    placeholder={cfg.tagPlaceholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                )}
+              </Field>
+            </div>
+          </div>
+        )}
 
         {/* Email — collected up front (required to pay); this is where the receipt is sent. */}
         <div>
@@ -359,18 +414,18 @@ export default function GameTopupClient({ catalog, games }: Props) {
         {/* Packages — LOCKED until the account ID + email are filled (account-first). */}
         <div>
           <p className="terminal-label">// 3 · add packages (combine for any total)</p>
-          {riotIdFull.trim() && email.trim() ? null : (
+          {canAddPackages ? null : (
             <p className="mt-1.5 font-mono text-[0.7rem] text-amber/80">
               ↑ enter your account ID and email first to unlock top-ups
             </p>
           )}
-          <div className={`mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 ${riotIdFull.trim() && email.trim() ? "" : "opacity-50"}`}>
+          <div className={`mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 ${canAddPackages ? "" : "opacity-50"}`}>
             {packages.map((p) => (
               <button
                 key={p.sku}
                 type="button"
                 onClick={() => addPackage(p)}
-                disabled={verified || !riotIdFull.trim() || !email.trim()}
+                disabled={verified || !canAddPackages}
                 title={`Add ${p.label} for ${formatPHP(p.price)}`}
                 className="flex flex-col rounded-lg border border-line-bright bg-bg p-3 text-left transition hover:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -388,20 +443,19 @@ export default function GameTopupClient({ catalog, games }: Props) {
         <div>
           <p className="terminal-label">// prove it&rsquo;s your account</p>
           <p className="mt-2 text-sm text-cream-dim">
-            Paste or upload a screenshot of your in-game profile clearly showing your <strong>name and #tag</strong>
-            {parsedRiot ? (
+            Paste or upload a screenshot of your in-game profile clearly showing <strong>{cfg.proofWhat}</strong>
+            {parsedAcct ? (
               <>
                 {" "}(
-                <strong className="text-cream">
-                  {parsedRiot.name}#{parsedRiot.tag}
-                </strong>
-                )
+                <strong className="text-cream">{formatIdentity(gameSlug, parsedAcct)}</strong>)
               </>
             ) : null}
-            . We read it to make sure the points land on the right account.
+            . We read it to make sure the {currency} land on the right account.
           </p>
 
-          {/* Sample so customers know exactly what to upload — tap to enlarge */}
+          {/* Sample so customers know exactly what to upload — tap to enlarge. Riot games only (the
+              bundled sample image is a Riot-style profile); other games rely on the text steps below. */}
+          {cfg.showSample && (
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
             <button
               type="button"
@@ -427,9 +481,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
               must be clearly readable in the shot. <span className="text-cream-dim">Tap the image to enlarge.</span>
             </p>
           </div>
+          )}
 
           {/* Enlarged sample lightbox (centered) — portal so a transformed ancestor can't trap it */}
-          {sampleZoom &&
+          {cfg.showSample && sampleZoom &&
             createPortal(
               <div
                 role="dialog"
@@ -465,7 +520,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
               <span className="text-mocha/80">(or <kbd className={kbdCls}>Win</kbd>+<kbd className={kbdCls}>Shift</kbd>+<kbd className={kbdCls}>S</kbd> to snip)</span>
             </li>
             <li>
-              <span className="text-amber">2.</span> Capture your <span className="text-cream-dim">Riot ID &amp; #tag</span> (your account menu)
+              <span className="text-amber">2.</span> Capture <span className="text-cream-dim">{cfg.proofWhat}</span> (your in-game account profile)
             </li>
             <li>
               <span className="text-amber">3.</span> <span className="text-cream-dim">Click the box below</span>, then press <kbd className={kbdCls}>Ctrl</kbd>+<kbd className={kbdCls}>V</kbd> to paste
@@ -639,7 +694,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 className="mt-0.5 h-4 w-4 accent-amber"
               />
               <span>
-                My Riot ID and amount are correct. I understand that once delivered to the account I proved is mine,
+                My account ID and amount are correct. I understand that once delivered to the account I proved is mine,
                 <strong className="text-cream"> there are no refunds</strong>.
               </span>
             </label>
