@@ -15,6 +15,8 @@ export interface NavItem {
   children?: NavChild[];
   /** Renders the item as a glowing, shining amber pill so it stands out in the headbar. */
   highlight?: boolean;
+  /** Small promo chip shown next to the label (e.g. "8% OFF"). Update if the discount changes. */
+  badge?: string;
 }
 
 export const navLinks: NavItem[] = [
@@ -35,7 +37,7 @@ export const navLinks: NavItem[] = [
   { label: "Menu", href: "/menu" },
   // Valorant/League points store — customer pays online, staff fulfil on Codashop. [[game-topups]]
   // highlight = shining amber pill: this is the new money-maker, make it impossible to miss.
-  { label: "Game Top-Ups", href: "/game-topups", highlight: true },
+  { label: "Game Top-Ups", href: "/game-topups", highlight: true, badge: "8% OFF" },
   // Cafe owners: download the Comffee POS installer (SaaS product). [[comffee-saas-vision]]
   { label: "Software", href: "/softwares" },
   { label: "About", href: "/about" },

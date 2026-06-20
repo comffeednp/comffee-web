@@ -26,8 +26,10 @@ export default function GameTopupBanner() {
       <div className="container-edge relative flex items-center justify-between gap-4 py-3.5">
         <div className="min-w-0">
           <p className="terminal-label">// game top-ups</p>
-          <p className="mt-1 truncate text-base font-bold sm:text-lg">
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-base font-bold sm:text-lg">
             <span className="text-amber">Get discounted game credits here!</span>
+            {/* Update this % if the catalog discount changes. */}
+            <span className="rounded bg-amber px-2 py-0.5 text-xs font-extrabold text-bg shadow-sm">8% OFF</span>
           </p>
 
           {/* game chips — every game we carry (live + coming-soon) */}

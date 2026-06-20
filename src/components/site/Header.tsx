@@ -44,9 +44,14 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
                 key={link.href}
                 href={link.href!}
                 title={`Go to ${link.label}`}
-                className="nav-shine font-mono text-xs uppercase tracking-[0.18em] px-3 py-2 ml-1 focus-visible:outline-none"
+                className="nav-shine inline-flex items-center font-mono text-xs uppercase tracking-[0.18em] px-3 py-2 ml-1 focus-visible:outline-none"
               >
                 {link.label}
+                {link.badge && (
+                  <span className="ml-1.5 rounded bg-bg/90 px-1 py-0.5 text-[0.6rem] font-bold tracking-normal text-amber">
+                    {link.badge}
+                  </span>
+                )}
               </Link>
             ) : (
               <Link

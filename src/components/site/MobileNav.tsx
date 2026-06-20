@@ -112,6 +112,11 @@ export default function MobileNav({ links, memberHref, memberLabel }: Props) {
                         }
                       >
                         → {link.label}
+                        {link.badge && (
+                          <span className="ml-2 rounded bg-bg/90 px-1.5 py-0.5 text-[0.6rem] font-bold tracking-normal text-amber">
+                            {link.badge}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   )
