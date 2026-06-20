@@ -14,7 +14,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import { claimOrderAction, releaseOrderAction, deliverLineAction, failOrderAction } from "./_actions";
+import { claimOrderAction, releaseOrderAction, failOrderAction } from "./_actions";
 
 interface LineRow {
   id: string;
@@ -164,15 +164,7 @@ export default function ConsoleClient({ orders, otps }: { orders: OrderRow[]; ot
                     {l.status === "verified" ? (
                       <span className="font-mono text-[0.65rem] uppercase text-phosphor">delivered</span>
                     ) : (
-                      <button
-                        type="button"
-                        title={`Mark ${l.vp} VP delivered`}
-                        disabled={pending}
-                        onClick={() => act(() => deliverLineAction(l.id))}
-                        className="rounded border border-phosphor/40 bg-phosphor/10 px-2 py-1 font-mono text-xs text-phosphor hover:bg-phosphor/20 disabled:opacity-50"
-                      >
-                        ✓ delivered
-                      </button>
+                      <span className="font-mono text-[0.65rem] uppercase text-mocha">awaiting confirmation</span>
                     )}
                   </li>
                 ))}
