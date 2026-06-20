@@ -313,32 +313,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         )}
 
-        {/* Packages */}
-        <div>
-          <p className="terminal-label">// add packages (combine for any total)</p>
-          <div className="mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3">
-            {packages.map((p) => (
-              <button
-                key={p.sku}
-                type="button"
-                onClick={() => addPackage(p)}
-                disabled={verified}
-                title={`Add ${p.label} for ${formatPHP(p.price)}`}
-                className="flex flex-col rounded-lg border border-line-bright bg-bg p-3 text-left transition hover:border-amber/60 disabled:opacity-50"
-              >
-                <span className="flex items-center justify-between font-mono font-bold text-cream">
-                  {p.vp.toLocaleString()} {currency}
-                  <Plus className="h-3.5 w-3.5 text-amber" />
-                </span>
-                <span className="mt-1 font-mono text-xs text-amber">{formatPHP(p.price)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
+        {/* ACCOUNT FIRST: account ID + email are filled BEFORE any package can be added. */}
         {/* Riot ID — ONE field, must include the #tag */}
         <div>
-          <Field label="riot id — include your #tag *">
+          <Field label="1 · your account id — include your #tag *">
             <input
               type="text"
               value={riotIdFull}
@@ -361,7 +339,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
 
         {/* Email — collected up front (required to pay); this is where the receipt is sent. */}
         <div>
-          <Field label="email — required *">
+          <Field label="2 · email — required *">
             <input
               type="email"
               required
@@ -376,6 +354,34 @@ export default function GameTopupClient({ catalog, games }: Props) {
           <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
             // your receipt &amp; order status are emailed here — double-check it&rsquo;s correct
           </p>
+        </div>
+
+        {/* Packages — LOCKED until the account ID + email are filled (account-first). */}
+        <div>
+          <p className="terminal-label">// 3 · add packages (combine for any total)</p>
+          {riotIdFull.trim() && email.trim() ? null : (
+            <p className="mt-1.5 font-mono text-[0.7rem] text-amber/80">
+              ↑ enter your account ID and email first to unlock top-ups
+            </p>
+          )}
+          <div className={`mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 ${riotIdFull.trim() && email.trim() ? "" : "opacity-50"}`}>
+            {packages.map((p) => (
+              <button
+                key={p.sku}
+                type="button"
+                onClick={() => addPackage(p)}
+                disabled={verified || !riotIdFull.trim() || !email.trim()}
+                title={`Add ${p.label} for ${formatPHP(p.price)}`}
+                className="flex flex-col rounded-lg border border-line-bright bg-bg p-3 text-left transition hover:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="flex items-center justify-between font-mono font-bold text-cream">
+                  {p.vp.toLocaleString()} {currency}
+                  <Plus className="h-3.5 w-3.5 text-amber" />
+                </span>
+                <span className="mt-1 font-mono text-xs text-amber">{formatPHP(p.price)}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Verify */}
