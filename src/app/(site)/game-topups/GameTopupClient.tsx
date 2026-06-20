@@ -78,7 +78,9 @@ export default function GameTopupClient({ catalog, games }: Props) {
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false); // "Remove this screenshot?" prompt
   const fileRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   const [orderId, setOrderId] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -147,9 +149,22 @@ export default function GameTopupClient({ catalog, games }: Props) {
 
   const pickFile = (f: File | null) => {
     if (!f) return;
+    if (preview) URL.revokeObjectURL(preview); // replace: free the old preview's memory
     setFile(f);
     setPreview(URL.createObjectURL(f));
     setVerifyMsg(null);
+    setConfirmClear(false);
+  };
+
+  // × on the preview → confirm → clear, so they can paste/pick a fresh screenshot. Keeps the cart/account
+  // (same order draft); only the image is dropped. Refocuses the paste box so Ctrl+V works immediately.
+  const clearShot = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null);
+    setPreview(null);
+    setVerifyMsg(null);
+    setConfirmClear(false);
+    setTimeout(() => dropRef.current?.focus(), 0);
   };
 
   const onPaste = (e: React.ClipboardEvent) => {
@@ -437,14 +452,51 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </ol>
 
           <div
+            ref={dropRef}
             onPaste={onPaste}
             tabIndex={0}
             aria-label="Click here, then press Ctrl + V to paste your screenshot"
             className="mt-3 cursor-pointer rounded-xl border border-dashed border-line-bright bg-bg p-4 outline-none transition focus:border-amber/70 focus-visible:ring-2 focus-visible:ring-amber"
           >
             {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="Your screenshot preview" className="mx-auto max-h-56 rounded-lg" />
+              <div className="relative mx-auto w-fit">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview} alt="Your screenshot preview" className="mx-auto max-h-56 rounded-lg" />
+                {!verified && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(true)}
+                    title="Remove this screenshot"
+                    aria-label="Remove this screenshot"
+                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-line-bright bg-bg/90 text-cream-dim backdrop-blur transition hover:border-rgb-r/60 hover:text-rgb-r"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+                {confirmClear && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-bg/90 p-4 text-center backdrop-blur-sm">
+                    <p className="font-mono text-sm text-cream">Remove this screenshot?</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={clearShot}
+                        title="Remove the screenshot"
+                        className="rounded-lg bg-rgb-r px-3.5 py-1.5 text-xs font-bold text-cream transition hover:brightness-110"
+                      >
+                        Yes, remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClear(false)}
+                        title="Keep the screenshot"
+                        className="rounded-lg border border-line-bright px-3.5 py-1.5 text-xs text-cream-dim transition hover:text-cream"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="py-8 text-center">
                 <Upload className="mx-auto h-7 w-7 text-mocha" />
