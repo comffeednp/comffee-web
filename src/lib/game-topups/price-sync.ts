@@ -24,12 +24,16 @@ export async function runPriceSync(): Promise<PriceSyncResult> {
   // 1) Read each active game's Codashop price map once.
   const { data: games } = await admin
     .from("game_topup_games")
-    .select("slug, codashop_url")
+    .select("slug, codashop_url, currency_label")
     .eq("active", true);
   const maps: Record<string, Record<number, number> | null> = {};
   const readFailures: string[] = [];
-  for (const g of (games ?? []) as Array<{ slug: string; codashop_url: string | null }>) {
+  for (const g of (games ?? []) as Array<{ slug: string; codashop_url: string | null; currency_label: string | null }>) {
     if (!g.codashop_url) continue; // no URL configured → manual pricing only for this game
+    // The Codashop parser is VP-only (Valorant). Other games (RP / Wild Cores / Genesis Crystals) have
+    // different labels + pass/bonus rows that break the equal-count pairing, so they're priced manually —
+    // skip them here so they don't show up as a daily "couldn't read price" false alarm.
+    if ((g.currency_label || "").toUpperCase() !== "VP") continue;
     const map = await fetchCodashopVpPrices(g.codashop_url);
     maps[g.slug] = map;
     if (!map) readFailures.push(g.slug);

@@ -26,9 +26,9 @@ export interface GameArt {
 export const GAME_ART: GameArt[] = [
   { slug: "valorant",          name: "Valorant",          chip: "Valorant",       currency: "VP",               accent: "#FF4655", art: "/games/valorant-hero.svg",          status: "live" },
   { slug: "mobile-legends",    name: "Mobile Legends",    chip: "Mobile Legends", currency: "Diamonds",         accent: "#FFC107", art: "/games/mobile-legends-hero.svg",    status: "soon" },
-  { slug: "league-of-legends", name: "League of Legends", chip: "League",         currency: "RP",               accent: "#C8AA6E", art: "/games/league-of-legends-hero.svg", status: "soon" },
-  { slug: "wild-rift",         name: "Wild Rift",         chip: "Wild Rift",      currency: "Wild Cores",       accent: "#0AC8B9", art: "/games/wild-rift-hero.svg",         status: "soon" },
-  { slug: "genshin-impact",    name: "Genshin Impact",    chip: "Genshin",        currency: "Genesis Crystals", accent: "#9D7BE0", art: "/games/genshin-impact-hero.svg",    status: "soon" },
+  { slug: "league-of-legends", name: "League of Legends", chip: "League",         currency: "RP",               accent: "#C8AA6E", art: "/games/league-of-legends-hero.svg", status: "live" },
+  { slug: "wild-rift",         name: "Wild Rift",         chip: "Wild Rift",      currency: "Wild Cores",       accent: "#0AC8B9", art: "/games/wild-rift-hero.svg",         status: "live" },
+  { slug: "genshin-impact",    name: "Genshin Impact",    chip: "Genshin",        currency: "Genesis Crystals", accent: "#9D7BE0", art: "/games/genshin-impact-hero.svg",    status: "live" },
 ];
 
 /** Decorative espresso backdrop for the promo strip (live text overlays the left). */

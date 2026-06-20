@@ -20,7 +20,9 @@ export default async function GameTopupsPage() {
   const [{ data: catalog }, { data: games }, settings] = await Promise.all([
     supabase
       .from("game_topup_catalog")
-      .select("sku, game, region, vp_amount, label, customer_price")
+      // codashop_price is the PUBLIC Codashop retail price (also what we advertise "8% below"), used to show
+      // the customer their savings. discount_pct stays hidden. Catalog still has no public-read RLS.
+      .select("sku, game, region, vp_amount, label, customer_price, codashop_price")
       .eq("active", true)
       .eq("frozen", false)
       .order("sort_order", { ascending: true }),
@@ -39,6 +41,7 @@ export default async function GameTopupsPage() {
     vp: Number(c.vp_amount),
     label: c.label as string,
     price: Number(c.customer_price),
+    original: Number(c.codashop_price),
   }));
   const gameList = (games ?? []).map((g) => ({
     slug: g.slug as string,

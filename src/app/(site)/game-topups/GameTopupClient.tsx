@@ -27,6 +27,8 @@ interface CatalogItem {
   vp: number;
   label: string;
   price: number;
+  /** Codashop's own ₱ price (public) — what they'd pay buying direct; used to show the savings. */
+  original: number;
 }
 interface GameInfo {
   slug: string;
@@ -123,6 +125,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
   );
   const totalVp = cart.reduce((s, c) => s + c.vp, 0);
   const totalPrice = cart.reduce((s, c) => s + c.price, 0);
+  // Savings vs Codashop's own price (what they'd pay buying direct).
+  const totalOriginal = cart.reduce((s, c) => s + (c.original || c.price), 0);
+  const totalSavings = Math.max(0, totalOriginal - totalPrice);
+  const savingsPct = totalOriginal > 0 ? Math.round((totalSavings / totalOriginal) * 100) : 0;
 
   const parsedRiot = splitRiotId(riotIdFull);
   const detailsReady = cart.length > 0 && !!parsedRiot;
@@ -599,8 +605,20 @@ export default function GameTopupClient({ catalog, games }: Props) {
             <span>Total {currency}</span>
             <span className="text-cream">{totalVp.toLocaleString()}</span>
           </div>
+          {totalSavings > 0 && (
+            <>
+              <div className="mt-1 flex items-center justify-between font-mono text-sm">
+                <span className="text-mocha">Codashop price</span>
+                <span className="text-mocha line-through">{formatPHP(totalOriginal)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between font-mono text-sm">
+                <span className="text-phosphor">You save · {savingsPct}% off</span>
+                <span className="font-semibold text-phosphor">{formatPHP(totalSavings)}</span>
+              </div>
+            </>
+          )}
           <div className="mt-1 flex items-center justify-between">
-            <span className="font-mono text-sm text-cream-dim">Total</span>
+            <span className="font-mono text-sm text-cream-dim">You pay</span>
             <span className="font-display text-2xl font-bold text-amber">{formatPHP(totalPrice)}</span>
           </div>
         </div>
