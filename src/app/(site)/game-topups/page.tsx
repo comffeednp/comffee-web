@@ -71,7 +71,7 @@ export default async function GameTopupsPage() {
                 Game credits, delivered to your account.
               </h1>
               <p className="mt-3 max-w-2xl text-lg text-cream-dim">
-                Top up Valorant &amp; more at <span className="font-semibold text-cream">8% below Codashop</span>.
+                Top up Valorant &amp; more at <span className="font-semibold text-cream">8% off the original price</span>.
                 Pay with GCash or card — our team tops up your account and emails your receipt, usually within
                 minutes.
               </p>
@@ -82,7 +82,7 @@ export default async function GameTopupsPage() {
           <div className="mt-8 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
             <TrustBadge icon={ShieldCheck} title="Secure payment" sub="GCash & cards · PayMongo" />
             <TrustBadge icon={Send} title="To your account" sub="Topped up by our team" />
-            <TrustBadge icon={BadgePercent} title="8% below Codashop" sub="Save on every top-up" />
+            <TrustBadge icon={BadgePercent} title="8% off" sub="off the original price" />
             <TrustBadge icon={Clock} title="Within 24 hours" sub="Or a full refund" />
           </div>
         </div>

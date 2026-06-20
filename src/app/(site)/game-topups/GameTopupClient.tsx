@@ -277,7 +277,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
               {game?.name ?? "Game"} top-up
             </p>
             <p className="mt-0.5 font-mono text-[0.7rem] uppercase tracking-wide text-mocha">
-              {currency} · delivered to your account · 8% below Codashop
+              {currency} · delivered to your account · 8% off original price
             </p>
           </div>
         </div>
@@ -608,7 +608,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
           {totalSavings > 0 && (
             <>
               <div className="mt-1 flex items-center justify-between font-mono text-sm">
-                <span className="text-mocha">Codashop price</span>
+                <span className="text-mocha">Original price</span>
                 <span className="text-mocha line-through">{formatPHP(totalOriginal)}</span>
               </div>
               <div className="mt-1 flex items-center justify-between font-mono text-sm">
