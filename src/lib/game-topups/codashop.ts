@@ -1,62 +1,83 @@
-// Daily Codashop price reader for the auto price-sync.
+// Daily Codashop price reader for the auto price-sync — works for every game (Valorant, League, Wild Rift,
+// Genshin, …), not just VP.
 //
-// The rendered Valorant page lists every denomination's VP and its ₱ price, but they are NOT co-located
-// in the DOM and the internal JSON pairs prices to payment channels (with service fees) — so there's no
-// single clean field to read. Instead we read the two authoritative customer-facing lists: all "N VP"
-// labels and all "₱N" amounts, then pair them by SORTED ORDER. That is valid because VP denominations
-// are strictly monotonic (more points → higher price).
+// The page renders each purchasable tile as the denomination ("N <currency>") repeated 2-3× consecutively
+// followed by its "₱N" price. We CO-LOCATE: walk the page in document order, and pair a price with the
+// denomination only when that exact amount was just repeated ≥2× immediately before it (a real product
+// card). This deliberately skips the page's summary "quick lists" (all amounts, then all prices) and the
+// pass / first-time-bonus rows (an amount with no price right after), which is what made a naive sorted-
+// pairing wrong for those games.
 //
-// A CONFIDENCE GATE makes this safe for pricing: parseCodashopVpPrices returns null on anything
-// unexpected (no data, unequal counts, an implausible price-per-VP). The price-sync treats null as
-// "don't change anything + alert the owner", so a Codashop markup change can never silently mis-price a
-// sale. The per-SKU ±threshold freeze in the cron is the second safety layer.
+// CONFIDENCE GATE (keeps it safe for pricing): parseCodashopPrices returns null on anything unexpected
+// (no data, <2 tiers, an implausible ₱-per-unit, or a non-monotonic result). The price-sync treats null as
+// "don't change anything + alert", and the per-SKU ±threshold freeze in the cron is the second safety
+// layer, so a Codashop markup change can never silently mis-price a sale.
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-// Plausible ₱ per VP. Today's denominations sit at ~0.36–0.42 (₱199/475 … ₱3999/11000). The band is
-// wide enough to absorb real price changes but rejects a misaligned pairing or a doubled/garbage value.
-const MIN_PER_VP = 0.2;
-const MAX_PER_VP = 0.7;
+// Plausible ₱ per currency-unit. Wide enough to span every game (VP ~0.4, RP ~0.35, Wild Cores ~0.45,
+// Genesis Crystals ~0.7-0.9) yet still rejects a misaligned pairing or a doubled/garbage value.
+const MIN_PER_UNIT = 0.1;
+const MAX_PER_UNIT = 1.6;
 
-function uniqSortedInts(values: number[]): number[] {
-  return [...new Set(values.filter((n) => Number.isFinite(n) && n > 0))].sort((a, b) => a - b);
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Pure: extract a { vpAmount: phpPrice } map from the Codashop page HTML, or null if not confident. */
-export function parseCodashopVpPrices(html: string): Record<number, number> | null {
-  if (!html) return null;
-  const vps = uniqSortedInts(
-    [...html.matchAll(/([0-9][0-9,]*)\s*VP\b/gi)].map((m) => parseInt(m[1].replace(/,/g, ""), 10)),
-  );
-  const prices = uniqSortedInts(
-    [...html.matchAll(/(?:₱|&#8369;|PHP)\s*([0-9][0-9,]*)/gi)].map((m) => parseInt(m[1].replace(/,/g, ""), 10)),
-  );
-  // Confidence gate: need at least two of each and the SAME count to pair by sorted order.
-  if (vps.length < 2 || prices.length < 2 || vps.length !== prices.length) return null;
+/** Pure: extract a { amount: phpPrice } map from a Codashop page for the given currency label (e.g. "VP",
+ *  "RP", "Wild Cores", "Genesis Crystals"), or null if not confident. See the file header for the method. */
+export function parseCodashopPrices(html: string, currencyLabel: string): Record<number, number> | null {
+  if (!html || !currencyLabel) return null;
 
+  // Tokenise the page into amount + price tokens, in document order.
+  const amountRe = new RegExp("([0-9][0-9,]*)\\s*" + escapeRe(currencyLabel) + "\\b", "gi");
+  const priceRe = /(?:₱|&#8369;|PHP)\s*([0-9][0-9,]*)/gi;
+  type Tok = { pos: number; kind: "amt" | "price"; value: number };
+  const toks: Tok[] = [];
+  for (const m of html.matchAll(amountRe)) toks.push({ pos: m.index ?? 0, kind: "amt", value: parseInt(m[1].replace(/,/g, ""), 10) });
+  for (const m of html.matchAll(priceRe)) toks.push({ pos: m.index ?? 0, kind: "price", value: parseInt(m[1].replace(/,/g, ""), 10) });
+  toks.sort((a, b) => a.pos - b.pos);
+
+  // Co-locate: a price belongs to the amount that was just repeated ≥2× right before it (a product card).
+  // First occurrence of each amount wins, so a trailing "from ₱…" / duplicate block can't overwrite it.
   const map: Record<number, number> = {};
-  for (let i = 0; i < vps.length; i++) {
-    const vp = vps[i];
-    const price = prices[i];
-    const perVp = price / vp;
-    if (perVp < MIN_PER_VP || perVp > MAX_PER_VP) return null; // implausible → reject the whole read
-    map[vp] = price;
+  let runValue = 0;
+  let runCount = 0;
+  for (const t of toks) {
+    if (t.kind === "amt") {
+      if (t.value === runValue) runCount++;
+      else { runValue = t.value; runCount = 1; }
+    } else {
+      if (runCount >= 2 && runValue > 0 && map[runValue] === undefined) {
+        const perUnit = t.value / runValue;
+        if (perUnit >= MIN_PER_UNIT && perUnit <= MAX_PER_UNIT) map[runValue] = t.value;
+      }
+      runValue = 0;
+      runCount = 0; // a price ends the current card
+    }
+  }
+
+  const amounts = Object.keys(map).map(Number).sort((a, b) => a - b);
+  if (amounts.length < 2) return null; // not confident
+  // Monotonic guard: a bigger pack must never cost less — catches a stray mis-pair.
+  for (let i = 1; i < amounts.length; i++) {
+    if (map[amounts[i]] < map[amounts[i - 1]]) return null;
   }
   return map;
 }
 
-/** Fetch the Codashop page and parse it. Returns null on any failure (network, non-2xx, low confidence)
- *  so the caller leaves prices unchanged and alerts. */
-export async function fetchCodashopVpPrices(url: string): Promise<Record<number, number> | null> {
-  if (!url) return null;
+/** Fetch the Codashop page and parse it for the given currency label. Returns null on any failure
+ *  (network, non-2xx, low confidence) so the caller leaves prices unchanged and alerts. */
+export async function fetchCodashopPrices(url: string, currencyLabel: string): Promise<Record<number, number> | null> {
+  if (!url || !currencyLabel) return null;
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html" },
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) return null;
-    return parseCodashopVpPrices(await res.text());
+    return parseCodashopPrices(await res.text(), currencyLabel);
   } catch {
     return null;
   }

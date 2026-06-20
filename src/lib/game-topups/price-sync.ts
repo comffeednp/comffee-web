@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getTopupSettings, discountForGame } from "@/lib/game-topups/config";
 import { computeCustomerPrice, isPriceMoveSuspicious } from "@/lib/game-topups/pricing";
-import { fetchCodashopVpPrices } from "@/lib/game-topups/codashop";
+import { fetchCodashopPrices } from "@/lib/game-topups/codashop";
 import { sendGameTopupPriceAlert } from "@/lib/email";
 
 export interface PriceSyncResult {
@@ -30,11 +30,8 @@ export async function runPriceSync(): Promise<PriceSyncResult> {
   const readFailures: string[] = [];
   for (const g of (games ?? []) as Array<{ slug: string; codashop_url: string | null; currency_label: string | null }>) {
     if (!g.codashop_url) continue; // no URL configured → manual pricing only for this game
-    // The Codashop parser is VP-only (Valorant). Other games (RP / Wild Cores / Genesis Crystals) have
-    // different labels + pass/bonus rows that break the equal-count pairing, so they're priced manually —
-    // skip them here so they don't show up as a daily "couldn't read price" false alarm.
-    if ((g.currency_label || "").toUpperCase() !== "VP") continue;
-    const map = await fetchCodashopVpPrices(g.codashop_url);
+    // Parser is generic now — pass the game's own currency label (VP / RP / Wild Cores / Genesis Crystals).
+    const map = await fetchCodashopPrices(g.codashop_url, g.currency_label || "");
     maps[g.slug] = map;
     if (!map) readFailures.push(g.slug);
   }
