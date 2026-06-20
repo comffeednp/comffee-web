@@ -40,7 +40,25 @@ async function handle(request: Request) {
 
   let refunded = 0;
   let manual = 0;
+  let partialDelivered = 0;
   for (const o of (pendingBreached ?? []) as Array<{ id: string; amount_php: number; paymongo_payment_id: string | null }>) {
+    // NEVER auto-refund an order that already has a DELIVERED (verified) line. Auto-confirm can tick lines
+    // on a 'pending' order (delivery doesn't require a staff claim → it never enters 'processing'), so a
+    // pending-past-SLA order may be partially/fully delivered. Refunding it would pay the customer AND give
+    // the (already-bought) credits. Leave it pending for manual resolution in the console (same spirit as
+    // the 'processing' exemption below). Cheap pre-check before the atomic claim.
+    const { data: deliveredLine } = await admin
+      .from("game_topup_order_lines")
+      .select("id")
+      .eq("order_id", o.id)
+      .eq("status", "verified")
+      .limit(1)
+      .maybeSingle();
+    if (deliveredLine) {
+      partialDelivered++;
+      continue;
+    }
+
     // ATOMIC CLAIM before any external call: flip pending→failed; only the row we WIN (still 'pending',
     // not concurrently claimed by staff → processing, nor delivered) proceeds to the refund. This closes
     // the window where a concurrent delivery and the refund could both succeed.
@@ -93,6 +111,38 @@ async function handle(request: Request) {
     .eq("status", "processing")
     .lt("sla_due_at", nowIso);
   const processingStuck = stuckProcessing?.length ?? 0;
+
+  // 3b) GC abandoned per-identity verify attempts (account-first verification creates these BEFORE any
+  //     order — a bot could upload screenshots without ever checking out). Delete rows untouched for >24h
+  //     and best-effort remove their stored screenshots so the private bucket doesn't grow unbounded.
+  let verifyAttemptsPurged = 0;
+  const { data: staleAttempts } = await admin
+    .from("game_topup_verify_attempts")
+    .delete()
+    .lt("updated_at", draftCutoff)
+    .select("id, last_screenshot_path");
+  if (staleAttempts && staleAttempts.length) {
+    verifyAttemptsPurged = staleAttempts.length;
+    const paths = (staleAttempts as Array<{ last_screenshot_path: string | null }>)
+      .map((r) => r.last_screenshot_path)
+      .filter((p): p is string => !!p);
+    if (paths.length) {
+      // A verify-attempt screenshot is the SAME object an order line references (pay copies the path, not the
+      // file). NEVER delete a path still referenced by an order line, or staff lose live-order proof.
+      const { data: refs } = await admin
+        .from("game_topup_order_lines")
+        .select("screenshot_path")
+        .in("screenshot_path", paths);
+      const referenced = new Set((refs ?? []).map((r) => r.screenshot_path as string));
+      const orphans = paths.filter((p) => !referenced.has(p));
+      if (orphans.length) {
+        await admin.storage
+          .from("game-topup-screenshots")
+          .remove(orphans)
+          .then(() => {}, (e) => console.error("[game-topup sla-sweep] screenshot GC failed", e instanceof Error ? e.message : e));
+      }
+    }
+  }
   if (processingStuck > 0) {
     console.error(`[game-topup sla-sweep] ${processingStuck} processing order(s) past SLA — manual review (see /admin/game-topups)`);
   }
@@ -100,12 +150,18 @@ async function handle(request: Request) {
     console.error(`[game-topup sla-sweep] ${manual} pending order(s) need a MANUAL refund — see /admin/game-topups (status=failed)`);
   }
 
+  if (partialDelivered > 0) {
+    console.error(`[game-topup sla-sweep] ${partialDelivered} pending order(s) past SLA have a delivered line — NOT auto-refunded; resolve manually in /admin/game-topups`);
+  }
+
   return NextResponse.json({
     ok: true,
     draftsPurged: deletedDrafts?.length ?? 0,
     pendingRefunded: refunded,
     pendingManual: manual,
+    partialDelivered,
     processingStuck,
+    verifyAttemptsPurged,
   });
 }
 

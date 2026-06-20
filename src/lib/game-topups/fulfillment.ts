@@ -2,16 +2,19 @@ import "server-only";
 import crypto from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normalizeName } from "./ocr";
+import { accountConfig } from "./accounts";
 import { sendGameTopupReceipt } from "@/lib/email";
 
-// Confirmation matcher — the fulfilment core. Applies ONE Codashop delivery confirmation (from the
-// inbound receipt email or the SMS fallback) to an order: dedupe on reference, find an OPEN order whose
-// Riot ID matches and that has an unverified line of EXACTLY this VP, tick that one line, record an
-// append-only event, recompute the fulfilled total, and (when every line is verified) mark the order
-// delivered + send our branded receipt. Service-role only. Idempotent; never short-completes.
+// Confirmation matcher — the fulfilment core. Applies ONE Codashop delivery confirmation (inbound receipt
+// email or SMS fallback) to a specific order LINE: dedupe on reference, find an OPEN line of EXACTLY this
+// (game, account, VP) that is still pending, tick it, record an append-only event, recompute the order's
+// fulfilled total, and (when EVERY line across all groups is verified) mark the order delivered + send our
+// branded, per-(game,account)-grouped receipt. Service-role only. Idempotent; never short-completes.
 
 export interface ConfirmationInput {
-  riotId: string | null;
+  game: string | null; // resolved best-effort from the confirmation; disambiguates same-VP across games
+  riotId: string | null; // the account identity (Riot name / Genshin UID / MLBB User ID)
+  tag: string | null;
   vp: number | null;
   ref: string | null;
   source: "codashop_email" | "sms" | "manual";
@@ -32,22 +35,20 @@ export async function applyConfirmation(input: ConfirmationInput): Promise<Confi
   const vp = input.vp;
   if (!vp || vp <= 0) return { ok: false, matched: false, reason: "no_vp" };
 
-  // Riot ID is REQUIRED to auto-tick: the whole point is to bind a delivery to the proven account, so a
-  // confirmation we can't tie to a Riot ID never auto-fulfils — staff resolve it from the console.
+  // The account identity is REQUIRED to auto-tick: a delivery must bind to the proven account, so a
+  // confirmation we can't tie to one never auto-fulfils — staff resolve it from the console.
   const target = input.riotId ? normalizeName(input.riotId) : null;
-  if (!target || target.length < 3) return { ok: true, matched: false, reason: "no_riot_id_needs_review" };
+  if (!target || target.length < 3) return { ok: true, matched: false, reason: "no_account_needs_review" };
 
-  // Idempotency key. Prefer the Codashop reference; when a confirmation carries none (common on the SMS
-  // fallback, or an email whose wording didn't parse), synthesize a DETERMINISTIC key from source + Riot
-  // ID + VP + raw text — so a byte-identical replay dedupes, while two genuinely-distinct deliveries
-  // (different raw text) don't. Without this, Postgres treats NULL refs as DISTINCT and a replayed no-ref
-  // confirmation would tick a SECOND line (free VP).
+  // Idempotency key. Prefer the Codashop reference; else synthesize a DETERMINISTIC key from
+  // source + game + account + VP + raw text so a byte-identical replay dedupes while two genuinely-distinct
+  // deliveries don't. Includes game+account so the same VP to different games/accounts never false-dedupes.
   const ref =
     input.ref?.trim() ||
     "auto-" +
       crypto
         .createHash("sha256")
-        .update(`${input.source}|${target}|${vp}|${(input.rawText || "").trim()}`)
+        .update(`${input.source}|${input.game ?? ""}|${target}|${vp}|${(input.rawText || "").trim()}`)
         .digest("hex")
         .slice(0, 40);
 
@@ -61,40 +62,61 @@ export async function applyConfirmation(input: ConfirmationInput): Promise<Confi
     if (dup) return { ok: true, matched: false, reason: "duplicate_ref" };
   }
 
-  // Candidate OPEN orders whose Riot ID matches EXACTLY (normalized) — avoids near-name collisions like
-  // "Luna" vs "Lunatic". Oldest first; prefer 'processing' (a staffer is actively buying it) over 'pending'.
-  const { data: openOrders } = await admin
-    .from("game_topup_orders")
-    .select("id, riot_id, status, created_at")
-    .in("status", ["processing", "pending"])
-    .order("created_at", { ascending: true });
-  const candidates = ((openOrders ?? []) as Array<{ id: string; riot_id: string; status: string }>)
-    .filter((o) => normalizeName(o.riot_id) === target)
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === "processing" ? -1 : 1));
+  // Candidate OPEN lines: a pending, screenshot-verified line of exactly this VP (+ this game when known),
+  // whose order is still open. Then filter to the exact normalized account.
+  let q = admin
+    .from("game_topup_order_lines")
+    .select("id, order_id, account_id, game, position, game_topup_orders!inner(status, ocr_text)")
+    .eq("vp_amount", vp)
+    .eq("status", "pending")
+    .eq("account_verified", true)
+    .in("game_topup_orders.status", ["processing", "pending"]);
+  if (input.game) q = q.eq("game", input.game);
+  const { data: candLines } = await q;
 
-  // Among candidates, collect those with an unverified line of exactly this VP (lowest position first).
-  const matches: Array<{ orderId: string; lineId: string }> = [];
-  for (const o of candidates) {
-    const { data: line } = await admin
-      .from("game_topup_order_lines")
-      .select("id")
-      .eq("order_id", o.id)
-      .eq("vp_amount", vp)
-      .eq("status", "pending")
-      .order("position", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (line) matches.push({ orderId: o.id, lineId: (line as { id: string }).id });
+  type Cand = {
+    id: string;
+    order_id: string;
+    account_id: string | null;
+    game: string | null;
+    position: number;
+    game_topup_orders: { status: string; ocr_text: string | null } | { status: string; ocr_text: string | null }[];
+  };
+  const orderOf = (c: Cand) => (Array.isArray(c.game_topup_orders) ? c.game_topup_orders[0] : c.game_topup_orders);
+  const cands = ((candLines ?? []) as Cand[]).filter(
+    (l) =>
+      l.account_id &&
+      normalizeName(l.account_id) === target &&
+      // Fail-open (Vision-down) orders are flagged for manual review — never auto-tick them; staff deliver
+      // them by hand after eyeballing the (unverified) screenshot.
+      !(orderOf(l)?.ocr_text || "").includes("manual review"),
+  );
+
+  // Cross-game safety: if the confirmation's game couldn't be parsed (input.game null) and the candidates
+  // span more than one game, refuse to auto-tick — a "1000" confirmation must not tick the wrong game's line.
+  if (new Set(cands.map((c) => c.game)).size > 1) {
+    return { ok: true, matched: false, reason: "ambiguous_needs_review" };
   }
 
-  if (matches.length === 0) return { ok: true, matched: false, reason: "no_match" };
-  // More than one open order matches this Riot ID + VP → ambiguous; never auto-tick (a human resolves it).
-  if (matches.length > 1) return { ok: true, matched: false, reason: "ambiguous_needs_review" };
+  // Group candidate lines by ORDER. >1 distinct open order matching this (game,account,VP) → ambiguous,
+  // never auto-tick (a human resolves it). Within the single matching order, tick the lowest-position line
+  // (handles a legit cart with two identical lines for the same account — each confirmation ticks one).
+  const byOrder = new Map<string, Cand[]>();
+  for (const l of cands) {
+    const arr = byOrder.get(l.order_id);
+    if (arr) arr.push(l);
+    else byOrder.set(l.order_id, [l]);
+  }
+  const orderIds = [...byOrder.keys()];
+  if (orderIds.length === 0) return { ok: true, matched: false, reason: "no_match" };
+  if (orderIds.length > 1) return { ok: true, matched: false, reason: "ambiguous_needs_review" };
 
-  const chosen = matches[0];
+  const onlyOrderId = orderIds[0];
+  const chosenLine = byOrder.get(onlyOrderId)!.sort((a, b) => a.position - b.position)[0];
+  const chosen = { orderId: onlyOrderId, lineId: chosenLine.id };
 
-  // Record the event FIRST: the unique `ref` insert is the atomic idempotency claim — only the winner of
-  // a same-ref race proceeds to tick the line, so a duplicate confirmation can never fulfil two lines.
+  // Record the event FIRST: the unique `ref` insert is the atomic idempotency claim — only the winner of a
+  // same-ref race proceeds to tick the line, so a duplicate confirmation can never fulfil two lines.
   const { error: evErr } = await admin.from("game_topup_fulfillment_events").insert({
     order_id: chosen.orderId,
     line_id: chosen.lineId,
@@ -152,15 +174,23 @@ export async function markLineDeliveredManual(lineId: string): Promise<{ ok: boo
 }
 
 /** Recompute fulfilled_vp; if every line is verified, flip the order to delivered (guarded against a
- *  concurrent duplicate) and fire the branded receipt. Returns whether THIS call delivered it. */
+ *  concurrent duplicate) and fire the per-(game,account)-grouped branded receipt. */
 async function recomputeAndMaybeDeliver(orderId: string): Promise<boolean> {
   const admin = getSupabaseAdmin();
   const { data: lines } = await admin
     .from("game_topup_order_lines")
-    .select("vp_amount, status, customer_price, position")
+    .select("vp_amount, status, customer_price, position, game, account_id, account_tag")
     .eq("order_id", orderId)
     .order("position", { ascending: true });
-  const all = (lines ?? []) as Array<{ vp_amount: number; status: string; customer_price: number }>;
+  type LineRow = {
+    vp_amount: number;
+    status: string;
+    customer_price: number;
+    game: string | null;
+    account_id: string | null;
+    account_tag: string | null;
+  };
+  const all = (lines ?? []) as LineRow[];
   const fulfilled = all.filter((l) => l.status === "verified").reduce((s, l) => s + Number(l.vp_amount), 0);
   const everyVerified = all.length > 0 && all.every((l) => l.status === "verified");
 
@@ -173,20 +203,47 @@ async function recomputeAndMaybeDeliver(orderId: string): Promise<boolean> {
     .update({ status: "delivered", delivered_at: new Date().toISOString() })
     .eq("id", orderId)
     .in("status", ["processing", "pending"])
-    .select("id, game, riot_id, riot_tag, customer_email, amount_php, target_vp, status_token");
+    .select("id, customer_email, amount_php, status_token");
   const row = deliveredRows && deliveredRows[0];
   if (!row) return false; // already delivered by a concurrent confirmation
 
   if (row.customer_email) {
+    // Game display names + currency labels for the receipt headers.
+    const slugs = Array.from(new Set(all.map((l) => l.game).filter((g): g is string => !!g)));
+    const { data: gameRows } = slugs.length
+      ? await admin.from("game_topup_games").select("slug, name, currency_label").in("slug", slugs)
+      : { data: [] as Array<{ slug: string; name: string; currency_label: string }> };
+    const meta = new Map((gameRows ?? []).map((g) => [g.slug as string, g]));
+
+    // Group the order's lines by (game, account) for the receipt.
+    const groupMap = new Map<
+      string,
+      { game: string; accountId: string; accountTag: string; lines: Array<{ vp: number; pricePhp: number }>; subtotalVp: number }
+    >();
+    for (const l of all) {
+      const game = l.game ?? "";
+      const accountId = l.account_id ?? "";
+      const accountTag = l.account_tag ?? "";
+      const key = `${game}|${accountId}|${accountTag}`;
+      const g = groupMap.get(key) ?? { game, accountId, accountTag, lines: [], subtotalVp: 0 };
+      g.lines.push({ vp: Number(l.vp_amount), pricePhp: Number(l.customer_price) });
+      g.subtotalVp += Number(l.vp_amount);
+      groupMap.set(key, g);
+    }
+    const groups = [...groupMap.values()].map((g) => {
+      const m = meta.get(g.game);
+      const gameName = (m?.name as string) || (g.game ? g.game.charAt(0).toUpperCase() + g.game.slice(1) : "Game");
+      const currencyLabel = (m?.currency_label as string) || "credits";
+      const accountLabel = accountConfig(g.game).mode === "riot" && g.accountTag ? `${g.accountId}#${g.accountTag}` : g.accountId;
+      return { gameName, currencyLabel, accountLabel, lines: g.lines, subtotalVp: g.subtotalVp };
+    });
+
     sendGameTopupReceipt({
       to: row.customer_email,
       orderId: row.id,
-      game: row.game,
-      riotId: `${row.riot_id}#${row.riot_tag}`,
-      totalVp: Number(row.target_vp),
       amountPhp: Number(row.amount_php),
       statusToken: row.status_token,
-      lines: all.map((l) => ({ vp: Number(l.vp_amount), pricePhp: Number(l.customer_price) })),
+      groups,
     }).catch((e) => console.error("[game-topup] receipt email failed", e instanceof Error ? e.message : e));
   }
   return true;

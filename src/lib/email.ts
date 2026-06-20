@@ -1054,55 +1054,67 @@ export async function sendSubscriptionRenewed(input: SubscriptionRenewedInput) {
 
 /* ---------------- Game Top-Ups: branded delivery receipt ---------------- */
 
+interface GameTopupReceiptGroup {
+  gameName: string;
+  currencyLabel: string; // VP / RP / Diamonds / Genesis Crystals …
+  accountLabel: string; // "Name#TAG" (Riot) or the bare id (Genshin UID / MLBB User ID)
+  lines: Array<{ vp: number; pricePhp: number }>;
+  subtotalVp: number;
+}
 interface GameTopupReceiptInput {
   to: string;
   orderId: string;
-  game: string;
-  riotId: string; // "Name#TAG"
-  totalVp: number;
   amountPhp: number;
   statusToken: string;
-  lines: Array<{ vp: number; pricePhp: number }>;
+  groups: GameTopupReceiptGroup[]; // one per (game, account) — a multi-game cart has several
 }
 
 // Sent the moment every line of a Game Top-Up order is confirmed delivered (all Codashop purchases
-// landed). This is OUR receipt — our logo, our email — the customer never sees Codashop's. [[design]]
+// landed). This is OUR receipt — our logo, our email — the customer never sees Codashop's. A single order
+// can span multiple games + accounts, so the receipt renders one block per (game, account). [[design]]
 export async function sendGameTopupReceipt(input: GameTopupReceiptInput) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
   const statusUrl = `${siteUrl}/game-topups/status/${input.statusToken}`;
-  const gameLabel = input.game ? input.game.charAt(0).toUpperCase() + input.game.slice(1) : "Game";
-  const linesHtml = input.lines
-    .map(
-      (l) =>
-        `<tr>
-          <td style="padding:6px 0;color:#1a0f06;font-size:14px;">✅ ${escapeHtml(l.vp.toLocaleString())} VP</td>
-          <td style="padding:6px 0;color:#5a4a3c;font-size:13px;text-align:right;">${escapeHtml(formatPHP(l.pricePhp))}</td>
-        </tr>`,
-    )
+  const groups = input.groups.length ? input.groups : [];
+
+  const groupsHtml = groups
+    .map((g) => {
+      const linesHtml = g.lines
+        .map(
+          (l) =>
+            `<tr>
+              <td style="padding:6px 0;color:#1a0f06;font-size:14px;">✅ ${escapeHtml(l.vp.toLocaleString())} ${escapeHtml(g.currencyLabel)}</td>
+              <td style="padding:6px 0;color:#5a4a3c;font-size:13px;text-align:right;">${escapeHtml(formatPHP(l.pricePhp))}</td>
+            </tr>`,
+        )
+        .join("");
+      return `
+        <p style="margin:20px 0 6px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
+          // ${escapeHtml(g.gameName)} · ${escapeHtml(g.accountLabel)}
+        </p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e8dcc4;">
+          ${linesHtml}
+          <tr>
+            <td style="padding:8px 0 0;color:#5a4a3c;font-size:12px;">delivered to ${escapeHtml(g.accountLabel)}</td>
+            <td style="padding:8px 0 0;color:#1a0f06;font-size:13px;font-weight:600;text-align:right;">${escapeHtml(g.subtotalVp.toLocaleString())} ${escapeHtml(g.currencyLabel)}</td>
+          </tr>
+        </table>`;
+    })
     .join("");
+
+  const accountsLine = groups.map((g) => `${g.gameName} (${g.accountLabel})`).join(", ");
 
   const body = `
     <h1 style="margin:16px 0 8px;font-size:30px;font-weight:800;letter-spacing:-0.5px;color:#1a0f06;">
       Delivered — top-up complete.
     </h1>
     <p style="margin:0 0 24px;color:#5a4a3c;font-size:15px;line-height:1.6;">
-      Your ${escapeHtml(gameLabel)} top-up for <strong>${escapeHtml(input.riotId)}</strong> has been delivered in full. Thanks for topping up with Comffee!
+      Your top-up${groups.length > 1 ? "s have" : " has"} been delivered in full. Thanks for topping up with Comffee!
     </p>
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
-      ${receiptRow("Game", gameLabel)}
-      ${receiptRow("Riot ID", input.riotId)}
-      ${receiptRow("Total delivered", input.totalVp.toLocaleString() + " VP", true)}
-    </table>
+    ${groupsHtml}
 
-    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
-      // packages
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e8dcc4;">
-      ${linesHtml}
-    </table>
-
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;border-top:2px solid #ff8a3d;padding-top:12px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;border-top:2px solid #ff8a3d;padding-top:12px;">
       ${receiptRow("Amount paid", formatPHP(input.amountPhp), true)}
     </table>
 
@@ -1118,14 +1130,17 @@ export async function sendGameTopupReceipt(input: GameTopupReceiptInput) {
 
   return sendEmail({
     to: input.to,
-    subject: `Your ${gameLabel} top-up is delivered · ${input.totalVp.toLocaleString()} VP`,
+    subject:
+      groups.length === 1
+        ? `Your ${groups[0].gameName} top-up is delivered`
+        : `Your Comffee top-up is delivered · ${groups.length} accounts`,
     html: chrome({
-      preheader: `${input.totalVp.toLocaleString()} VP delivered to ${input.riotId}`,
+      preheader: `Delivered: ${accountsLine || "your top-up"}`,
       bodyHtml: body,
       ctaLabel: "View order",
       ctaHref: statusUrl,
     }),
-    text: `Your ${gameLabel} top-up for ${input.riotId} is delivered: ${input.totalVp} VP total, ${formatPHP(input.amountPhp)} paid. Status: PAID — complete. Order ID: ${input.orderId}. View: ${statusUrl}`,
+    text: `Your Comffee top-up is delivered in full (${accountsLine}). Amount paid: ${formatPHP(input.amountPhp)}. Status: PAID — complete. Order ID: ${input.orderId}. View: ${statusUrl}`,
   });
 }
 

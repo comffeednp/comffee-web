@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import StatusView from "./StatusView";
+import { groupLinesForView, type GroupLineIn } from "@/lib/game-topups/grouping";
 import { ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -19,22 +20,25 @@ export default async function StatusPage({ params }: { params: Promise<{ token: 
   const admin = getSupabaseAdmin();
   const { data: order } = await admin
     .from("game_topup_orders")
-    .select("id, game, region, riot_id, riot_tag, target_vp, fulfilled_vp, amount_php, status, created_at, delivered_at")
+    .select("id, target_vp, fulfilled_vp, amount_php, status, created_at, delivered_at")
     .eq("status_token", token)
     .maybeSingle();
   if (!order) notFound();
 
   const { data: lines } = await admin
     .from("game_topup_order_lines")
-    .select("vp_amount, status, position")
+    .select("vp_amount, status, position, game, account_id, account_tag")
     .eq("order_id", order.id)
     .order("position", { ascending: true });
 
+  const slugs = Array.from(new Set((lines ?? []).map((l) => l.game).filter((g): g is string => !!g)));
+  const { data: gameRows } = slugs.length
+    ? await admin.from("game_topup_games").select("slug, name, currency_label").in("slug", slugs)
+    : { data: [] as Array<{ slug: string; name: string; currency_label: string }> };
+  const meta = new Map((gameRows ?? []).map((g) => [g.slug as string, g]));
+
   const initial = {
     order: {
-      game: order.game as string,
-      region: order.region as string,
-      riotId: `${order.riot_id}#${order.riot_tag}`,
       targetVp: Number(order.target_vp),
       fulfilledVp: Number(order.fulfilled_vp),
       amountPhp: Number(order.amount_php),
@@ -42,7 +46,7 @@ export default async function StatusPage({ params }: { params: Promise<{ token: 
       createdAt: order.created_at as string,
       deliveredAt: order.delivered_at as string | null,
     },
-    lines: (lines ?? []).map((l) => ({ vp: Number(l.vp_amount), status: l.status as string, position: l.position as number })),
+    groups: groupLinesForView((lines ?? []) as GroupLineIn[], meta),
   };
 
   return (

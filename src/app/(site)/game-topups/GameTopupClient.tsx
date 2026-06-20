@@ -9,8 +9,10 @@ import {
   CreditCard,
   Gem,
   Loader2,
+  Pencil,
   Plus,
   ShieldCheck,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -18,7 +20,6 @@ import { formatPHP } from "@/lib/utils";
 import { gameArt } from "@/lib/game-topups/games-art";
 import { accountConfig, buildIdentity, formatIdentity } from "@/lib/game-topups/accounts";
 
-// Small keyboard-key chip used in the "how to paste" steps.
 const kbdCls = "rounded border border-line-bright bg-bg-card px-1.5 py-0.5 text-cream-dim";
 
 interface CatalogItem {
@@ -28,7 +29,7 @@ interface CatalogItem {
   vp: number;
   label: string;
   price: number;
-  /** Codashop's own ₱ price (public) — what they'd pay buying direct; used to show the savings. */
+  /** Codashop's own ₱ price (public) — used to show the savings. */
   original: number;
 }
 interface GameInfo {
@@ -42,8 +43,44 @@ interface Props {
   games: GameInfo[];
 }
 
-// Downscale a phone screenshot to <=1600px JPEG before upload — keeps the in-game name crisp for OCR
-// while staying under the 2 MB cap. Falls back to the original on any failure.
+// One cart GROUP = one (game, account). The order is several groups checked out in ONE payment, each
+// screenshot-verified on its own (verifyId from /api/game-topup/ocr).
+interface Group {
+  id: string;
+  gameSlug: string;
+  riotIdFull: string; // riot-mode combined "Name#TAG"
+  acctId: string; // pair-mode id (Genshin UID / MLBB User ID)
+  acctTag: string; // pair-mode tag (Genshin server / MLBB Zone)
+  file: File | null;
+  preview: string | null;
+  verified: boolean;
+  verifyId: string | null;
+  needsReview: boolean;
+  verifying: boolean;
+  verifyMsg: string | null;
+  blockedUntil: string | null;
+  lines: CatalogItem[];
+}
+
+function newGroup(gameSlug: string): Group {
+  return {
+    id: crypto.randomUUID(),
+    gameSlug,
+    riotIdFull: "",
+    acctId: "",
+    acctTag: "",
+    file: null,
+    preview: null,
+    verified: false,
+    verifyId: null,
+    needsReview: false,
+    verifying: false,
+    verifyMsg: null,
+    blockedUntil: null,
+    lines: [],
+  };
+}
+
 async function shrinkImage(file: File, maxDim = 1600, quality = 0.85): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file);
@@ -63,33 +100,25 @@ async function shrinkImage(file: File, maxDim = 1600, quality = 0.85): Promise<B
   }
 }
 
+const identityOf = (g: Group) => buildIdentity(g.gameSlug, { combined: g.riotIdFull, id: g.acctId, tag: g.acctTag });
+
 export default function GameTopupClient({ catalog, games }: Props) {
-  const [gameSlug, setGameSlug] = useState(games[0]?.slug ?? catalog[0]?.game ?? "valorant");
-  const [cart, setCart] = useState<CatalogItem[]>([]);
-  const [riotIdFull, setRiotIdFull] = useState(""); // riot-mode combined field — "Name#TAG"
-  const [acctId, setAcctId] = useState(""); // pair-mode id (Genshin UID / MLBB User ID)
-  const [acctTag, setAcctTag] = useState(""); // pair-mode tag (Genshin server / MLBB Zone)
-
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false); // "Remove this screenshot?" prompt
-  const fileRef = useRef<HTMLInputElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
-
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [verified, setVerified] = useState(false);
-  const [needsReview, setNeedsReview] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
-  const [blockedUntil, setBlockedUntil] = useState<string | null>(null);
+  const firstGame = games[0]?.slug ?? catalog[0]?.game ?? "valorant";
+  const [groups, setGroups] = useState<Group[]>(() => [newGroup(firstGame)]);
+  const [activeId, setActiveId] = useState<string>(() => groups[0].id);
 
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payMsg, setPayMsg] = useState<string | null>(null);
   const [sampleZoom, setSampleZoom] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
-  // While the enlarged sample is open: close on Escape + lock body scroll behind it.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  const active = groups.find((g) => g.id === activeId) ?? groups[0];
+
   useEffect(() => {
     if (!sampleZoom) return;
     const onKey = (e: KeyboardEvent) => {
@@ -104,71 +133,80 @@ export default function GameTopupClient({ catalog, games }: Props) {
     };
   }, [sampleZoom]);
 
-  const game = games.find((g) => g.slug === gameSlug) ?? games[0];
+  const patchGroup = (id: string, patch: Partial<Group>) =>
+    setGroups((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
+
+  // Editing the account/game invalidates that group's verification (must re-prove). Free any old preview.
+  const resetVerify = (id: string, extra: Partial<Group> = {}) =>
+    patchGroup(id, { verified: false, verifyId: null, needsReview: false, verifyMsg: null, blockedUntil: null, ...extra });
+
+  const game = games.find((g) => g.slug === active.gameSlug) ?? games[0];
   const currency = game?.currency ?? "VP";
-  const art = gameArt(gameSlug);
-  // Scope the whole store to this game's signature color: overriding --color-amber re-tints every
-  // `amber` utility (tiles, prices, total, focus ring) for the selected game. Falls back to brand amber.
+  const art = gameArt(active.gameSlug);
   const accent = art?.accent ?? "#ffb547";
+  const cfg = accountConfig(active.gameSlug);
   const packages = useMemo(
-    () => catalog.filter((c) => c.game === gameSlug).sort((a, b) => a.vp - b.vp),
-    [catalog, gameSlug],
+    () => catalog.filter((c) => c.game === active.gameSlug).sort((a, b) => a.vp - b.vp),
+    [catalog, active.gameSlug],
   );
-  const totalVp = cart.reduce((s, c) => s + c.vp, 0);
-  const totalPrice = cart.reduce((s, c) => s + c.price, 0);
-  // Savings vs Codashop's own price (what they'd pay buying direct).
-  const totalOriginal = cart.reduce((s, c) => s + (c.original || c.price), 0);
+  const parsedActive = identityOf(active);
+
+  // Order-wide totals across ALL groups' lines.
+  const allLines = groups.flatMap((g) => g.lines);
+  const totalPrice = allLines.reduce((s, c) => s + c.price, 0);
+  const totalOriginal = allLines.reduce((s, c) => s + (c.original || c.price), 0);
   const totalSavings = Math.max(0, totalOriginal - totalPrice);
   const savingsPct = totalOriginal > 0 ? Math.round((totalSavings / totalOriginal) * 100) : 0;
 
-  const cfg = accountConfig(gameSlug);
-  const parsedAcct = buildIdentity(gameSlug, { combined: riotIdFull, id: acctId, tag: acctTag });
-  const accountStarted = cfg.mode === "riot" ? !!riotIdFull.trim() : !!(acctId.trim() && acctTag.trim());
-  const canAddPackages = accountStarted && !!email.trim();
-  const detailsReady = cart.length > 0 && !!parsedAcct;
+  const groupsWithLines = groups.filter((g) => g.lines.length > 0);
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // Payable: at least one line, every line-bearing group screenshot-verified + has a valid identity.
+  const canPay =
+    groupsWithLines.length > 0 &&
+    groupsWithLines.every((g) => g.verified && !!g.verifyId && !!identityOf(g)) &&
+    emailOk &&
+    consent;
+  const needsReverify = groupsWithLines.filter((g) => !g.verified);
 
-  // Any change to the cart/game while NOT yet verified must drop the server draft binding: the OCR route
-  // froze the order lines on the first attempt, so reusing that orderId would charge/deliver the OLD cart
-  // while the UI shows the new one. Clearing orderId makes the next verify recreate the draft from the
-  // current packages. (The screenshot is kept — it's the same account.)
-  const resetVerifyDraft = () => {
-    setOrderId(null);
-    setVerifyMsg(null);
-    setBlockedUntil(null);
+  // ── active-group editing ──────────────────────────────────────────────
+  const switchGame = (slug: string) => {
+    if (active.verified) return; // locked once verified; edit needs a re-verify path below
+    // New game → different catalog + account shape → clear lines + account + verification.
+    patchGroup(active.id, {
+      gameSlug: slug,
+      riotIdFull: "",
+      acctId: "",
+      acctTag: "",
+      lines: [],
+      verified: false,
+      verifyId: null,
+      needsReview: false,
+      verifyMsg: null,
+      blockedUntil: null,
+    });
   };
 
   const addPackage = (p: CatalogItem) => {
-    if (verified) return; // locked once verified — changing the order would invalidate the verified price
-    setCart((c) => [...c, p]);
-    resetVerifyDraft();
+    if (!active.verified) return; // amounts unlock only after the account is screenshot-verified
+    patchGroup(active.id, { lines: [...active.lines, p] });
   };
-  const removeAt = (i: number) => {
-    if (verified) return;
-    setCart((c) => c.filter((_, idx) => idx !== i));
-    resetVerifyDraft();
-  };
+  const removeLineAt = (gid: string, i: number) =>
+    setGroups((gs) => gs.map((g) => (g.id === gid ? { ...g, lines: g.lines.filter((_, idx) => idx !== i) } : g)));
 
   const pickFile = (f: File | null) => {
     if (!f) return;
-    if (preview) URL.revokeObjectURL(preview); // replace: free the old preview's memory
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-    setVerifyMsg(null);
+    if (active.preview) URL.revokeObjectURL(active.preview);
+    patchGroup(active.id, { file: f, preview: URL.createObjectURL(f), verifyMsg: null });
     setConfirmClear(false);
   };
-
-  // × on the preview → confirm → clear, so they can paste/pick a fresh screenshot. Keeps the cart/account
-  // (same order draft); only the image is dropped. Refocuses the paste box so Ctrl+V works immediately.
   const clearShot = () => {
-    if (preview) URL.revokeObjectURL(preview);
-    setFile(null);
-    setPreview(null);
-    setVerifyMsg(null);
+    if (active.preview) URL.revokeObjectURL(active.preview);
+    patchGroup(active.id, { file: null, preview: null, verifyMsg: null });
     setConfirmClear(false);
     setTimeout(() => dropRef.current?.focus(), 0);
   };
-
   const onPaste = (e: React.ClipboardEvent) => {
+    if (active.verified) return; // a verified group's screenshot is immutable (matches the disabled controls)
     const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
     if (item) {
       const f = item.getAsFile();
@@ -177,59 +215,78 @@ export default function GameTopupClient({ catalog, games }: Props) {
   };
 
   const verify = async () => {
-    const parsed = parsedAcct;
-    if (!parsed || !file) return;
-    setVerifying(true);
-    setVerifyMsg(null);
-    setBlockedUntil(null);
+    const parsed = identityOf(active);
+    if (!parsed || !active.file) return;
+    patchGroup(active.id, { verifying: true, verifyMsg: null, blockedUntil: null });
     try {
-      const shrunk = await shrinkImage(file);
+      const shrunk = await shrinkImage(active.file);
       const fd = new FormData();
-      fd.append("riotId", parsed.accountId);
+      fd.append("game", active.gameSlug);
+      fd.append("accountId", parsed.accountId);
       fd.append("tag", parsed.tag);
-      fd.append("skus", JSON.stringify(cart.map((c) => c.sku)));
-      if (orderId) fd.append("orderId", orderId);
       fd.append("image", shrunk, "screenshot.jpg");
       const res = await fetch("/api/game-topup/ocr", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
-      if (data.orderId) setOrderId(data.orderId);
 
       if (res.status === 429 || data.error === "locked") {
-        setBlockedUntil(data.blockedUntil ?? null);
-        setVerifyMsg("Too many tries. Please wait before trying again.");
+        patchGroup(active.id, { blockedUntil: data.blockedUntil ?? null, verifyMsg: "Too many tries. Please wait before trying again." });
         return;
       }
       if (!res.ok && !("verified" in data)) {
-        setVerifyMsg(humanError(data.error));
+        patchGroup(active.id, { verifyMsg: humanError(data.error) });
         return;
       }
-      if (data.verified) {
-        setVerified(true);
-        setNeedsReview(!!data.needsReview);
+      if (data.verified && data.verifyId) {
+        patchGroup(active.id, { verified: true, verifyId: data.verifyId, needsReview: !!data.needsReview, verifyMsg: null });
         return;
       }
       const left = typeof data.triesLeft === "number" ? data.triesLeft : null;
-      setVerifyMsg(
-        left !== null && left > 0
-          ? `That screenshot doesn't show "${parsed.accountId}". ${left} ${left === 1 ? "try" : "tries"} left — make sure ${cfg.proofWhat} is clearly visible.`
-          : "We couldn't match that screenshot to your account.",
-      );
+      patchGroup(active.id, {
+        verifyMsg:
+          left !== null && left > 0
+            ? `That screenshot doesn't show "${parsed.accountId}". ${left} ${left === 1 ? "try" : "tries"} left — make sure ${cfg.proofWhat} is clearly visible.`
+            : "We couldn't match that screenshot to your account.",
+      });
     } catch {
-      setVerifyMsg("Network error — please try again.");
+      patchGroup(active.id, { verifyMsg: "Network error — please try again." });
     } finally {
-      setVerifying(false);
+      patchGroup(active.id, { verifying: false });
     }
   };
 
+  const addAnother = () => {
+    const g = newGroup(firstGame);
+    setGroups((gs) => [...gs, g]);
+    setActiveId(g.id);
+  };
+  const removeGroup = (id: string) => {
+    setGroups((gs) => {
+      const next = gs.filter((g) => g.id !== id);
+      const ensured = next.length ? next : [newGroup(firstGame)];
+      if (id === activeId) setActiveId(ensured[0].id);
+      return ensured;
+    });
+  };
+
   const pay = async () => {
-    if (!orderId || !verified || !consent || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return;
+    if (!canPay) return;
     setPaying(true);
     setPayMsg(null);
     try {
+      const payloadGroups = groupsWithLines.map((g) => {
+        const idy = identityOf(g)!;
+        return {
+          game: g.gameSlug,
+          accountId: idy.accountId,
+          accountTag: idy.tag,
+          verifyId: g.verifyId,
+          skus: g.lines.map((l) => l.sku),
+        };
+      });
       const res = await fetch("/api/game-topup/pay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, email: email.trim(), consent: true }),
+        body: JSON.stringify({ groups: payloadGroups, email: email.trim(), consent: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (data.checkoutUrl) {
@@ -244,8 +301,8 @@ export default function GameTopupClient({ catalog, games }: Props) {
     }
   };
 
-  const blockedLabel = blockedUntil
-    ? new Date(blockedUntil).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
+  const blockedLabel = active.blockedUntil
+    ? new Date(active.blockedUntil).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
     : null;
 
   return (
@@ -253,30 +310,25 @@ export default function GameTopupClient({ catalog, games }: Props) {
       className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.4fr_1fr]"
       style={{ "--color-amber": accent } as CSSProperties}
     >
-      {/* ── LEFT: build the order + verify ─────────────────────────────── */}
+      {/* ── LEFT: build the active (game,account) group ─────────────────── */}
       <div className="space-y-8 rounded-2xl border border-line-bright bg-bg-card p-6 md:p-8">
-        {/* Game header — clean + branded with the game's own accent color (no third-party logos/art) */}
+        {/* Game header */}
         <div
           className="flex items-center gap-3 rounded-xl border p-4"
           style={{ borderColor: `${accent}55`, background: `linear-gradient(90deg, ${accent}1f, transparent 72%)` }}
         >
-          <span
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: `${accent}26` }}
-          >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${accent}26` }}>
             <Gem className="h-6 w-6" style={{ color: accent }} />
           </span>
           <div className="min-w-0">
-            <p className="font-display text-lg font-bold leading-tight text-cream">
-              {game?.name ?? "Game"} top-up
-            </p>
+            <p className="font-display text-lg font-bold leading-tight text-cream">{game?.name ?? "Game"} top-up</p>
             <p className="mt-0.5 font-mono text-[0.7rem] uppercase tracking-wide text-mocha">
               {currency} · delivered to your account · 8% off original price
             </p>
           </div>
         </div>
 
-        {/* Game */}
+        {/* Game selector */}
         {games.length > 1 && (
           <div>
             <p className="terminal-label">// game</p>
@@ -285,21 +337,11 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 <button
                   key={g.slug}
                   type="button"
-                  onClick={() => {
-                    if (verified) return;
-                    setGameSlug(g.slug);
-                    setCart([]);
-                    setRiotIdFull("");
-                    setAcctId("");
-                    setAcctTag("");
-                    resetVerifyDraft();
-                  }}
+                  onClick={() => switchGame(g.slug)}
                   title={`Choose ${g.name}`}
-                  disabled={verified}
+                  disabled={active.verified}
                   className={`rounded-lg border p-4 text-left transition disabled:opacity-50 ${
-                    gameSlug === g.slug
-                      ? "border-amber bg-amber/10 glow-amber"
-                      : "border-line-bright bg-bg hover:border-amber/60"
+                    active.gameSlug === g.slug ? "border-amber bg-amber/10 glow-amber" : "border-line-bright bg-bg hover:border-amber/60"
                   }`}
                 >
                   <p className="font-display font-semibold text-cream">{g.name}</p>
@@ -310,19 +352,15 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         )}
 
-        {/* ACCOUNT FIRST: account ID + email are filled BEFORE any package can be added. Fields are
-            per-game (Riot Name#TAG / Genshin UID+server / MLBB User ID+Zone) — see accounts.ts. */}
+        {/* 1 · ACCOUNT (per-game, account-first) */}
         {cfg.mode === "riot" ? (
           <div>
             <Field label={`1 · ${cfg.idLabel} *`}>
               <input
                 type="text"
-                value={riotIdFull}
-                onChange={(e) => {
-                  setRiotIdFull(e.target.value);
-                  resetVerifyDraft();
-                }}
-                disabled={verified}
+                value={active.riotIdFull}
+                onChange={(e) => resetVerify(active.id, { riotIdFull: e.target.value })}
+                disabled={active.verified}
                 className="gt-input"
                 placeholder={cfg.idPlaceholder}
                 autoComplete="off"
@@ -338,12 +376,9 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 <input
                   type="text"
                   inputMode={cfg.idKind === "tel" ? "numeric" : "text"}
-                  value={acctId}
-                  onChange={(e) => {
-                    setAcctId(e.target.value);
-                    resetVerifyDraft();
-                  }}
-                  disabled={verified}
+                  value={active.acctId}
+                  onChange={(e) => resetVerify(active.id, { acctId: e.target.value })}
+                  disabled={active.verified}
                   className="gt-input"
                   placeholder={cfg.idPlaceholder}
                   autoComplete="off"
@@ -356,31 +391,23 @@ export default function GameTopupClient({ catalog, games }: Props) {
               <Field label={`${cfg.tagLabel} *`}>
                 {cfg.tagOptions ? (
                   <select
-                    value={acctTag}
-                    onChange={(e) => {
-                      setAcctTag(e.target.value);
-                      resetVerifyDraft();
-                    }}
-                    disabled={verified}
+                    value={active.acctTag}
+                    onChange={(e) => resetVerify(active.id, { acctTag: e.target.value })}
+                    disabled={active.verified}
                     className="gt-input"
                   >
                     <option value="">Select your server…</option>
                     {cfg.tagOptions.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
+                      <option key={o} value={o}>{o}</option>
                     ))}
                   </select>
                 ) : (
                   <input
                     type="text"
                     inputMode={cfg.tagKind === "tel" ? "numeric" : "text"}
-                    value={acctTag}
-                    onChange={(e) => {
-                      setAcctTag(e.target.value);
-                      resetVerifyDraft();
-                    }}
-                    disabled={verified}
+                    value={active.acctTag}
+                    onChange={(e) => resetVerify(active.id, { acctTag: e.target.value })}
+                    disabled={active.verified}
                     className="gt-input"
                     placeholder={cfg.tagPlaceholder}
                     autoComplete="off"
@@ -392,98 +419,40 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         )}
 
-        {/* Email — collected up front (required to pay); this is where the receipt is sent. */}
+        {/* 2 · VERIFY this account (required per account) */}
         <div>
-          <Field label="2 · email — required *">
-            <input
-              type="email"
-              required
-              aria-required="true"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="gt-input"
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
-          </Field>
-          <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">
-            // your receipt &amp; order status are emailed here — double-check it&rsquo;s correct
-          </p>
-        </div>
-
-        {/* Packages — LOCKED until the account ID + email are filled (account-first). */}
-        <div>
-          <p className="terminal-label">// 3 · add packages (combine for any total)</p>
-          {canAddPackages ? null : (
-            <p className="mt-1.5 font-mono text-[0.7rem] text-amber/80">
-              ↑ enter your account ID and email first to unlock top-ups
-            </p>
-          )}
-          <div className={`mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 ${canAddPackages ? "" : "opacity-50"}`}>
-            {packages.map((p) => (
-              <button
-                key={p.sku}
-                type="button"
-                onClick={() => addPackage(p)}
-                disabled={verified || !canAddPackages}
-                title={`Add ${p.label} for ${formatPHP(p.price)}`}
-                className="flex flex-col rounded-lg border border-line-bright bg-bg p-3 text-left transition hover:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="flex items-center justify-between font-mono font-bold text-cream">
-                  {p.vp.toLocaleString()} {currency}
-                  <Plus className="h-3.5 w-3.5 text-amber" />
-                </span>
-                <span className="mt-1 font-mono text-xs text-amber">{formatPHP(p.price)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Verify */}
-        <div>
-          <p className="terminal-label">// prove it&rsquo;s your account</p>
+          <p className="terminal-label">// 2 · prove it&rsquo;s your account</p>
           <p className="mt-2 text-sm text-cream-dim">
             Paste or upload a screenshot of your in-game profile clearly showing <strong>{cfg.proofWhat}</strong>
-            {parsedAcct ? (
+            {parsedActive ? (
               <>
-                {" "}(
-                <strong className="text-cream">{formatIdentity(gameSlug, parsedAcct)}</strong>)
+                {" "}(<strong className="text-cream">{formatIdentity(active.gameSlug, parsedActive)}</strong>)
               </>
             ) : null}
             . We read it to make sure the {currency} land on the right account.
           </p>
 
-          {/* Sample so customers know exactly what to upload — tap to enlarge. Riot games only (the
-              bundled sample image is a Riot-style profile); other games rely on the text steps below. */}
           {cfg.showSample && (
-          <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
-            <button
-              type="button"
-              onClick={() => setSampleZoom(true)}
-              title="Tap to enlarge the example"
-              className="group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line-bright transition hover:border-amber/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/games/game-topups-sample-profile.svg"
-                alt="Example: your game account menu showing your name and #tag — copy it exactly"
-                className="h-24 w-auto"
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute bottom-1 right-1 rounded bg-bg/85 px-1.5 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-cream-dim"
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-line bg-bg/50 p-3">
+              <button
+                type="button"
+                onClick={() => setSampleZoom(true)}
+                title="Tap to enlarge the example"
+                className="group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-line-bright transition hover:border-amber/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber"
               >
-                ⤢ enlarge
-              </span>
-            </button>
-            <p className="font-mono text-[0.7rem] leading-relaxed text-mocha">
-              <span className="text-cream-dim">Like this</span> — your name <span className="text-cream-dim">and #tag</span>{" "}
-              must be clearly readable in the shot. <span className="text-cream-dim">Tap the image to enlarge.</span>
-            </p>
-          </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/games/game-topups-sample-profile.svg" alt="Example: your game account menu showing your name and #tag" className="h-24 w-auto" />
+                <span aria-hidden className="pointer-events-none absolute bottom-1 right-1 rounded bg-bg/85 px-1.5 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-cream-dim">
+                  ⤢ enlarge
+                </span>
+              </button>
+              <p className="font-mono text-[0.7rem] leading-relaxed text-mocha">
+                <span className="text-cream-dim">Like this</span> — your name <span className="text-cream-dim">and #tag</span>{" "}
+                must be clearly readable. <span className="text-cream-dim">Tap to enlarge.</span>
+              </p>
+            </div>
           )}
 
-          {/* Enlarged sample lightbox (centered) — portal so a transformed ancestor can't trap it */}
           {cfg.showSample && sampleZoom &&
             createPortal(
               <div
@@ -505,7 +474,7 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/games/game-topups-sample-profile.svg"
-                  alt="Example: your game account menu showing your name and #tag — copy it exactly"
+                  alt="Example: your game account menu showing your name and #tag"
                   onClick={(e) => e.stopPropagation()}
                   className="max-h-[85vh] w-auto max-w-[92vw] cursor-default rounded-xl border border-line-bright shadow-2xl"
                 />
@@ -513,7 +482,6 @@ export default function GameTopupClient({ catalog, games }: Props) {
               document.body,
             )}
 
-          {/* How to paste a screenshot — 4 simple steps */}
           <ol className="mt-4 space-y-1.5 font-mono text-[0.72rem] leading-relaxed text-mocha">
             <li>
               <span className="text-amber">1.</span> Press <kbd className={kbdCls}>Print Screen</kbd>{" "}
@@ -537,11 +505,11 @@ export default function GameTopupClient({ catalog, games }: Props) {
             aria-label="Click here, then press Ctrl + V to paste your screenshot"
             className="mt-3 cursor-pointer rounded-xl border border-dashed border-line-bright bg-bg p-4 outline-none transition focus:border-amber/70 focus-visible:ring-2 focus-visible:ring-amber"
           >
-            {preview ? (
+            {active.preview ? (
               <div className="relative mx-auto w-fit">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="Your screenshot preview" className="mx-auto max-h-56 rounded-lg" />
-                {!verified && (
+                <img src={active.preview} alt="Your screenshot preview" className="mx-auto max-h-56 rounded-lg" />
+                {!active.verified && (
                   <button
                     type="button"
                     onClick={() => setConfirmClear(true)}
@@ -556,20 +524,10 @@ export default function GameTopupClient({ catalog, games }: Props) {
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-bg/90 p-4 text-center backdrop-blur-sm">
                     <p className="font-mono text-sm text-cream">Remove this screenshot?</p>
                     <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={clearShot}
-                        title="Remove the screenshot"
-                        className="rounded-lg bg-rgb-r px-3.5 py-1.5 text-xs font-bold text-cream transition hover:brightness-110"
-                      >
+                      <button type="button" onClick={clearShot} title="Remove the screenshot" className="rounded-lg bg-rgb-r px-3.5 py-1.5 text-xs font-bold text-cream transition hover:brightness-110">
                         Yes, remove
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmClear(false)}
-                        title="Keep the screenshot"
-                        className="rounded-lg border border-line-bright px-3.5 py-1.5 text-xs text-cream-dim transition hover:text-cream"
-                      >
+                      <button type="button" onClick={() => setConfirmClear(false)} title="Keep the screenshot" className="rounded-lg border border-line-bright px-3.5 py-1.5 text-xs text-cream-dim transition hover:text-cream">
                         Cancel
                       </button>
                     </div>
@@ -584,41 +542,29 @@ export default function GameTopupClient({ catalog, games }: Props) {
                 </p>
               </div>
             )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            />
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
             <div className="mt-3 flex justify-center">
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={verified}
-                title="Choose a screenshot file"
-                className="key-cap disabled:opacity-50"
-              >
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={active.verified} title="Choose a screenshot file" className="key-cap disabled:opacity-50">
                 <Upload className="h-4 w-4" />
-                {preview ? "Choose a different screenshot" : "Choose screenshot"}
+                {active.preview ? "Choose a different screenshot" : "Choose screenshot"}
               </button>
             </div>
           </div>
 
-          {verified ? (
+          {active.verified ? (
             <div className="mt-3 flex items-center gap-2 rounded-lg border border-phosphor/40 bg-phosphor/10 p-3">
               <ShieldCheck className="h-4 w-4 text-phosphor" />
               <p className="font-mono text-xs text-phosphor">
-                // account verified{needsReview ? " (pending a quick manual check)" : ""}
+                // account verified{active.needsReview ? " (pending a quick manual check)" : ""} — add your amounts below
               </p>
             </div>
           ) : (
             <>
-              {verifyMsg && (
+              {active.verifyMsg && (
                 <div className="mt-3 flex items-start gap-3 rounded-lg border border-amber/40 bg-amber/10 p-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 text-amber" />
                   <p className="text-xs text-amber">
-                    {verifyMsg}
+                    {active.verifyMsg}
                     {blockedLabel ? ` Try again after ${blockedLabel}.` : ""}
                   </p>
                 </div>
@@ -626,49 +572,116 @@ export default function GameTopupClient({ catalog, games }: Props) {
               <button
                 type="button"
                 onClick={verify}
-                disabled={!detailsReady || !file || verifying || !!blockedUntil}
+                disabled={!parsedActive || !active.file || active.verifying || !!active.blockedUntil}
                 title="Verify your account from the screenshot"
                 className="key-cap mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                {verifying ? "Checking…" : "Verify account"}
+                {active.verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                {active.verifying ? "Checking…" : "Verify account"}
               </button>
             </>
           )}
         </div>
+
+        {/* 3 · AMOUNTS (locked until this account is verified) */}
+        <div>
+          <p className="terminal-label">// 3 · add amounts (combine for any total)</p>
+          {active.verified ? null : (
+            <p className="mt-1.5 font-mono text-[0.7rem] text-amber/80">↑ verify your account first to unlock top-ups</p>
+          )}
+          <div className={`mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 ${active.verified ? "" : "opacity-50"}`}>
+            {packages.map((p) => (
+              <button
+                key={p.sku}
+                type="button"
+                onClick={() => addPackage(p)}
+                disabled={!active.verified}
+                title={`Add ${p.label} for ${formatPHP(p.price)}`}
+                className="flex flex-col rounded-lg border border-line-bright bg-bg p-3 text-left transition hover:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="flex items-center justify-between font-mono font-bold text-cream">
+                  {p.vp.toLocaleString()} {currency}
+                  <Plus className="h-3.5 w-3.5 text-amber" />
+                </span>
+                <span className="mt-1 font-mono text-xs text-amber">{formatPHP(p.price)}</span>
+              </button>
+            ))}
+          </div>
+          {active.verified && (
+            <button
+              type="button"
+              onClick={addAnother}
+              title="Top up another game or another account in the same payment"
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-line-bright bg-bg px-3.5 py-2 font-mono text-xs text-cream-dim transition hover:border-amber/60 hover:text-cream"
+            >
+              <Plus className="h-3.5 w-3.5 text-amber" /> Add another game / account
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── RIGHT: cart + pay ──────────────────────────────────────────── */}
+      {/* ── RIGHT: cart (grouped per account) + pay ─────────────────────── */}
       <div className="space-y-4 rounded-2xl border border-line-bright bg-bg-card p-6 md:p-8 lg:sticky lg:top-24 lg:self-start">
         <p className="terminal-label">// your order</p>
-        {cart.length === 0 ? (
-          <p className="font-mono text-xs text-mocha">add a package to begin</p>
+        {groupsWithLines.length === 0 ? (
+          <p className="font-mono text-xs text-mocha">verify an account, then add amounts to begin</p>
         ) : (
-          <ul className="space-y-2">
-            {cart.map((c, i) => (
-              <li key={`${c.sku}-${i}`} className="flex items-center justify-between rounded-lg border border-line bg-bg px-3 py-2">
-                <span className="font-mono text-sm text-cream">{c.vp.toLocaleString()} {currency}</span>
-                <span className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-amber">{formatPHP(c.price)}</span>
-                  {!verified && (
-                    <button type="button" onClick={() => removeAt(i)} title="Remove this package" className="text-mocha hover:text-rgb-r">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+          <div className="space-y-4">
+            {groupsWithLines.map((g) => {
+              const gi = identityOf(g);
+              const gCfg = accountConfig(g.gameSlug);
+              const gGame = games.find((x) => x.slug === g.gameSlug);
+              const cur = gGame?.currency ?? "VP";
+              const label = gi ? formatIdentity(g.gameSlug, gi) : "—";
+              return (
+                <div key={g.id} className="rounded-lg border border-line bg-bg p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate font-display text-sm font-bold text-cream">
+                      {gGame?.name ?? gCfg.idLabel} <span className="font-mono text-xs font-normal text-amber">· {label}</span>
+                    </p>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetVerify(g.id); // re-enable the account/screenshot inputs; must re-verify before paying
+                          setActiveId(g.id);
+                        }}
+                        title="Edit this account (you'll re-verify before paying)"
+                        className="text-mocha hover:text-amber"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button type="button" onClick={() => removeGroup(g.id)} title="Remove this account from the order" className="text-mocha hover:text-rgb-r">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                  {!g.verified && (
+                    <p className="mt-1 font-mono text-[0.65rem] text-rgb-r">⚠ re-verify this account before paying (you changed it)</p>
                   )}
-                </span>
-              </li>
-            ))}
-          </ul>
+                  <ul className="mt-2 space-y-1.5">
+                    {g.lines.map((c, i) => (
+                      <li key={`${c.sku}-${i}`} className="flex items-center justify-between rounded border border-line bg-bg-card px-2.5 py-1.5">
+                        <span className="font-mono text-xs text-cream">{c.vp.toLocaleString()} {cur}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-amber">{formatPHP(c.price)}</span>
+                          <button type="button" onClick={() => removeLineAt(g.id, i)} title="Remove this amount" className="text-mocha hover:text-rgb-r">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
         )}
 
         <div className="border-t border-line-bright pt-3">
-          <div className="flex items-center justify-between font-mono text-sm text-cream-dim">
-            <span>Total {currency}</span>
-            <span className="text-cream">{totalVp.toLocaleString()}</span>
-          </div>
           {totalSavings > 0 && (
             <>
-              <div className="mt-1 flex items-center justify-between font-mono text-sm">
+              <div className="flex items-center justify-between font-mono text-sm">
                 <span className="text-mocha">Original price</span>
                 <span className="text-mocha line-through">{formatPHP(totalOriginal)}</span>
               </div>
@@ -684,52 +697,62 @@ export default function GameTopupClient({ catalog, games }: Props) {
           </div>
         </div>
 
-        {verified && (
-          <div className="space-y-4 border-t border-line-bright pt-4">
-            <label className="flex cursor-pointer items-start gap-3 text-xs text-cream-dim">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-amber"
-              />
-              <span>
-                My account ID and amount are correct. I understand that once delivered to the account I proved is mine,
-                <strong className="text-cream"> there are no refunds</strong>.
-              </span>
-            </label>
-            <p className="text-[0.7rem] leading-relaxed text-mocha">
-              If we can&rsquo;t deliver (e.g. a temporary outage), your payment is{" "}
-              <strong className="text-cream-dim">credited within 24 hours</strong> — or{" "}
-              <strong className="text-cream-dim">fully refunded</strong>.
-            </p>
-            {payMsg && (
-              <div className="flex items-start gap-3 rounded-lg border border-red-700 bg-red-950/20 p-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 text-red-400" />
-                <p className="font-mono text-xs text-red-400">// {payMsg}</p>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={pay}
-              disabled={!consent || paying || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())}
-              title="Pay and place your order"
-              className="key-cap key-cap-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              {paying ? "Routing to checkout…" : `Pay ${formatPHP(totalPrice)}`}
-            </button>
-            <p className="text-center font-mono text-[0.65rem] uppercase tracking-widest text-mocha">
-              // gcash · card · secured by paymongo
-            </p>
-          </div>
-        )}
+        {/* Email (order-level — one receipt for the whole order) */}
+        <div>
+          <Field label="email — required *">
+            <input
+              type="email"
+              required
+              aria-required="true"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="gt-input"
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </Field>
+          <p className="mt-1.5 font-mono text-[0.7rem] text-mocha">// your receipt &amp; order status are emailed here</p>
+        </div>
 
-        {!verified && (
-          <p className="flex items-center gap-2 font-mono text-[0.65rem] uppercase tracking-widest text-mocha">
-            <Check className="h-3 w-3" /> verify your account to pay
+        {needsReverify.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-rgb-r/40 bg-rgb-r/10 p-2.5 font-mono text-[0.7rem] text-rgb-r">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Re-verify the account(s) you edited before paying.
           </p>
         )}
+
+        <label className="flex cursor-pointer items-start gap-3 text-xs text-cream-dim">
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-amber" />
+          <span>
+            My account IDs and amounts are correct. I understand that once delivered to the accounts I proved are mine,
+            <strong className="text-cream"> there are no refunds</strong>.
+          </span>
+        </label>
+        <p className="text-[0.7rem] leading-relaxed text-mocha">
+          If we can&rsquo;t deliver (e.g. a temporary outage), your payment is{" "}
+          <strong className="text-cream-dim">credited within 24 hours</strong> — or <strong className="text-cream-dim">fully refunded</strong>.
+        </p>
+
+        {payMsg && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-700 bg-red-950/20 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-red-400" />
+            <p className="font-mono text-xs text-red-400">// {payMsg}</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={pay}
+          disabled={!canPay || paying}
+          title="Pay and place your order"
+          className="key-cap key-cap-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+          {paying ? "Routing to checkout…" : `Pay ${formatPHP(totalPrice)}`}
+        </button>
+        <p className="text-center font-mono text-[0.65rem] uppercase tracking-widest text-mocha">
+          {canPay ? "// gcash · card · secured by paymongo" : (
+            <span className="flex items-center justify-center gap-2"><Check className="h-3 w-3" /> verify an account + add amounts to pay</span>
+          )}
+        </p>
       </div>
 
       <style>{`
@@ -755,13 +778,16 @@ function humanError(code: unknown): string {
   const map: Record<string, string> = {
     ph_only: "Game top-ups are available in the Philippines only.",
     disabled: "Game top-ups are temporarily unavailable.",
-    not_verified: "Please verify your account first.",
-    package_unavailable: "One of those packages is no longer available — please re-add it.",
+    verify_expired: "One of your account verifications expired — please re-verify that account.",
+    package_unavailable: "One of those amounts is no longer available — please re-add it.",
     invalid_amount: "Something's off with the total — please rebuild your order.",
+    validation_failed: "Something's off with your order — please rebuild it.",
     checkout_failed: "Couldn't start checkout — please try again.",
     fulfilment_unavailable:
       "Top-ups are paused right now — our supplier is temporarily unreachable, so we can't take payment. You haven't been charged; please try again shortly.",
     rate_limited: "Too many attempts — please wait a moment.",
+    bot_check_failed: "Couldn't verify you're human — please refresh and try again.",
+    verification_unavailable: "Verification is busy right now — please try again in a little while.",
   };
   return (typeof code === "string" && map[code]) || "Something went wrong — please try again.";
 }

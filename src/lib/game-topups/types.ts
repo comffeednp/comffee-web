@@ -44,14 +44,25 @@ export interface TopupOrderLine {
   matched_ref: string | null;
   verified_at: string | null;
   position: number;
+  // Line-level game + account (migration 0063): the order is a pure payment/receipt envelope; each line
+  // carries its own (game, account) so ONE order can hold multiple games/accounts. account_verified is the
+  // pre-pay SCREENSHOT proof (distinct from `status`, which is the post-pay fulfilment state).
+  game: string | null;
+  region: string | null;
+  account_id: string | null;
+  account_tag: string | null;
+  account_verified: boolean;
+  screenshot_path: string | null;
 }
 
 export interface TopupOrder {
   id: string;
-  game: string;
-  region: string;
-  riot_id: string;
-  riot_tag: string;
+  // Order-level game/identity are LEGACY envelope fields (nullable since 0063) — the source of truth is
+  // now per-line (see TopupOrderLine). Kept for back-compat reads; a multi-account order leaves them null.
+  game: string | null;
+  region: string | null;
+  riot_id: string | null;
+  riot_tag: string | null;
   target_vp: number;
   fulfilled_vp: number;
   amount_php: number;

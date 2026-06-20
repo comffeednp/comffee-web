@@ -6,15 +6,32 @@
 // §19, items 2-3). The defaults target the common Codashop layout but the exact wording/labels vary.
 
 export interface ParsedConfirmation {
+  game: string | null; // best-effort game slug (disambiguates same-VP across games at match time)
   riotId: string | null;
   tag: string | null;
   vp: number | null;
   ref: string | null;
 }
 
-/** First "<number> VP / Points" occurrence (commas allowed, e.g. "2,050 VP"). */
+/** Best-effort game slug from the confirmation text (product name / currency wording). Order matters:
+ *  match the more specific games (Wild Rift, MLBB) before the generic League/Valorant tokens. Returns null
+ *  when nothing matches — the matcher then falls back to matching across games (with its ambiguity guard). */
+export function parseGame(text: string): string | null {
+  const t = (text || "").toLowerCase();
+  if (/wild\s*rift|wild\s*cores/.test(t)) return "wild-rift";
+  if (/mobile\s*legends|\bmlbb\b|\bml\b\s*diamonds|\bdiamonds?\b/.test(t)) return "mobile-legends";
+  if (/genshin|genesis\s*crystals?/.test(t)) return "genshin-impact";
+  if (/league\s*of\s*legends|\brp\b|riot\s*points?/.test(t)) return "league-of-legends";
+  if (/valorant|\bvp\b|valorant\s*points?/.test(t)) return "valorant";
+  return null;
+}
+
+/** First "<number> <currency>" occurrence (commas allowed, e.g. "2,050 VP"). Covers every LIVE game's
+ *  currency unit (VP / RP / Wild Cores / Genesis Crystals / Diamonds) so auto-confirm works for all of them. */
 export function parseVp(text: string): number | null {
-  const m = (text || "").match(/([\d,]{2,9})\s*(?:VP|valorant\s*points?|RP|riot\s*points?|points?)\b/i);
+  const m = (text || "").match(
+    /([\d,]{2,9})\s*(?:VP|valorant\s*points?|RP|riot\s*points?|wild\s*cores?|genesis\s*crystals?|crystals?|diamonds?|points?)\b/i,
+  );
   if (!m) return null;
   const n = parseInt(m[1].replace(/,/g, ""), 10);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -45,10 +62,10 @@ export function parseRef(text: string): string | null {
 
 export function parseCodashopEmail(body: string): ParsedConfirmation {
   const { id, tag } = parseRiotId(body);
-  return { riotId: id, tag, vp: parseVp(body), ref: parseRef(body) };
+  return { game: parseGame(body), riotId: id, tag, vp: parseVp(body), ref: parseRef(body) };
 }
 
 export function parseSmsConfirmation(text: string): ParsedConfirmation {
   const { id, tag } = parseRiotId(text);
-  return { riotId: id, tag, vp: parseVp(text), ref: parseRef(text) };
+  return { game: parseGame(text), riotId: id, tag, vp: parseVp(text), ref: parseRef(text) };
 }
