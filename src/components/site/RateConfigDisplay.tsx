@@ -1,4 +1,4 @@
-import { Cpu, Crown, CreditCard, Coins, Gift, Sparkles, Monitor, Gauge, MousePointer2 } from "lucide-react";
+import { Cpu, CircuitBoard, MemoryStick, Monitor, Mouse, Keyboard, Headphones, Crown, CreditCard, Coins, Gift, Sparkles, type LucideIcon } from "lucide-react";
 import { formatPHP } from "@/lib/utils";
 import type { RateConfig, RateCategory, RateTier } from "@/lib/supabase/types";
 
@@ -75,35 +75,37 @@ function CategoryCard({ category }: { category: RateCategory }) {
   );
 }
 
-// Per-tier PC spec sheet (set in the POS). monitor/refresh/DPI are fixed values; model+RAM free text;
-// description an AI-written/editable blurb. Renders nothing when the tier has no specs (back-compat).
+// Per-tier PC spec sheet (set in the POS Reservation tab — 2026-06-22): 7 typed, labeled fields, each
+// optional. Blank ones are hidden. Renders nothing when the tier has no specs (back-compat: older rows
+// used monitor/refresh_hz/mouse_dpi/model — those keys are simply absent here and fall through).
 function PcSpecs({ specs }: { specs?: RateCategory["pc_specs"] }) {
   if (!specs) return null;
-  const { monitor, refresh_hz, mouse_dpi, model, ram, description } = specs;
-  if (!monitor && !refresh_hz && !mouse_dpi && !model && !ram && !description) return null;
-  const hardware = [model, ram ? `${ram} RAM` : null].filter(Boolean).join(" · ");
+  const rows: { Icon: LucideIcon; label: string; value?: string }[] = [
+    { Icon: Cpu, label: "CPU", value: specs.cpu },
+    { Icon: CircuitBoard, label: "GPU", value: specs.gpu },
+    { Icon: MemoryStick, label: "RAM", value: specs.ram },
+    { Icon: Monitor, label: "Monitor", value: specs.monitor },
+    { Icon: Mouse, label: "Mouse", value: specs.mouse },
+    { Icon: Keyboard, label: "Keyboard", value: specs.keyboard },
+    { Icon: Headphones, label: "Headset", value: specs.headset },
+  ].filter((r) => r.value && r.value.trim());
+  const description = specs.description;
+  if (rows.length === 0 && !description) return null;
   return (
-    <div className="mt-5 pt-5 border-t border-line space-y-2.5">
-      {(monitor || refresh_hz || mouse_dpi) && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[0.7rem] uppercase tracking-widest text-mocha">
-          {monitor && (
-            <span className="inline-flex items-center gap-1.5">
-              <Monitor className="h-3.5 w-3.5 text-phosphor" /> {monitor}
-            </span>
-          )}
-          {refresh_hz && (
-            <span className="inline-flex items-center gap-1.5">
-              <Gauge className="h-3.5 w-3.5 text-phosphor" /> {refresh_hz}
-            </span>
-          )}
-          {mouse_dpi && (
-            <span className="inline-flex items-center gap-1.5">
-              <MousePointer2 className="h-3.5 w-3.5 text-phosphor" /> {mouse_dpi}
-            </span>
-          )}
+    <div className="mt-5 pt-5 border-t border-line space-y-3">
+      {rows.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center gap-2 text-sm min-w-0">
+              <r.Icon className="h-4 w-4 text-phosphor shrink-0" aria-hidden />
+              <span className="font-mono text-[0.62rem] uppercase tracking-widest text-mocha shrink-0">
+                {r.label}
+              </span>
+              <span className="text-cream truncate">{r.value}</span>
+            </div>
+          ))}
         </div>
       )}
-      {hardware && <p className="text-sm text-cream font-medium">{hardware}</p>}
       {description && <p className="text-sm text-cream-dim leading-relaxed italic">{description}</p>}
     </div>
   );

@@ -81,16 +81,23 @@ export interface RateTier {
   price: number | null;
 }
 
-// Per-tier PC specs, authored in the POS Reservation editor (2026-06-17). monitor/refresh_hz/mouse_dpi
-// are fixed dropdown strings (stored verbatim, e.g. "27\" 1440p", "144 Hz", "up to 16,000 DPI"); model
-// + ram are free text; description is the AI-written (editable) public blurb. All optional/back-compat.
+// Per-tier PC specs, authored in the POS Reservation editor. As of 2026-06-22 these are 7 free-typed,
+// labeled fields (monitor/mouse/keyboard/headset/cpu/gpu/ram), each optional + hidden on the page when
+// blank; description is the AI-written (editable) public blurb. The legacy keys (refresh_hz/mouse_dpi/
+// model, from the old dropdown version) stay optional for back-compat with any already-saved rows.
 export interface RatePcSpecs {
   monitor?: string;
+  mouse?: string;
+  keyboard?: string;
+  headset?: string;
+  cpu?: string;
+  gpu?: string;
+  ram?: string;
+  description?: string;
+  // legacy (pre-2026-06-22)
   refresh_hz?: string;
   mouse_dpi?: string;
   model?: string;
-  ram?: string;
-  description?: string;
 }
 
 export interface RateCategory {
