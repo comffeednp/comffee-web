@@ -29,7 +29,7 @@ interface SendEmailInput {
   attachments?: Array<{ filename: string; path: string }>;
 }
 
-async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; id?: string; error?: string }> {
+export async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!isEmailConfigured()) {
     console.warn(
       `[email] RESEND_API_KEY not set — would have sent: ${input.subject} → ${input.to}`,

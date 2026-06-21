@@ -81,6 +81,23 @@ export async function authorizeProvision(licenseKey: string, machineId: string |
   return lic;
 }
 
+// Lighter gate than authorizeProvision: license must exist + be active + (if bound) match this machine,
+// but ANY tier may use it. Used by /api/pos/send-email — every licensed cafe sends mail (shift reports,
+// approval codes), not just branched tiers. Returns the row; throws ProvisionError otherwise.
+export async function authorizeLicenseActive(licenseKey: string, machineId: string | null): Promise<LicenseRow> {
+  const res = await controlRest(
+    `licenses?license_key=eq.${encodeURIComponent(licenseKey)}&select=license_key,plan,status,machine_id,business_name&limit=1`,
+  );
+  const rows = (await res.json()) as LicenseRow[];
+  const lic = rows[0];
+  if (!lic) throw new ProvisionError("not_found", 404);
+  if (lic.status !== "active") throw new ProvisionError("inactive", 403);
+  if (lic.machine_id && machineId && lic.machine_id !== machineId) {
+    throw new ProvisionError("machine_mismatch", 403);
+  }
+  return lic;
+}
+
 export async function getMappedBranchId(licenseKey: string): Promise<string | null> {
   const res = await controlRest(
     `license_branches?license_key=eq.${encodeURIComponent(licenseKey)}&select=branch_id&limit=1`,
