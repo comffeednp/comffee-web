@@ -20,12 +20,12 @@ export default async function Header({ settings }: { settings: SiteSettings }) {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 group shrink-0" aria-label={name}>
           <Image
-            src="/comffee-logo-trimmed.png"
+            src="/comffee-logo-white-trimmed.png"
             alt={name}
             width={506}
             height={642}
             priority
-            style={{ height: 28, width: "auto", filter: "invert(1) sepia(1) saturate(3) hue-rotate(350deg) brightness(1.1)" }}
+            style={{ height: 28, width: "auto", filter: "brightness(0.875) sepia(0.25)" }}
             className="shrink-0"
           />
           <div className="leading-none hidden sm:block">
