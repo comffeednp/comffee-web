@@ -157,7 +157,10 @@ export async function POST(
         description_md: payload.description_md ?? null,
         hours_text: payload.hours_text ?? null,
         hero_image_url: payload.hero_image_url ?? null,
-        is_published: payload.is_published ?? true,
+        // Fail CLOSED: a new branch only goes live if the submission EXPLICITLY asked to publish.
+        // The POS always sends is_published:true on "Send for approval"; a malformed/partial payload
+        // that omits it stays hidden rather than silently going public (owner 2026-06-22).
+        is_published: payload.is_published ?? false,
         reservations_enabled: payload.reservations_enabled ?? false,
         gcash_qr_url: payload.gcash_qr_url ?? null,
         gcash_qr_path: payload.gcash_qr_path ?? null,
