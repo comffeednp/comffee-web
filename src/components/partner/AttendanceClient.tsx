@@ -522,6 +522,22 @@ export default function AttendanceClient({
     return () => clearInterval(id);
   }, [staffId, branchId, isClockedIn, refreshActiveQr]);
 
+  // Re-sync the moment this page is brought back to the foreground. When the staffer flips to Messenger
+  // (or any other app), the browser THROTTLES the 3s poll and drops the realtime socket — so a QR minted
+  // (or a payment confirmed) while backgrounded wouldn't show, and the page looked "stuck" / unconfirmed
+  // until a manual reload (owner 2026-06-22). Re-reading the till on visibility/focus surfaces the live QR
+  // or the green "paid" card instantly; the 3s poll then resumes un-throttled.
+  useEffect(() => {
+    if (!staffId || !branchId || !isClockedIn) return;
+    const resync = () => { if (document.visibilityState === "visible") refreshActiveQr(); };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+    };
+  }, [staffId, branchId, isClockedIn, refreshActiveQr]);
+
   // Instant nudge: when the live push DOES come through, re-read immediately (sub-second) instead of
   // waiting for the next 3s poll. Any change to one of this cashier's entries triggers one re-read.
   useEffect(() => {
