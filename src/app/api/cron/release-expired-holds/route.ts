@@ -42,7 +42,7 @@ async function handleSweep() {
   const { data: expired, error } = await supabase
     .from("reservations")
     .select(
-      "id, branch_id, member_id, guest_email, guest_name, check_in, check_out, num_guests, total_php, paymongo_intent_id",
+      "id, branch_id, member_id, guest_email, guest_name, guest_phone, check_in, check_out, num_guests, total_php, paymongo_intent_id",
     )
     .eq("status", "pending_hold")
     .lt("hold_expires_at", nowIso);

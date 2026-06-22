@@ -723,6 +723,72 @@ export async function sendBookingRequestToOwner({
   });
 }
 
+/* ---------------- confirmed reservation alert (admins) ---------------- */
+
+/**
+ * Alert the team that a reservation is now confirmed (payment in, dates held).
+ * Sent to every address in ADMIN_NOTIFICATION_EMAIL (comma-separated). Fires
+ * from the shared confirm path, so it covers the webhook, the hold-sweep
+ * rescue, and admin approval. Best-effort: no-op if no admin emails configured.
+ */
+export async function sendNewReservationToAdmins({
+  branchName,
+  guestName,
+  guestEmail,
+  guestPhone,
+  checkIn,
+  checkOut,
+  numGuests,
+  totalPhp,
+  reservationId,
+}: {
+  branchName: string;
+  guestName: string;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+  checkIn: string;
+  checkOut: string;
+  numGuests?: number | null;
+  totalPhp: number;
+  reservationId: string;
+}) {
+  const recipients = (process.env.ADMIN_NOTIFICATION_EMAIL ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!recipients.length) return { ok: false, error: "admin_email_not_configured" };
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
+  const contact = [guestEmail, guestPhone].filter(Boolean).join(" · ");
+  const body = `
+    <h1 style="margin:16px 0 8px;font-size:26px;font-weight:800;color:#1a0f06;">New reservation confirmed ✓</h1>
+    <p style="margin:0 0 20px;color:#5a4a3c;font-size:15px;line-height:1.6;">
+      <strong>${escapeHtml(guestName)}</strong> is booked at <strong>${escapeHtml(branchName)}</strong>. Payment is in and the dates are held.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#faf6ee;border:1px solid #e8dcc4;border-radius:12px;padding:8px 20px;">
+      ${receiptRow("Branch", branchName)}
+      ${receiptRow("Guest", guestName)}
+      ${contact ? receiptRow("Contact", contact) : ""}
+      ${receiptRow("Dates", formatRange(checkIn, checkOut))}
+      ${numGuests ? receiptRow("Guests", String(numGuests)) : ""}
+      ${receiptRow("Amount paid", formatPHP(totalPhp), true)}
+    </table>
+    <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">// reservation_id</p>
+    <p style="margin:0;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;">${escapeHtml(reservationId)}</p>
+  `;
+  return sendEmail({
+    to: recipients,
+    subject: `New reservation — ${guestName} · ${branchName} · ${formatRange(checkIn, checkOut)}`,
+    html: chrome({
+      preheader: `${guestName} booked ${branchName} (${formatRange(checkIn, checkOut)}).`,
+      bodyHtml: body,
+      ctaLabel: "View booking",
+      ctaHref: `${siteUrl}/admin/bookings/${reservationId}`,
+    }),
+    text: `New reservation: ${guestName} - ${branchName} (${checkIn} - ${checkOut})${numGuests ? `, ${numGuests} guest(s)` : ""}, ${formatPHP(totalPhp)}.${contact ? ` Contact: ${contact}.` : ""} View: ${siteUrl}/admin/bookings/${reservationId}`,
+  });
+}
+
 /* ---------------- partial-payment balance reminder ---------------- */
 
 interface BalanceReminderInput {
