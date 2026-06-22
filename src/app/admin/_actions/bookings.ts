@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireEditor } from "@/lib/auth/require-admin";
-import { sendBookingConfirmation } from "@/lib/email";
-import { acceptReservation } from "@/lib/reservations";
-import { listInstructionPhotos } from "@/lib/branch-instructions";
+import { acceptReservation, getReservationById } from "@/lib/reservations";
+import {
+  sendReservationConfirmationEmail,
+  postBookingConfirmedChat,
+  type ConfirmableReservation,
+} from "@/lib/booking-confirm";
 import { cancelReservationWithRefund } from "@/lib/booking-cancel";
 
 function bumpAll(id?: string) {
@@ -67,47 +70,37 @@ export async function approveBookingAction(formData: FormData) {
 
   const { data: r } = await supabase
     .from("reservations")
-    .select("guest_email, guest_name, num_guests, total_php, check_in, check_out, branch_id")
+    .select("id, branch_id, member_id, guest_email, guest_name, num_guests, total_php, check_in, check_out")
     .eq("id", id)
     .maybeSingle();
 
   if (r?.branch_id) {
     const { data: b } = await supabase.from("branches").select("slug").eq("id", r.branch_id).maybeSingle();
     if (b?.slug) revalidatePath(`/branches/${b.slug}`);
-  }
-
-  if (r?.guest_email && r.branch_id) {
-    const { data: branch } = await supabase
-      .from("branches")
-      .select("name, slug, address, branch_rates (check_in_time, check_out_time, sort_order)")
-      .eq("id", r.branch_id)
-      .maybeSingle();
-    const rates = (
-      (branch as { branch_rates?: Array<{ check_in_time: string | null; check_out_time: string | null; sort_order: number }> } | null)
-        ?.branch_rates ?? []
-    ).sort((a, b) => a.sort_order - b.sort_order);
-    const rateWithTime = rates.find((x) => x.check_in_time);
-    sendBookingConfirmation({
-      to: r.guest_email,
-      guestName: r.guest_name ?? "there",
-      branchName: (branch as { name?: string } | null)?.name ?? "Comffee Playcation",
-      branchSlug: (branch as { slug?: string } | null)?.slug ?? "",
-      branchAddress: (branch as { address?: string | null } | null)?.address ?? null,
-      checkIn: r.check_in,
-      checkOut: r.check_out,
-      checkInTime: rateWithTime?.check_in_time ?? null,
-      checkOutTime: rateWithTime?.check_out_time ?? null,
-      numGuests: r.num_guests ?? 1,
-      totalPhp: Number(r.total_php ?? 0),
-      reservationId: id,
-      instructionPhotos: (await listInstructionPhotos(r.branch_id)).map((p) => ({
-        label: p.label,
-        url: p.signedUrl,
-      })),
-    }).catch((e) => console.error("[email] confirmation failed", e));
+    // Tell the guest, same as the webhook would: branded email + in-app chat.
+    await sendReservationConfirmationEmail(r as ConfirmableReservation);
+    await postBookingConfirmedChat(r as ConfirmableReservation);
   }
 
   redirect(`/admin/bookings/${id}?ok=confirmed`);
+}
+
+/**
+ * Manually (re)send a confirmed booking's confirmation — the branded email plus
+ * the in-app chat note. Used when a webhook was missed or a guest says they
+ * never got the email. No-op-safe: only confirmed bookings, best-effort sends.
+ */
+export async function resendConfirmationAction(formData: FormData) {
+  await requireEditor();
+  const id = String(formData.get("id") ?? "");
+  const reservation = await getReservationById(id);
+  if (!reservation || reservation.status !== "confirmed") {
+    redirect(`/admin/bookings/${id}?error=${encodeURIComponent("Only confirmed bookings can be resent")}`);
+  }
+  await sendReservationConfirmationEmail(reservation as ConfirmableReservation);
+  await postBookingConfirmedChat(reservation as ConfirmableReservation);
+  bumpAll(id);
+  redirect(`/admin/bookings/${id}?ok=confirmation_resent`);
 }
 
 export async function manualBlockAction(formData: FormData) {

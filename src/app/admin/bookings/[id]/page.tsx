@@ -7,6 +7,7 @@ import {
   cancelBookingAction,
   approveBookingAction,
   rejectBookingAction,
+  resendConfirmationAction,
 } from "../../_actions/bookings";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import RefundButton from "@/components/admin/RefundButton";
@@ -149,6 +150,19 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
               </button>
             </form>
           )}
+        {reservation.status === "confirmed" && reservation.guest_email && (
+          <form action={resendConfirmationAction}>
+            <input type="hidden" name="id" value={reservation.id} />
+            <button
+              type="submit"
+              title="Re-send the confirmation email + chat message to the guest"
+              className="inline-flex items-center gap-2 border border-line-bright rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Resend confirmation
+            </button>
+          </form>
+        )}
         {reservation.status !== "cancelled" && reservation.status !== "pending_approval" && (
           <form action={cancelBookingAction}>
             <input type="hidden" name="id" value={reservation.id} />
