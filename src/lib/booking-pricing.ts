@@ -113,6 +113,24 @@ export function splitRefund(input: RefundSplitInput): RefundSplit {
   return { refundInitial, refundBalance };
 }
 
+/**
+ * Promo discount in pesos for a given amount. Pure money math
+ * shared by the promo validator (reservations + orders): percent or fixed,
+ * rounded to centavos, clamped so it never exceeds the amount or goes negative.
+ */
+export function computePromoDiscount(input: {
+  discountType: "percent" | "fixed";
+  discountValue: number;
+  amountPhp: number;
+}): number {
+  const raw =
+    input.discountType === "percent"
+      ? (input.amountPhp * Number(input.discountValue)) / 100
+      : Number(input.discountValue);
+  const rounded = Math.round(raw * 100) / 100;
+  return Math.max(0, Math.min(input.amountPhp, rounded));
+}
+
 export type BalanceSweepAction = "cancel" | "remind" | "none";
 
 export interface BalanceSweepInput {

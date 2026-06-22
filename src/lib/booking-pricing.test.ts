@@ -6,6 +6,7 @@ import {
   phToday,
   splitRefund,
   classifyBalanceSweep,
+  computePromoDiscount,
 } from "./booking-pricing";
 
 // Fixed clocks (UTC epoch ms) so the PH-date math is deterministic.
@@ -198,5 +199,30 @@ describe("classifyBalanceSweep — forfeit vs remind boundary", () => {
 
   it("overdue still cancels even if a reminder was already sent", () => {
     expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-20", reminderAlreadySent: true })).toBe("cancel");
+  });
+});
+
+describe("computePromoDiscount — percent / fixed, rounded + clamped", () => {
+  it("percent of the amount", () => {
+    expect(computePromoDiscount({ discountType: "percent", discountValue: 10, amountPhp: 1000 })).toBe(100);
+    expect(computePromoDiscount({ discountType: "percent", discountValue: 12.5, amountPhp: 100 })).toBe(12.5);
+  });
+
+  it("fixed amount", () => {
+    expect(computePromoDiscount({ discountType: "fixed", discountValue: 200, amountPhp: 1000 })).toBe(200);
+  });
+
+  it("never exceeds the amount (clamped)", () => {
+    expect(computePromoDiscount({ discountType: "percent", discountValue: 150, amountPhp: 1000 })).toBe(1000);
+    expect(computePromoDiscount({ discountType: "fixed", discountValue: 5000, amountPhp: 1000 })).toBe(1000);
+  });
+
+  it("rounds to centavos", () => {
+    // 33% of 99 = 32.67
+    expect(computePromoDiscount({ discountType: "percent", discountValue: 33, amountPhp: 99 })).toBe(32.67);
+  });
+
+  it("never negative (guards bad data)", () => {
+    expect(computePromoDiscount({ discountType: "fixed", discountValue: -50, amountPhp: 1000 })).toBe(0);
   });
 });
