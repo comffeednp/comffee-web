@@ -112,3 +112,28 @@ export function splitRefund(input: RefundSplitInput): RefundSplit {
   const refundBalance = Math.max(0, balancePaid - Math.max(0, alreadyRefunded - initialPaid));
   return { refundInitial, refundBalance };
 }
+
+export type BalanceSweepAction = "cancel" | "remind" | "none";
+
+export interface BalanceSweepInput {
+  balanceDueDate: string | null; // YYYY-MM-DD
+  today: string;                 // PH today, YYYY-MM-DD
+  remindDaysAhead: number;
+  reminderAlreadySent: boolean;
+}
+
+/**
+ * What the daily sweep should do with one unpaid 30% balance:
+ *   - past its due date  → "cancel" (booking is forfeited)
+ *   - due within the reminder window and not yet reminded → "remind"
+ *   - otherwise → "none"
+ * Pure date logic so the forfeit/remind boundary is unit-tested rather than
+ * trusted. (Delivery still requires an email on file — that's the caller's job.)
+ */
+export function classifyBalanceSweep(input: BalanceSweepInput): BalanceSweepAction {
+  const { balanceDueDate, today, remindDaysAhead, reminderAlreadySent } = input;
+  if (!balanceDueDate) return "none";
+  if (balanceDueDate < today) return "cancel";
+  if (!reminderAlreadySent && balanceDueDate <= addDays(today, remindDaysAhead)) return "remind";
+  return "none";
+}

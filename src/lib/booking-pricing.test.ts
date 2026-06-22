@@ -5,6 +5,7 @@ import {
   computeReservationCharge,
   phToday,
   splitRefund,
+  classifyBalanceSweep,
 } from "./booking-pricing";
 
 // Fixed clocks (UTC epoch ms) so the PH-date math is deterministic.
@@ -164,5 +165,38 @@ describe("splitRefund — admin cancel refunds both payments", () => {
       const stillOwed = Math.max(0, 2200 + 2450 - already);
       expect(refundInitial + refundBalance).toBe(stillOwed);
     }
+  });
+});
+
+describe("classifyBalanceSweep — forfeit vs remind boundary", () => {
+  const today = "2026-06-23";
+  const base = { today, remindDaysAhead: 2, reminderAlreadySent: false };
+
+  it("no due date → none", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: null })).toBe("none");
+  });
+
+  it("due date already passed → cancel (forfeit)", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-22" })).toBe("cancel");
+  });
+
+  it("due today is NOT yet overdue → remind (within window)", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-23" })).toBe("remind");
+  });
+
+  it("due at the edge of the reminder window (today+2) → remind", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-25" })).toBe("remind");
+  });
+
+  it("due just beyond the window (today+3) → none", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-26" })).toBe("none");
+  });
+
+  it("already reminded and still in window → none (don't double-remind)", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-25", reminderAlreadySent: true })).toBe("none");
+  });
+
+  it("overdue still cancels even if a reminder was already sent", () => {
+    expect(classifyBalanceSweep({ ...base, balanceDueDate: "2026-06-20", reminderAlreadySent: true })).toBe("cancel");
   });
 });
