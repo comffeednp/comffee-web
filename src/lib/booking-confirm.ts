@@ -13,7 +13,7 @@
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { confirmReservation } from "@/lib/reservations";
-import { sendBookingConfirmation } from "@/lib/email";
+import { sendBookingConfirmation, sendNewReservationToAdmins } from "@/lib/email";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
 import { formatRange } from "@/lib/dates";
 
@@ -23,6 +23,7 @@ export interface ConfirmableReservation {
   member_id: string | null;
   guest_email: string | null;
   guest_name: string | null;
+  guest_phone?: string | null;
   check_in: string;
   check_out: string;
   num_guests: number | null;
@@ -143,12 +144,25 @@ export async function confirmAndNotifyReservation(
   // Purge the branch page cache so the availability calendar updates immediately.
   const { data: b } = await supabase
     .from("branches")
-    .select("slug")
+    .select("slug, name")
     .eq("id", reservation.branch_id)
     .maybeSingle();
-  const slug = (b as { slug?: string } | null)?.slug;
-  if (slug) revalidatePath(`/branches/${slug}`);
+  const branch = b as { slug?: string; name?: string } | null;
+  if (branch?.slug) revalidatePath(`/branches/${branch.slug}`);
 
   await sendReservationConfirmationEmail(reservation);
   await postBookingConfirmedChat(reservation);
+
+  // Alert the team that a reservation just landed (best-effort).
+  await sendNewReservationToAdmins({
+    branchName: branch?.name ?? "Comffee Playcation",
+    guestName: reservation.guest_name ?? "Guest",
+    guestEmail: reservation.guest_email,
+    guestPhone: reservation.guest_phone ?? null,
+    checkIn: reservation.check_in,
+    checkOut: reservation.check_out,
+    numGuests: reservation.num_guests,
+    totalPhp: Number(reservation.total_php ?? 0),
+    reservationId: reservation.id,
+  }).catch((e) => console.error("[email] admin reservation alert failed", e));
 }

@@ -70,7 +70,7 @@ export async function approveBookingAction(formData: FormData) {
 
   const { data: r } = await supabase
     .from("reservations")
-    .select("id, branch_id, member_id, guest_email, guest_name, num_guests, total_php, check_in, check_out")
+    .select("id, branch_id, member_id, guest_email, guest_name, guest_phone, num_guests, total_php, check_in, check_out")
     .eq("id", id)
     .maybeSingle();
 
