@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireEditor } from "@/lib/auth/require-admin";
 import { issueRefund } from "@/lib/refunds";
+import { splitRefund } from "@/lib/booking-pricing";
 import { sendCancellationEmail } from "@/lib/email";
 
 function bumpAll(id?: string) {
@@ -71,8 +72,7 @@ export async function cancelBookingAction(formData: FormData) {
     .eq("reservation_id", id)
     .eq("status", "succeeded");
   const alreadyRefunded = (priorRefunds ?? []).reduce((s, x) => s + Number(x.amount_php), 0);
-  const refundInitial = Math.max(0, initialPaid - Math.min(alreadyRefunded, initialPaid));
-  const refundBalance = Math.max(0, balancePaid - Math.max(0, alreadyRefunded - initialPaid));
+  const { refundInitial, refundBalance } = splitRefund({ initialPaid, balancePaid, alreadyRefunded });
 
   let okParam = "cancelled";
   let refundIssued = false;

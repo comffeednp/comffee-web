@@ -82,3 +82,33 @@ export function computeReservationCharge(input: ReservationChargeInput): Reserva
 
   return { reservationFee, balancePhp, balanceDueDate, dueNow, total, partialAllowed };
 }
+
+export interface RefundSplitInput {
+  /** What was collected on the initial payment (fee + deposit + processing). */
+  initialPaid: number;
+  /** What was collected on the balance payment (the 70%), or 0 if never settled. */
+  balancePaid: number;
+  /** Sum of refunds already succeeded for this reservation. */
+  alreadyRefunded: number;
+}
+
+export interface RefundSplit {
+  refundInitial: number;
+  refundBalance: number;
+}
+
+/**
+ * A 30% booking can hold two separate PayMongo payments; a refund can't exceed
+ * its own payment, so a full refund must be split across both. This computes how
+ * much to refund against each, treating any prior refunds as covering the initial
+ * payment first, then the balance — so a re-run never double-refunds.
+ */
+export function splitRefund(input: RefundSplitInput): RefundSplit {
+  const initialPaid = Math.max(0, input.initialPaid);
+  const balancePaid = Math.max(0, input.balancePaid);
+  const alreadyRefunded = Math.max(0, input.alreadyRefunded);
+
+  const refundInitial = Math.max(0, initialPaid - Math.min(alreadyRefunded, initialPaid));
+  const refundBalance = Math.max(0, balancePaid - Math.max(0, alreadyRefunded - initialPaid));
+  return { refundInitial, refundBalance };
+}

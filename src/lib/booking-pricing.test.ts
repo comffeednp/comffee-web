@@ -4,6 +4,7 @@ import {
   isPartialAllowed,
   computeReservationCharge,
   phToday,
+  splitRefund,
 } from "./booking-pricing";
 
 // Fixed clocks (UTC epoch ms) so the PH-date math is deterministic.
@@ -117,5 +118,51 @@ describe("computeReservationCharge — 30% partial", () => {
       nowMs: MID_DAY_PH,
     });
     expect(c.partialAllowed).toBe(false);
+  });
+});
+
+describe("splitRefund — admin cancel refunds both payments", () => {
+  it("full payment (no balance): refunds the whole initial, nothing on balance", () => {
+    expect(splitRefund({ initialPaid: 4650, balancePaid: 0, alreadyRefunded: 0 }))
+      .toEqual({ refundInitial: 4650, refundBalance: 0 });
+  });
+
+  it("fully-paid 30% booking: refunds BOTH payments in full (the bug this fixes)", () => {
+    // 30% fee+deposit+fee = 2200 initial, 70% balance = 2450.
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 2450, alreadyRefunded: 0 }))
+      .toEqual({ refundInitial: 2200, refundBalance: 2450 });
+  });
+
+  it("balance never settled: only the initial payment is refunded", () => {
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 0, alreadyRefunded: 0 }))
+      .toEqual({ refundInitial: 2200, refundBalance: 0 });
+  });
+
+  it("prior refund covers part of the initial: remainder on initial, balance untouched", () => {
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 2450, alreadyRefunded: 1000 }))
+      .toEqual({ refundInitial: 1200, refundBalance: 2450 });
+  });
+
+  it("prior refund spills past the initial into the balance", () => {
+    // 3000 already refunded: 2200 fills initial, 800 eats into the 2450 balance.
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 2450, alreadyRefunded: 3000 }))
+      .toEqual({ refundInitial: 0, refundBalance: 1650 });
+  });
+
+  it("already fully refunded (idempotent re-run): refunds nothing", () => {
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 2450, alreadyRefunded: 4650 }))
+      .toEqual({ refundInitial: 0, refundBalance: 0 });
+    expect(splitRefund({ initialPaid: 2200, balancePaid: 2450, alreadyRefunded: 9999 }))
+      .toEqual({ refundInitial: 0, refundBalance: 0 });
+  });
+
+  it("the split never exceeds what is still owed back", () => {
+    for (const already of [0, 500, 2200, 3000, 4650]) {
+      const { refundInitial, refundBalance } = splitRefund({
+        initialPaid: 2200, balancePaid: 2450, alreadyRefunded: already,
+      });
+      const stillOwed = Math.max(0, 2200 + 2450 - already);
+      expect(refundInitial + refundBalance).toBe(stillOwed);
+    }
   });
 });
