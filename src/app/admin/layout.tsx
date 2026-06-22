@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/admin/today", label: "Today" },
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/chat", label: "Chat" },
+  { href: "/admin/saved-replies", label: "Saved Replies" },
   { href: "/admin/branches", label: "Branches" },
   { href: "/admin/bookings", label: "Bookings" },
   { href: "/admin/calendar", label: "Calendar" },
@@ -51,7 +52,7 @@ export default async function AdminLayout({
 
   // Branch-partners get a reduced, ops-only nav (their branch only).
   const PARTNER_HREFS = new Set([
-    "/admin/today", "/admin/dashboard", "/admin/chat", "/admin/bookings",
+    "/admin/today", "/admin/dashboard", "/admin/chat", "/admin/saved-replies", "/admin/bookings",
     "/admin/calendar", "/admin/orders", "/admin/pc-reservations",
     "/admin/topups", "/admin/internet-reservations",
   ]);
