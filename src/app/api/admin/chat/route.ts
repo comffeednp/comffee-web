@@ -39,10 +39,16 @@ export async function GET(request: Request) {
   return NextResponse.json({ ok: true, messages });
 }
 
-const sendSchema = z.object({
-  conversationId: z.string().uuid(),
-  body: z.string().min(1).max(2000),
-});
+const sendSchema = z
+  .object({
+    conversationId: z.string().uuid(),
+    body: z.string().max(2000).optional().default(""),
+    attachmentUrl: z.string().url().max(2048).optional(),
+  })
+  // Must have at least a message or an attachment.
+  .refine((d) => (d.body && d.body.trim().length > 0) || !!d.attachmentUrl, {
+    message: "empty",
+  });
 
 export async function POST(request: Request) {
   const admin = await requireAdminApi();
@@ -64,7 +70,8 @@ export async function POST(request: Request) {
     const message = await postAdminMessage(
       parsed.data.conversationId,
       admin.id,
-      parsed.data.body,
+      parsed.data.body ?? "",
+      parsed.data.attachmentUrl ?? null,
     );
     return NextResponse.json({ ok: true, message });
   } catch (e) {

@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, BellOff, Loader2, Send } from "lucide-react";
+import { Bell, BellOff, Loader2, Send, MessageSquarePlus, Paperclip, X } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
 import type { ChatConversation, ChatMessage } from "@/lib/chat";
+import type { SavedReply } from "@/lib/saved-replies";
 
 interface ConversationWithBranch extends ChatConversation {
   branch_name?: string | null;
@@ -19,6 +20,7 @@ interface Props {
   initialConversations: ConversationWithBranch[];
   initialActiveId: string | null;
   canReply?: boolean;
+  savedReplies?: SavedReply[];
 }
 
 export default function AdminChatClient({
@@ -27,6 +29,7 @@ export default function AdminChatClient({
   initialConversations,
   initialActiveId,
   canReply = true,
+  savedReplies = [],
 }: Props) {
   const [conversations, setConversations] =
     useState<ConversationWithBranch[]>(initialConversations);
@@ -39,6 +42,7 @@ export default function AdminChatClient({
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [customerTyping, setCustomerTyping] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
   const [unreadConvs, setUnreadConvs] = useState<Map<string, string>>(new Map());
   const activeIdRef = useRef(activeId);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -195,34 +199,47 @@ export default function AdminChatClient({
     broadcastChannelRef.current?.send({ type: "broadcast", event: "typing", payload: { from: "admin" } });
   }, []);
 
+  // Post one message (text and/or a single attachment) to the active thread.
+  const postOne = useCallback(async (body: string, attachmentUrl?: string) => {
+    if (!activeId) return;
+    const res = await fetch("/api/admin/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: activeId, body, attachmentUrl }),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { message?: ChatMessage };
+    if (data.message) {
+      setMessages((prev) => (prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]));
+      broadcastChannelRef.current?.send({ type: "broadcast", event: "message", payload: { message: data.message } });
+    }
+  }, [activeId]);
+
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!text || !activeId || sending) return;
     setSending(true);
     try {
-      const res = await fetch("/api/admin/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: activeId, body: text }),
-      });
-      if (res.ok) {
-        const data = await res.json() as { message?: ChatMessage };
-        setDraft("");
-        if (data.message) {
-          setMessages((prev) =>
-            prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]
-          );
-          broadcastChannelRef.current?.send({
-            type: "broadcast",
-            event: "message",
-            payload: { message: data.message },
-          });
-        }
-      }
+      await postOne(text);
+      setDraft("");
     } finally {
       setSending(false);
     }
-  }, [draft, activeId, sending]);
+  }, [draft, activeId, sending, postOne]);
+
+  // Send a canned reply: its message, then each attachment as its own message
+  // (chat_messages holds one attachment per row). Guest sees text + files.
+  const handleSavedReply = useCallback(async (reply: SavedReply) => {
+    if (!activeId || sending) return;
+    setShowReplies(false);
+    setSending(true);
+    try {
+      if (reply.body.trim()) await postOne(reply.body);
+      for (const a of reply.attachment_urls) await postOne("", a.url);
+    } finally {
+      setSending(false);
+    }
+  }, [activeId, sending, postOne]);
 
   // Push notifications enable/disable
   const togglePush = async () => {
@@ -262,6 +279,10 @@ export default function AdminChatClient({
 
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const unreadCount = conversations.filter((c) => unreadConvs.has(c.id) || c.unread).length;
+  // Saved replies usable here: this conversation's branch + shared (null) ones.
+  const repliesForActive = savedReplies.filter(
+    (r) => r.branch_id === null || r.branch_id === (active?.branch_id ?? null),
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[20rem_1fr] h-[calc(100vh-22rem)] min-h-[500px]">
@@ -403,7 +424,12 @@ export default function AdminChatClient({
                             : "bg-transparent text-mocha font-mono text-xs"
                         }`}
                       >
-                        {m.body}
+                        {m.body && <span className="whitespace-pre-line">{m.body}</span>}
+                        {m.attachment_url && (
+                          <a href={m.attachment_url} target="_blank" rel="noopener noreferrer" className="block mt-1">
+                            <img src={m.attachment_url} alt="attachment" className="max-h-48 rounded-md border border-black/10" />
+                          </a>
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -427,25 +453,54 @@ export default function AdminChatClient({
             </div>
 
             {canReply ? (
-              <div className="border-t border-line p-4 flex gap-2">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  placeholder={`Reply as ${adminName}…`}
-                  className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
-                />
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={sending || !draft.trim()}
-                  title="Send reply"
-                  className="flex h-10 px-4 items-center gap-2 bg-amber text-bg rounded-md disabled:opacity-40 font-mono text-xs uppercase tracking-widest"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Send
-                </button>
+              <div className="border-t border-line p-4">
+                {showReplies && (
+                  <div className="mb-3 max-h-56 overflow-y-auto border border-line-bright rounded-lg bg-bg divide-y divide-line">
+                    {repliesForActive.length === 0 ? (
+                      <p className="px-3 py-3 font-mono text-[0.65rem] text-mocha">// no saved replies for this branch — <a href="/admin/saved-replies" className="text-amber underline">create one</a></p>
+                    ) : repliesForActive.map((r) => (
+                      <button key={r.id} type="button" onClick={() => handleSavedReply(r)} disabled={sending}
+                        className="w-full text-left px-3 py-2 hover:bg-bg-elev disabled:opacity-50">
+                        <div className="flex items-center gap-2">
+                          <span className="text-cream text-sm font-medium truncate">{r.title}</span>
+                          {r.attachment_urls.length > 0 && (
+                            <span className="inline-flex items-center gap-1 font-mono text-[0.6rem] text-mocha shrink-0"><Paperclip className="h-3 w-3" />{r.attachment_urls.length}</span>
+                          )}
+                          {r.branch_id === null && <span className="font-mono text-[0.55rem] uppercase tracking-widest text-mocha shrink-0">all</span>}
+                        </div>
+                        <p className="text-xs text-mocha truncate">{r.body}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowReplies((v) => !v)}
+                    title="Saved replies"
+                    className="flex h-10 w-10 items-center justify-center bg-bg border border-line-bright rounded-md text-cream-dim hover:text-amber hover:border-amber shrink-0"
+                  >
+                    {showReplies ? <X className="h-4 w-4" /> : <MessageSquarePlus className="h-4 w-4" />}
+                  </button>
+                  <input
+                    type="text"
+                    value={draft}
+                    onChange={(e) => { setDraft(e.target.value); sendTyping(); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                    placeholder={`Reply as ${adminName}…`}
+                    className="flex-1 bg-bg border border-line-bright rounded-md px-3 py-2 text-sm text-cream focus:outline-none focus:border-amber"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={sending || !draft.trim()}
+                    title="Send reply"
+                    className="flex h-10 px-4 items-center gap-2 bg-amber text-bg rounded-md disabled:opacity-40 font-mono text-xs uppercase tracking-widest"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Send
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="border-t border-line p-4 text-center">

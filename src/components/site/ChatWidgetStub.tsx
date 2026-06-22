@@ -10,6 +10,7 @@ interface Message {
   id: string;
   sender_type: "customer" | "admin" | "system";
   body: string;
+  attachment_url?: string | null;
   created_at: string;
 }
 
@@ -705,7 +706,12 @@ export default function ChatWidgetStub() {
                                   : "bg-transparent text-mocha font-mono text-[0.7rem]"
                               }`}
                             >
-                              {m.body}
+                              {m.body && <span className="whitespace-pre-line">{m.body}</span>}
+                              {m.attachment_url && (
+                                <a href={m.attachment_url} target="_blank" rel="noopener noreferrer" className="block mt-1">
+                                  <img src={m.attachment_url} alt="attachment" className="max-h-44 rounded-md" />
+                                </a>
+                              )}
                             </div>
                             {isLastCustomer && seenByAdmin && (
                               <span className="font-mono text-[0.6rem] text-mocha mt-0.5">Seen</span>
