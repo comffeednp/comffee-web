@@ -7,6 +7,7 @@ import {
   splitRefund,
   classifyBalanceSweep,
   computePromoDiscount,
+  computeAccommodation,
 } from "./booking-pricing";
 
 // Fixed clocks (UTC epoch ms) so the PH-date math is deterministic.
@@ -224,5 +225,37 @@ describe("computePromoDiscount — percent / fixed, rounded + clamped", () => {
 
   it("never negative (guards bad data)", () => {
     expect(computePromoDiscount({ discountType: "fixed", discountValue: -50, amountPhp: 1000 })).toBe(0);
+  });
+});
+
+describe("computeAccommodation — base + extra-pax subtotal", () => {
+  const rate = 1500;
+
+  it("base only when within max pax", () => {
+    const b = computeAccommodation({ nightlyRatePhp: rate, nights: 2, numGuests: 2, maxPax: 4, extraPaxFeePhp: 300 });
+    expect(b).toEqual({ base: 3000, extraPax: 0, extraPaxCharge: 0, subtotal: 3000 });
+  });
+
+  it("charges extra guests per night beyond max pax", () => {
+    // 2 over max, 300/night each, 3 nights = 1800 extra on top of 4500 base.
+    const b = computeAccommodation({ nightlyRatePhp: rate, nights: 3, numGuests: 6, maxPax: 4, extraPaxFeePhp: 300 });
+    expect(b).toEqual({ base: 4500, extraPax: 2, extraPaxCharge: 1800, subtotal: 6300 });
+  });
+
+  it("no cap (maxPax null) means no extra charge", () => {
+    const b = computeAccommodation({ nightlyRatePhp: rate, nights: 2, numGuests: 10, maxPax: null, extraPaxFeePhp: 300 });
+    expect(b.extraPax).toBe(0);
+    expect(b.subtotal).toBe(3000);
+  });
+
+  it("missing extra-pax fee → no extra charge even when over cap", () => {
+    const b = computeAccommodation({ nightlyRatePhp: rate, nights: 2, numGuests: 6, maxPax: 4, extraPaxFeePhp: null });
+    expect(b.extraPax).toBe(2);
+    expect(b.extraPaxCharge).toBe(0);
+    expect(b.subtotal).toBe(3000);
+  });
+
+  it("zero nights → zero", () => {
+    expect(computeAccommodation({ nightlyRatePhp: rate, nights: 0, numGuests: 6, maxPax: 4, extraPaxFeePhp: 300 }).subtotal).toBe(0);
   });
 });

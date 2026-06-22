@@ -11,6 +11,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ReservationStatus } from "@/lib/supabase/types";
 import { nightsBetween } from "@/lib/dates";
+import { computeAccommodation } from "@/lib/booking-pricing";
 
 const HOLD_WINDOW_MINUTES = 20;
 
@@ -287,11 +288,12 @@ export async function computePlaycationTotal(
   const nightly = rates.find((r) => r.unit === "night") ?? rates[0];
   if (!nightly) return 0;
 
-  const base = Number(nightly.price_php) * nights;
-  const maxPax = nightly.max_pax ?? null;
-  const extraFee = nightly.extra_pax_fee_php ?? 0;
-  const extraPax = maxPax != null ? Math.max(0, numGuests - maxPax) : 0;
-  const extraCharge = extraPax * extraFee * nights;
-
-  return base + extraCharge;
+  // Shared with the booking UI so client display and server charge can't diverge.
+  return computeAccommodation({
+    nightlyRatePhp: Number(nightly.price_php),
+    nights,
+    numGuests,
+    maxPax: nightly.max_pax ?? null,
+    extraPaxFeePhp: nightly.extra_pax_fee_php ?? null,
+  }).subtotal;
 }

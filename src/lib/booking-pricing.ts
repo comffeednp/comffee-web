@@ -36,6 +36,34 @@ export function isPartialAllowed(checkIn: string, nowMs: number): boolean {
   return balanceDueDateFor(checkIn) > addDays(phToday(nowMs), 1);
 }
 
+export interface AccommodationInput {
+  nightlyRatePhp: number;
+  nights: number;
+  numGuests: number;
+  maxPax: number | null;       // guests included in the base rate (null = no cap)
+  extraPaxFeePhp: number | null; // per extra guest, per night
+}
+
+export interface AccommodationBreakdown {
+  base: number;          // nightlyRate * nights
+  extraPax: number;      // guests beyond maxPax
+  extraPaxCharge: number; // extraPax * fee * nights
+  subtotal: number;      // base + extraPaxCharge (before any promo)
+}
+
+/**
+ * Accommodation cost before any discount — the foundation every downstream
+ * number builds on. Shared by the booking UI (display + the value it sends) and
+ * the server's computePlaycationTotal, so the two can't compute it differently.
+ */
+export function computeAccommodation(input: AccommodationInput): AccommodationBreakdown {
+  const nights = Math.max(0, input.nights);
+  const base = input.nightlyRatePhp * nights;
+  const extraPax = input.maxPax != null ? Math.max(0, input.numGuests - input.maxPax) : 0;
+  const extraPaxCharge = extraPax * (input.extraPaxFeePhp ?? 0) * nights;
+  return { base, extraPax, extraPaxCharge, subtotal: base + extraPaxCharge };
+}
+
 export interface ReservationChargeInput {
   /** Accommodation total after any promo discount, in whole pesos. */
   accommodationTotal: number;

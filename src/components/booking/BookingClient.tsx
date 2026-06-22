@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 // Calendar is used in SummaryRow below
 import { addDays, formatRange, fromDateString, nightsBetween, todayString } from "@/lib/dates";
-import { balanceDueDateFor, isPartialAllowed } from "@/lib/booking-pricing";
+import { balanceDueDateFor, computeAccommodation, isPartialAllowed } from "@/lib/booking-pricing";
 import { formatPHP } from "@/lib/utils";
 import KycVerify, { KycResult } from "@/components/booking/KycVerify";
 import BookingCalendar from "@/components/booking/BookingCalendar";
@@ -137,11 +137,15 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   }, [step, pendingReservationId, branch.slug, router]);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
-  const extraPax =
-    branch.maxPax != null ? Math.max(0, state.numGuests - branch.maxPax) : 0;
-  const extraPaxCharge =
-    extraPax > 0 && branch.extraPaxFeePhp ? extraPax * branch.extraPaxFeePhp * nights : 0;
-  const subtotal = nights * branch.baseNightlyRate + extraPaxCharge;
+  // Same helper the server uses (computePlaycationTotal) — display can't drift
+  // from the charged amount.
+  const { extraPax, extraPaxCharge, subtotal } = computeAccommodation({
+    nightlyRatePhp: branch.baseNightlyRate,
+    nights,
+    numGuests: state.numGuests,
+    maxPax: branch.maxPax,
+    extraPaxFeePhp: branch.extraPaxFeePhp,
+  });
   const accommodationTotal = promoApplied ? promoApplied.finalAmountPhp : subtotal;
   const reservationFee = Math.ceil(accommodationTotal * 0.30);
   const balancePhp = accommodationTotal - reservationFee;
