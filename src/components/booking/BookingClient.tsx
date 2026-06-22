@@ -99,6 +99,16 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
     return () => { try { sessionStorage.removeItem("comffe.chat.dates"); } catch {} };
   }, [state.checkIn, state.checkOut]);
 
+  // A promo discount is computed against a specific subtotal. If the dates or
+  // guest count change after a code is applied, that discount is stale — the
+  // server re-validates against the new subtotal at checkout, so a kept promo
+  // would make the displayed price disagree with the amount actually charged.
+  // Clear it so the guest re-applies against the current subtotal.
+  useEffect(() => {
+    setPromoApplied(null);
+    setPromoError(null);
+  }, [state.checkIn, state.checkOut, state.numGuests]);
+
   useEffect(() => {
     if (!summaryRef.current) return;
     const obs = new IntersectionObserver(
@@ -142,7 +152,13 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   const balanceDueDate = fromDateString(balanceDueStr).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
   const phTodayStr = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
   const partialAllowed = balanceDueStr > addDays(phTodayStr, 1);
-  const dueNow = (paymentType === "partial" && partialAllowed ? reservationFee : accommodationTotal) + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
+  // A stale "partial" selection (e.g. user picked 30%, then changed check-in to a
+  // too-soon date) must collapse to "full" — otherwise the summary shows the full
+  // price while handleSubmit still sends "partial" and the server rejects it. This
+  // is the single source of truth for both what we charge and what we submit.
+  const effectivePaymentType: "full" | "partial" =
+    paymentType === "partial" && partialAllowed ? "partial" : "full";
+  const dueNow = (effectivePaymentType === "partial" ? reservationFee : accommodationTotal) + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
   const total = accommodationTotal + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
 
   const handleApplyPromo = async () => {
@@ -216,7 +232,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             guestEmail: state.guestEmail,
             guestPhone: state.guestPhone,
             promoCode: promoApplied?.code ?? "",
-            paymentType,
+            paymentType: effectivePaymentType,
             memberId: memberId ?? null,
             kycSelfieUrl: kycData.selfieUrl,
             kycIdUrl: kycData.idUrl,
@@ -1054,7 +1070,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             </div>
 
             <div className="pt-4 border-t border-line space-y-2">
-              {paymentType === "partial" && partialAllowed && (
+              {effectivePaymentType === "partial" && (
                 <div className="flex items-baseline justify-between">
                   <span className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">// balance due {balanceDueDate}</span>
                   <span className="font-mono text-sm text-cream-dim">{formatPHP(balancePhp)}</span>
@@ -1062,7 +1078,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
               )}
               <div className="flex items-baseline justify-between">
                 <span className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">
-                  {paymentType === "partial" && partialAllowed ? "// due now" : "// total charged"}
+                  {effectivePaymentType === "partial" ? "// due now" : "// total charged"}
                 </span>
                 <span className="text-2xl font-display font-bold text-amber">
                   {formatPHP(dueNow)}
