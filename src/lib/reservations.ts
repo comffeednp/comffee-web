@@ -101,9 +101,10 @@ export async function createHold(input: CreateHoldInput): Promise<CreatedHold> {
   const supabase = getSupabaseAdmin();
 
   // An expired hold still blocks the database overlap constraint until the
-  // cleanup cron runs (every 5 min). So a slot that's really free can wrongly
-  // reject a new booking with a "dates taken" error during that window. Release
-  // any expired holds overlapping these dates first to close that gap.
+  // cleanup cron runs (release-expired-holds, daily). So a slot that's really
+  // free can wrongly reject a new booking with a "dates taken" error in the
+  // meantime. Release any expired holds overlapping these dates first to close
+  // that gap, so booking never depends on the cron's cadence.
   await supabase
     .from("reservations")
     .update({ status: "cancelled", notes: "auto-released: hold expired (pre-booking sweep)" })

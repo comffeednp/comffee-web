@@ -201,6 +201,8 @@ export async function POST(request: Request) {
         checkOut: v.checkOut,
         numGuests: v.numGuests,
         totalPhp: total,
+        balancePhp: v.paymentType === "partial" ? balancePhp : 0,
+        balanceDueDate: v.paymentType === "partial" ? (balanceDueDate ?? null) : null,
         reservationId: hold.id,
         instructionPhotos,
       }).catch((e) => console.error("[email] booking failed", e));

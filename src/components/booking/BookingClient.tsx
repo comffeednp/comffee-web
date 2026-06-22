@@ -15,7 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 // Calendar is used in SummaryRow below
-import { addDays, formatRange, nightsBetween, todayString } from "@/lib/dates";
+import { addDays, formatRange, fromDateString, nightsBetween, todayString } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
 import KycVerify, { KycResult } from "@/components/booking/KycVerify";
 import BookingCalendar from "@/components/booking/BookingCalendar";
@@ -134,10 +134,14 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   const accommodationTotal = promoApplied ? promoApplied.finalAmountPhp : subtotal;
   const reservationFee = Math.ceil(accommodationTotal * 0.30);
   const balancePhp = accommodationTotal - reservationFee;
-  const balanceDueDateObj = new Date(new Date(state.checkIn).getTime() - 3 * 24 * 60 * 60 * 1000);
-  const balanceDueDate = balanceDueDateObj.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
-  // Partial payment only makes sense if the balance due date is at least 1 day in the future
-  const partialAllowed = balanceDueDateObj.getTime() > Date.now() + 24 * 60 * 60 * 1000;
+  // Balance for a 30% booking is due 3 days before check-in. Compute the gate the
+  // exact same way the server does (PH calendar dates, string-compared) so the
+  // partial option is never offered when /api/payments/create-intent would reject
+  // it with "partial_not_allowed_close_checkin".
+  const balanceDueStr = addDays(state.checkIn, -3); // YYYY-MM-DD
+  const balanceDueDate = fromDateString(balanceDueStr).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+  const phTodayStr = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const partialAllowed = balanceDueStr > addDays(phTodayStr, 1);
   const dueNow = (paymentType === "partial" && partialAllowed ? reservationFee : accommodationTotal) + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
   const total = accommodationTotal + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
 

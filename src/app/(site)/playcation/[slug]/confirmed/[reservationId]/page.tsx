@@ -39,6 +39,21 @@ export default async function ConfirmedPage({
   const nights = nightsBetween(reservation.check_in, reservation.check_out);
   const isConfirmed = reservation.status === "confirmed";
 
+  const r = reservation as {
+    payment_type?: string | null;
+    balance_php?: number | null;
+    balance_due_date?: string | null;
+    balance_paid_at?: string | null;
+  };
+  const balancePhp = Number(r.balance_php ?? 0);
+  const isPartialWithBalance =
+    r.payment_type === "partial" && balancePhp > 0 && !r.balance_paid_at;
+  const balanceDueDate = r.balance_due_date
+    ? new Date(r.balance_due_date + "T00:00:00").toLocaleDateString("en-PH", {
+        month: "short", day: "numeric", year: "numeric",
+      })
+    : null;
+
   return (
     <section className="relative min-h-[80vh] py-20 md:py-32 overflow-hidden">
       <BookingConfirmedNotifier
@@ -102,12 +117,30 @@ export default async function ConfirmedPage({
 
               <div className="pt-4 mt-2 border-t border-line flex items-baseline justify-between">
                 <span className="text-mocha uppercase tracking-widest text-[0.65rem]">
-                  // total
+                  {isPartialWithBalance ? "// paid now" : "// total"}
                 </span>
                 <span className="text-3xl md:text-4xl font-display font-bold text-amber text-glow-amber">
                   {formatPHP(reservation.total_php ?? 0)}
                 </span>
               </div>
+
+              {isPartialWithBalance && (
+                <div className="mt-3 rounded-lg border border-amber/40 bg-amber/5 p-3 text-left">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-amber uppercase tracking-widest text-[0.65rem]">
+                      // balance due{balanceDueDate ? ` · ${balanceDueDate}` : ""}
+                    </span>
+                    <span className="text-lg font-display font-bold text-amber">
+                      {formatPHP(balancePhp)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[0.7rem] leading-relaxed text-cream-dim">
+                    You paid the 30% reservation fee + deposit. Settle the remaining balance from{" "}
+                    <Link href="/account" className="text-amber hover:underline">your account</Link>{" "}
+                    before the due date, or the reservation is auto-cancelled and the fee + deposit are forfeited.
+                  </p>
+                </div>
+              )}
 
               <div className="pt-4 border-t border-line">
                 <span className="terminal-label">status</span>

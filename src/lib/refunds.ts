@@ -7,6 +7,11 @@ export interface IssueRefundInput {
   amountPhp: number;
   reason: string;
   adminId: string;
+  // A 30% booking can carry two separate PayMongo payments: the initial
+  // reservation fee + deposit, and the 70% balance. Each must be refunded
+  // against its own payment id (PayMongo won't refund more than a payment's
+  // amount). Defaults to the initial payment.
+  paymentSource?: "initial" | "balance";
 }
 
 export interface RefundResult {
@@ -42,12 +47,18 @@ export async function issueRefund(input: IssueRefundInput): Promise<RefundResult
   } else if (input.reservationId) {
     const { data } = await supabase
       .from("reservations")
-      .select("paymongo_payment_id, total_php")
+      .select("paymongo_payment_id, total_php, balance_paymongo_payment_id, balance_php")
       .eq("id", input.reservationId)
       .maybeSingle();
     if (!data) throw new Error("reservation not found");
-    paymentId = data.paymongo_payment_id ?? null;
-    totalPhp = Number(data.total_php ?? 0);
+    if (input.paymentSource === "balance") {
+      // Refund the separately-collected 70% balance against its own payment.
+      paymentId = (data as { balance_paymongo_payment_id?: string | null }).balance_paymongo_payment_id ?? null;
+      totalPhp = Number((data as { balance_php?: number | null }).balance_php ?? 0);
+    } else {
+      paymentId = data.paymongo_payment_id ?? null;
+      totalPhp = Number(data.total_php ?? 0);
+    }
   }
 
   if (input.amountPhp <= 0 || input.amountPhp > totalPhp) {

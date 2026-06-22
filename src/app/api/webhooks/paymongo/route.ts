@@ -173,6 +173,8 @@ export async function POST(request: Request) {
               checkOutTime: rateWithTime?.check_out_time ?? null,
               numGuests: reservation.num_guests ?? 1,
               totalPhp: Number(reservation.total_php ?? 0),
+              balancePhp: reservation.payment_type === "partial" ? Number(reservation.balance_php ?? 0) : 0,
+              balanceDueDate: reservation.payment_type === "partial" ? (reservation.balance_due_date ?? null) : null,
               reservationId: reservation.id,
               instructionPhotos: (await listInstructionPhotos(reservation.branch_id)).map((p) => ({
                 label: p.label,

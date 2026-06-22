@@ -33,7 +33,7 @@ export async function cancelBookingAction(formData: FormData) {
   // Fetch full reservation details before cancelling
   const { data: reservation } = await supabase
     .from("reservations")
-    .select("paymongo_payment_id, total_php, guest_name, guest_email, check_in, check_out, branch_id, branch:branches(name)")
+    .select("paymongo_payment_id, total_php, payment_type, balance_php, balance_paid_at, balance_paymongo_payment_id, guest_name, guest_email, check_in, check_out, branch_id, branch:branches(name)")
     .eq("id", id)
     .maybeSingle();
 
@@ -43,35 +43,69 @@ export async function cancelBookingAction(formData: FormData) {
     .eq("id", id);
   bumpAll(id);
 
-  // Auto-refund if payment was collected
+  // Auto-refund any payments we collected. A 30% booking can carry TWO PayMongo
+  // payments — the initial reservation fee + deposit (total_php), and the 70%
+  // balance (balance_php) once settled. Each lives on its own payment id and must
+  // be refunded separately, or a Comffee-initiated cancellation would silently
+  // short the guest the entire balance they already paid.
+  const res = reservation as {
+    paymongo_payment_id?: string | null;
+    total_php?: number | null;
+    payment_type?: string | null;
+    balance_php?: number | null;
+    balance_paid_at?: string | null;
+    balance_paymongo_payment_id?: string | null;
+  } | null;
+  const initialPaid = Number(res?.total_php ?? 0);
+  const balancePaid =
+    res?.payment_type === "partial" && res?.balance_paid_at && res?.balance_paymongo_payment_id
+      ? Number(res?.balance_php ?? 0)
+      : 0;
+  const paidTotal = initialPaid + balancePaid;
+
+  // Idempotency on an accidental second cancel: treat money already refunded as
+  // covering the initial payment first, then the balance.
+  const { data: priorRefunds } = await supabase
+    .from("refunds")
+    .select("amount_php")
+    .eq("reservation_id", id)
+    .eq("status", "succeeded");
+  const alreadyRefunded = (priorRefunds ?? []).reduce((s, x) => s + Number(x.amount_php), 0);
+  const refundInitial = Math.max(0, initialPaid - Math.min(alreadyRefunded, initialPaid));
+  const refundBalance = Math.max(0, balancePaid - Math.max(0, alreadyRefunded - initialPaid));
+
   let okParam = "cancelled";
-  const totalPhp = Number(reservation?.total_php ?? 0);
   let refundIssued = false;
-  let isQrphCancel = false;
-  if (reservation?.paymongo_payment_id && totalPhp > 0) {
-    const { data: priorRefunds } = await supabase
-      .from("refunds")
-      .select("amount_php")
-      .eq("reservation_id", id)
-      .eq("status", "succeeded");
-    const alreadyRefunded = (priorRefunds ?? []).reduce((s, r) => s + Number(r.amount_php), 0);
-    const remaining = totalPhp - alreadyRefunded;
-    if (remaining > 0) {
-      try {
-        await issueRefund({
-          reservationId: id,
-          amountPhp: remaining,
-          reason: "Admin-initiated cancellation",
-          adminId: admin.id,
-        });
-        okParam = "cancelled_refund_issued";
-        refundIssued = true;
-      } catch (e) {
-        isQrphCancel = e instanceof Error && e.message === "QRPH_MANUAL_REQUIRED";
-        okParam = isQrphCancel ? "cancelled_refund_qrph" : "cancelled_refund_failed";
+  let refundFailed = false;
+  let qrphManualPhp = 0;
+
+  const tryRefund = async (amountPhp: number, source: "initial" | "balance") => {
+    if (amountPhp <= 0) return;
+    try {
+      await issueRefund({
+        reservationId: id,
+        amountPhp,
+        paymentSource: source,
+        reason: "Admin-initiated cancellation",
+        adminId: admin.id,
+      });
+      refundIssued = true;
+    } catch (e) {
+      if (e instanceof Error && e.message === "QRPH_MANUAL_REQUIRED") {
+        qrphManualPhp += amountPhp;
+      } else {
+        refundFailed = true;
       }
     }
-  }
+  };
+
+  if (res?.paymongo_payment_id) await tryRefund(refundInitial, "initial");
+  if (res?.balance_paymongo_payment_id) await tryRefund(refundBalance, "balance");
+
+  const isQrphCancel = qrphManualPhp > 0;
+  if (isQrphCancel) okParam = "cancelled_refund_qrph";
+  else if (refundFailed) okParam = "cancelled_refund_failed";
+  else if (refundIssued) okParam = "cancelled_refund_issued";
 
   // Send cancellation email to guest if email on file
   const guestEmail = (reservation as { guest_email?: string | null } | null)?.guest_email;
@@ -88,7 +122,7 @@ export async function cancelBookingAction(formData: FormData) {
       branchName,
       checkIn,
       checkOut,
-      totalPhp,
+      totalPhp: paidTotal,
       refundIssued,
       reservationId: id,
       chatUrl: `${siteUrl}`,
@@ -115,7 +149,7 @@ export async function cancelBookingAction(formData: FormData) {
         await supabase.from("chat_messages").insert({
           conversation_id: conv.id,
           sender_type: "system",
-          body: `Your booking has been cancelled. Since you paid via QR Ph / GCash, we can't refund automatically. Please reply with your GCash number or bank details (bank name, account number, account name) and we'll process the ₱${totalPhp.toLocaleString("en-PH")} transfer manually.`,
+          body: `Your booking has been cancelled. Since you paid via QR Ph / GCash, we can't refund automatically. Please reply with your GCash number or bank details (bank name, account number, account name) and we'll process the ₱${qrphManualPhp.toLocaleString("en-PH")} transfer manually.`,
         });
         await supabase
           .from("chat_conversations")
