@@ -319,12 +319,15 @@ export async function listConversations(branchId?: string | string[] | null): Pr
     supabase
       .from("chat_messages")
       .select("conversation_id")
-      .eq("sender_type", "customer")
-      .limit(1000),
+      .limit(5000),
   ]);
-  const hasCustomerMessage = new Set((activeIds ?? []).map((m: { conversation_id: string }) => m.conversation_id));
+  // Show any conversation that has at least one message — customer, admin, OR a
+  // system note (an inquiry heads-up or a "booking confirmed"). A thread we
+  // generated for a real guest must be visible to the owner even if the guest
+  // hasn't typed yet; only truly empty (zero-message) threads stay hidden.
+  const hasMessage = new Set((activeIds ?? []).map((m: { conversation_id: string }) => m.conversation_id));
   return ((rows ?? []) as (typeof rows extends (infer T)[] | null ? T : never)[])
-    .filter((row) => hasCustomerMessage.has((row as { id: string }).id))
+    .filter((row) => hasMessage.has((row as { id: string }).id))
     .map((row) => {
       const { branches, ...rest } = row as typeof row & { branches?: { name: string } | null };
       const conv = rest as unknown as ChatConversation;
