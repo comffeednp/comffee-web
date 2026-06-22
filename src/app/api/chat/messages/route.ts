@@ -8,11 +8,14 @@ import { guardMutating, rateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 
-const sendSchema = z.object({
-  sessionToken: z.string().min(16).max(64),
-  body: z.string().min(1).max(2000),
-  customerName: z.string().max(120).optional(),
-});
+const sendSchema = z
+  .object({
+    sessionToken: z.string().min(16).max(64),
+    body: z.string().max(2000).optional().default(""),
+    customerName: z.string().max(120).optional(),
+    attachmentUrl: z.string().url().max(2048).optional(),
+  })
+  .refine((d) => (d.body && d.body.trim().length > 0) || !!d.attachmentUrl, { message: "empty" });
 
 /** GET — list messages for a conversation (by session token). Rate-limited. */
 export async function GET(request: Request) {
@@ -54,10 +57,11 @@ export async function POST(request: Request) {
     const member = await getMemberOptional();
     const { conversation, message } = await postCustomerMessage(
       parsed.data.sessionToken,
-      parsed.data.body,
+      parsed.data.body ?? "",
       parsed.data.customerName,
       member?.id,
       member?.email ?? undefined,
+      parsed.data.attachmentUrl ?? null,
     );
     notifyAdminsOfChat(conversation, message).catch((e) =>
       console.error("admin push failed", e instanceof Error ? e.message : e),
