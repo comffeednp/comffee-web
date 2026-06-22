@@ -12,6 +12,7 @@
 
 import { formatPHP } from "@/lib/utils";
 import { formatRange } from "@/lib/dates";
+import { signLookupToken } from "@/lib/lookup-token";
 
 const API_URL = "https://api.resend.com/emails";
 const DEFAULT_FROM = "Comffee Drink and Play <onboarding@resend.dev>";
@@ -209,7 +210,12 @@ interface BookingEmailInput {
 
 export async function sendBookingConfirmation(input: BookingEmailInput) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const lookupUrl = `${siteUrl}/lookup?id=${input.reservationId}`;
+  // One-click signed booking link (falls back to the manual /lookup form if the
+  // signing secret isn't configured).
+  const token = signLookupToken(input.reservationId);
+  const lookupUrl = token
+    ? `${siteUrl}/b/${input.reservationId}?t=${token}`
+    : `${siteUrl}/lookup?id=${input.reservationId}`;
   const checkInDate = new Date(input.checkIn + "T00:00:00").toLocaleDateString("en-PH", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
