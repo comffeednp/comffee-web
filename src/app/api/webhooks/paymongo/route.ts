@@ -3,11 +3,11 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   cancelReservation,
-  confirmPaidReservation,
   getReservationByBalanceIntent,
   getReservationByIntent,
   markBalancePaid,
 } from "@/lib/reservations";
+import { confirmAndNotifyReservation } from "@/lib/booking-confirm";
 import {
   getOrderById,
   getOrderByIntent,
@@ -15,9 +15,7 @@ import {
   markOrderPaid,
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
-import { mintLicenseKey, renewLicense, SUBSCRIPTION_TIERS } from "@/lib/subscription-billing";
-import { sendBalancePaidReceipt, sendOrderConfirmation, sendSubscriptionKey, sendSubscriptionRenewed } from "@/lib/email";
-import { getTopupSettings } from "@/lib/game-topups/config";
+import { sendBalancePaidReceipt, sendOrderConfirmation } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -33,9 +31,6 @@ interface WebhookPayload {
           payments?: Array<{ data?: { id?: string } }>;
           payment_id?: string;
           amount?: number;
-          // On a payment.paid event the inner object IS the payment; it carries the Payment Intent id.
-          // This is the reliable key for a cafe PC booking (we store pi_ on the reservation).
-          payment_intent_id?: string;
         };
       };
     };
@@ -43,31 +38,23 @@ interface WebhookPayload {
 }
 
 /**
- * PayMongo webhook handler — handles Playcation reservations + balance + orders + top-ups +
- * refunds (verified with the platform env secret), AND per-branch cafe PC reservations (verified
- * with the BRANCH's own webhook secret).
+ * PayMongo webhook handler — handles reservations + orders + refunds.
  *
  *  - Verifies HMAC signature (constant-time compare)
  *  - Idempotent via paymongo_webhook_events unique constraint
  *  - On payment.paid: captures the payment.id, marks the parent row paid,
- *    and fires the customer confirmation email (where applicable)
+ *    and fires the customer confirmation email
  *  - On refund events: marks the corresponding refund row succeeded
- *
- * SIGNATURE VERIFICATION — two secrets:
- * The original flows all sign with the single platform env secret PAYMONGO_WEBHOOK_SECRET. Cafe
- * PC reservations are paid into the OWNER's PayMongo account, so PayMongo signs THOSE webhooks with
- * the owner's webhook secret (stored per-branch in branch_payment_config). We therefore try the env
- * secret FIRST (covers every existing flow, unchanged); only if that fails do we look up the cafe
- * reservation this event refers to (by the Payment Link id), fetch its branch's webhook secret, and
- * try that. This keeps the existing path byte-for-byte identical and adds the per-branch path as a
- * pure fallback. We must parse the body BEFORE verifying because the per-branch secret lookup needs
- * the Payment Link id from the payload — parsing untrusted JSON is safe; we just don't ACT on it
- * until a signature check passes.
  */
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("paymongo-signature");
-  const envSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  const secret = process.env.PAYMONGO_WEBHOOK_SECRET;
+
+  if (!verifyWebhookSignature(rawBody, signature, secret)) {
+    console.error("paymongo webhook: bad signature");
+    return NextResponse.json({ error: "bad_signature" }, { status: 401 });
+  }
 
   let payload: WebhookPayload;
   try {
@@ -80,68 +67,12 @@ export async function POST(request: Request) {
   const eventType = payload.data?.attributes?.type;
   const inner = payload.data?.attributes?.data;
   const linkOrPaymentId = inner?.id;
-  // The Payment Intent id (pi_) carried on a payment.paid event. THIS is how a cafe PC booking is
-  // matched — we store the pi_ on the reservation at checkout-create time (the cs_/pay_ ids don't
-  // match what the webhook carries). Proven 2026-06-01.
-  const paymentIntentId = inner?.attributes?.payment_intent_id ?? null;
 
   if (!eventId) {
     return NextResponse.json({ error: "no_event_id" }, { status: 400 });
   }
 
   const supabase = getSupabaseAdmin();
-
-  // 1) Try the platform env secret (covers all existing flows — unchanged behaviour).
-  let verified = verifyWebhookSignature(rawBody, signature, envSecret);
-
-  // 2) Fallback for per-branch cafe reservations: find the reservation this event refers to (by the
-  //    id PayMongo puts at data.attributes.data.id), fetch its branch's webhook secret, and verify
-  //    against that. Only runs when the env secret didn't match, so it never weakens the existing path.
-  //    ⚠ VERIFY ON THE CARD-BLOCK LIVE TEST: for 'checkout_session.payment.paid' we ASSUME inner.id is
-  //    the cs_ id we stored in paymongo_intent_id (the natural Checkout-Session event shape). If PayMongo
-  //    instead puts a payment id there, this lookup misses → branch secret never tried → signature 401
-  //    → the booking would never confirm (the silent-money-failure to watch for). The live test settles
-  //    it; if it differs, also match by the cs_ id carried elsewhere in the payload.
-  let cafeReservationId: string | null = null;
-  if (!verified && (paymentIntentId || linkOrPaymentId)) {
-    // Match a cafe booking by the pi_ FIRST (what payment.paid carries), then fall back to the cs_/link
-    // id (covers any other shape). This is what lets us reach the branch's webhook secret to verify.
-    let pcr: { id: string; branch_id: string } | null = null;
-    if (paymentIntentId) {
-      const { data } = await supabase
-        .from("pc_reservations")
-        .select("id, branch_id")
-        .eq("paymongo_payment_intent_id", paymentIntentId)
-        .maybeSingle();
-      pcr = (data as { id: string; branch_id: string } | null) ?? null;
-    }
-    if (!pcr && linkOrPaymentId) {
-      const { data } = await supabase
-        .from("pc_reservations")
-        .select("id, branch_id")
-        .eq("paymongo_intent_id", linkOrPaymentId)
-        .maybeSingle();
-      pcr = (data as { id: string; branch_id: string } | null) ?? null;
-    }
-    if (pcr) {
-      cafeReservationId = pcr.id as string;
-      const { data: cfg } = await supabase
-        .from("branch_payment_config")
-        .select("paymongo_webhook_secret")
-        .eq("branch_id", pcr.branch_id)
-        .maybeSingle();
-      const branchSecret = (cfg as { paymongo_webhook_secret?: string | null } | null)
-        ?.paymongo_webhook_secret;
-      if (branchSecret) {
-        verified = verifyWebhookSignature(rawBody, signature, branchSecret);
-      }
-    }
-  }
-
-  if (!verified) {
-    console.error("paymongo webhook: bad signature");
-    return NextResponse.json({ error: "bad_signature" }, { status: 401 });
-  }
 
   // Idempotency check
   const { error: insertErr } = await supabase
@@ -180,32 +111,9 @@ export async function POST(request: Request) {
     actualPaymentId = inner.attributes.payments[0]?.data?.id ?? null;
   }
 
-  // Find which entity this payment belongs to — Playcation reservation (initial payment), a
-  // reservation balance payment, an order, a wallet top-up, or a per-branch cafe PC reservation.
-  const floorplanReservationP = (async () => {
-    try {
-      if (paymentIntentId) {
-        const { data } = await supabase
-          .from("floorplan_reservations")
-          .select("id, status, payment_status")
-          .eq("paymongo_payment_intent_id", paymentIntentId)
-          .maybeSingle();
-        if (data) return data;
-      }
-      if (linkOrPaymentId) {
-        const { data } = await supabase
-          .from("floorplan_reservations")
-          .select("id, status, payment_status")
-          .eq("paymongo_intent_id", linkOrPaymentId)
-          .maybeSingle();
-        if (data) return data;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  })();
-  const [reservation, balanceRes, order, topupRes, pcReservation, subscriptionOrder, floorplanReservation, gameTopup] = await Promise.all([
+  // Find which entity this payment belongs to — reservation (initial payment),
+  // a reservation balance payment, an order, or a wallet top-up.
+  const [reservation, balanceRes, order, topupRes] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -221,328 +129,14 @@ export async function POST(request: Request) {
         return null;
       }
     })(),
-    (async () => {
-      // Resolve the cafe booking by, in order: the row already found during signature verification →
-      // the pi_ (what payment.paid carries; the reliable key) → the cs_/link id (fallback). The pi_
-      // path is THE fix for "paid bookings never confirmed" (we matched the wrong id before).
-      try {
-        if (cafeReservationId) {
-          const { data } = await supabase
-            .from("pc_reservations")
-            .select("id, branch_id, status, payment_status, reservation_code")
-            .eq("id", cafeReservationId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        if (paymentIntentId) {
-          const { data } = await supabase
-            .from("pc_reservations")
-            .select("id, branch_id, status, payment_status, reservation_code")
-            .eq("paymongo_payment_intent_id", paymentIntentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        if (linkOrPaymentId) {
-          const { data } = await supabase
-            .from("pc_reservations")
-            .select("id, branch_id, status, payment_status, reservation_code")
-            .eq("paymongo_intent_id", linkOrPaymentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })(),
-    (async () => {
-      // Partner-Cafe SaaS subscription (PLATFORM key). Match by the pi_ the paid webhook carries,
-      // then the cs_ id as a fallback.
-      try {
-        if (paymentIntentId) {
-          const { data } = await supabase
-            .from("subscription_orders")
-            .select("id, tier, email, machine_id, license_key, status, kind")
-            .eq("paymongo_payment_intent_id", paymentIntentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        if (linkOrPaymentId) {
-          const { data } = await supabase
-            .from("subscription_orders")
-            .select("id, tier, email, machine_id, license_key, status, kind")
-            .eq("paymongo_checkout_id", linkOrPaymentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })(),
-    floorplanReservationP,
-    (async () => {
-      // Game Top-Up order (PLATFORM key). Match by the pi_ the paid webhook carries, then the cs_ id.
-      try {
-        if (paymentIntentId) {
-          const { data } = await supabase
-            .from("game_topup_orders")
-            .select("id, status")
-            .eq("paymongo_payment_intent_id", paymentIntentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        if (linkOrPaymentId) {
-          const { data } = await supabase
-            .from("game_topup_orders")
-            .select("id, status")
-            .eq("paymongo_checkout_id", linkOrPaymentId)
-            .maybeSingle();
-          if (data) return data;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })(),
   ]);
 
   try {
-    // Game Top-Up payment (PLATFORM key, Comffee's money). On paid: flip verified→pending (idempotent
-    // guard on status='verified') + stamp paid_at and the SLA deadline so the staff console picks it up
-    // and the SLA sweeper can auto-refund if it's never fulfilled. A failed/expired payment leaves the
-    // order 'verified' so the customer can retry. No fulfilment side effect here — staff buy on Codashop.
-    if (gameTopup) {
-      switch (eventType) {
-        case "checkout_session.payment.paid":
-        case "link.payment.paid":
-        case "payment.paid": {
-          const { slaMinutes } = await getTopupSettings();
-          const now = new Date();
-          await supabase
-            .from("game_topup_orders")
-            .update({
-              status: "pending",
-              paymongo_payment_id: actualPaymentId ?? null,
-              paid_at: now.toISOString(),
-              sla_due_at: new Date(now.getTime() + slaMinutes * 60000).toISOString(),
-            })
-            .eq("id", gameTopup.id)
-            .eq("status", "verified");
-          break;
-        }
-      }
-      return NextResponse.json({ ok: true, kind: "game_topup" });
-    }
-
-    // Partner-Cafe SaaS subscription payment (platform key). On paid: mark paid, then either mint a
-    // license key in the LICENSE project + stamp it here (kind='new' — the POS polls
-    // /api/billing/subscribe/status and auto-activates with it), or extend the existing license via
-    // renew_license (kind='renewal' — same poll reads renewedUntil; no new key). Failures NEVER lose
-    // the payment — the order stays paid, mint/renew retriable.
-    if (subscriptionOrder) {
-      switch (eventType) {
-        case "checkout_session.payment.paid":
-        case "link.payment.paid":
-        case "payment.paid": {
-          // Claim atomically: only an unpaid order flips to paid (idempotent against duplicate webhooks).
-          const { data: claimed } = await supabase
-            .from("subscription_orders")
-            .update({
-              status: "paid",
-              paymongo_payment_id: actualPaymentId ?? null,
-              paid_at: new Date().toISOString(),
-            })
-            .eq("id", subscriptionOrder.id)
-            .eq("status", "unpaid")
-            .select("id, tier, email, machine_id, license_key, kind");
-          const row = claimed && claimed[0];
-          if (row && row.kind === "renewal") {
-            // RENEWAL: extend the existing license via the renew_license RPC — never mint a new key.
-            // The RPC owns the owner-locked date math (extend from the DUE date; paying early adds a
-            // month to the term end; an expired license restarts from now).
-            try {
-              const renewedUntil = await renewLicense(row.license_key as string);
-              await supabase
-                .from("subscription_orders")
-                .update({ renewed_until: renewedUntil })
-                .eq("id", subscriptionOrder.id);
-              // Receipt + new expiry to the cafe (fire-and-forget; never block the webhook).
-              const tierInfo = SUBSCRIPTION_TIERS[row.tier as keyof typeof SUBSCRIPTION_TIERS];
-              if (row.email) {
-                sendSubscriptionRenewed({
-                  to: row.email as string,
-                  tierName: tierInfo?.name ?? (row.tier as string),
-                  amountPhp: tierInfo?.amountPhp ?? 0,
-                  renewedUntil,
-                }).catch((e) =>
-                  console.error("[billing] renewal email failed", e instanceof Error ? e.message : e),
-                );
-              }
-            } catch (renewErr) {
-              // Payment is real + recorded; the extend failed (e.g. RPC not deployed yet). The order
-              // stays paid with renewed_until null so it can be retried / applied manually — never
-              // lose the payment.
-              console.error(
-                "[billing] license renew failed",
-                renewErr instanceof Error ? renewErr.message : renewErr,
-              );
-            }
-          } else if (row && !row.license_key) {
-            try {
-              const licenseKey = await mintLicenseKey({
-                tier: row.tier as string,
-                email: row.email as string,
-                machineId: (row.machine_id as string | null) ?? null,
-              });
-              await supabase
-                .from("subscription_orders")
-                .update({ license_key: licenseKey })
-                .eq("id", subscriptionOrder.id);
-              // Email the key + receipt to the cafe (fire-and-forget; never block the webhook).
-              const tierInfo = SUBSCRIPTION_TIERS[row.tier as keyof typeof SUBSCRIPTION_TIERS];
-              sendSubscriptionKey({
-                to: row.email as string,
-                tierName: tierInfo?.name ?? (row.tier as string),
-                amountPhp: tierInfo?.amountPhp ?? 0,
-                licenseKey,
-              }).catch((e) =>
-                console.error("[billing] key email failed", e instanceof Error ? e.message : e),
-              );
-            } catch (mintErr) {
-              // Payment is real + recorded; minting failed (e.g. LICENSE project not wired up yet).
-              // Leave license_key null so it can be retried / issued manually — never drop the payment.
-              console.error(
-                "[billing] license mint failed",
-                mintErr instanceof Error ? mintErr.message : mintErr,
-              );
-            }
-          }
-          break;
-        }
-        case "checkout_session.payment.failed":
-        case "payment.failed":
-          await supabase
-            .from("subscription_orders")
-            .update({ status: "failed" })
-            .eq("id", subscriptionOrder.id)
-            .eq("status", "unpaid");
-          break;
-      }
-      return NextResponse.json({ ok: true, kind: "subscription" });
-    }
-
-    // Per-branch cafe PC reservation (Chunk 6). On paid: mark it paid + ensure a reservation_code,
-    // leaving status='pending' so the POS — which polls pc_reservations for newly-paid rows at its
-    // branch — picks it up and the cashier can find it by code on arrival. We DELIBERATELY do NOT
-    // compute or apply any member bonus / balance here: PanCafe applies the real bonus when the
-    // cashier loads the paid top-up (flowchart §G/§K). On failed/expired: release the held station.
-    // Floor-plan online reservation (PS5 prepay). On paid → confirm so the POS pulls it into its live
-    // board; on failed → cancel so the spot reopens.
-    if (floorplanReservation) {
-      switch (eventType) {
-        case "checkout_session.payment.paid":
-        case "link.payment.paid":
-        case "payment.paid":
-          await supabase
-            .from("floorplan_reservations")
-            .update({ status: "confirmed", payment_status: "paid" })
-            .eq("id", floorplanReservation.id)
-            .eq("status", "pending");
-          break;
-        case "checkout_session.payment.failed":
-        case "link.payment.failed":
-        case "payment.failed":
-          await supabase
-            .from("floorplan_reservations")
-            .update({ status: "cancelled" })
-            .eq("id", floorplanReservation.id)
-            .eq("status", "pending");
-          break;
-      }
-      return NextResponse.json({ ok: true, kind: "floorplan_reservation" });
-    }
-
-    if (pcReservation) {
-      switch (eventType) {
-        // 'checkout_session.payment.paid' is the event a hosted Checkout Session fires (the new
-        // bookings path, 2026-06-01). Only bookings store a cs_ id in paymongo_intent_id, so this
-        // case can only ever match a pc_reservation — existing link/payment flows are untouched.
-        // NOTE (to verify on the card-block live test): for a Checkout Session the actual pay_ id is
-        // expected at inner.attributes.payments[0].data.id (same shape as link.payment.paid, which the
-        // real records confirmed). If that shape differs, actualPaymentId is just null and the booking
-        // STILL confirms (paid) — we only lose the audit pay_ id, never the confirmation. Fails soft.
-        case "checkout_session.payment.paid":
-        case "link.payment.paid":
-        case "payment.paid": {
-          const update: Record<string, unknown> = {
-            payment_status: "paid",
-            paymongo_payment_id: actualPaymentId ?? null,
-          };
-          // reservation_code is normally set at create time; backfill if somehow missing so the
-          // cashier always has a code to look up.
-          if (!pcReservation.reservation_code) {
-            const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-            let code = "";
-            for (let i = 0; i < 6; i++) {
-              code += alphabet[Math.floor(Math.random() * alphabet.length)];
-            }
-            update.reservation_code = code;
-          }
-          // Guard: only confirm a booking that is STILL pending + unpaid. This (a) is idempotent against
-          // duplicate webhooks, and (b) does NOT resurrect an EXPIRED booking whose seat already
-          // auto-released (owner 2026-06-01: a payment that lands after expiry must not silently revive
-          // the booking onto a possibly-taken seat). A late payment therefore stays unmatched here — it's
-          // a paid-but-no-live-booking case to handle separately (auto-refund / flag — the "seat-race"
-          // step we deferred). With the 20-min hold this is rare; until then it surfaces as an unmatched
-          // PayMongo payment rather than a wrong confirmation.
-          const { data: confirmed } = await supabase
-            .from("pc_reservations")
-            .update(update)
-            .eq("id", pcReservation.id)
-            .eq("status", "pending")
-            .eq("payment_status", "unpaid")
-            .select("id");
-          if (!confirmed || confirmed.length === 0) {
-            console.warn(
-              `[paymongo webhook] paid event for pc_reservation ${pcReservation.id} but it was not pending+unpaid (status=${pcReservation.status}, payment_status=${pcReservation.payment_status}) — NOT confirmed; likely paid-after-expiry, needs refund/review`,
-            );
-          }
-          break;
-        }
-        case "checkout_session.payment.failed":
-        case "link.payment.failed":
-        case "payment.failed": {
-          // Payment didn't go through → release the seat so it returns to the vacant list.
-          await supabase
-            .from("pc_reservations")
-            .update({
-              status: "cancelled",
-              payment_status: "failed",
-              cancelled_at: new Date().toISOString(),
-            })
-            .eq("id", pcReservation.id)
-            .eq("status", "pending");
-          break;
-        }
-      }
-      return NextResponse.json({ ok: true, kind: "pc_reservation" });
-    }
-
     if (reservation) {
       switch (eventType) {
         case "link.payment.paid":
         case "payment.paid": {
-          // Playcation = INSTANT confirm on payment. No host approval / request-to-book
-          // (that step is for internet-cafe reservations, not playcation venues — owner
-          // 2026-06-15). This flips the paid hold straight to confirmed and sends the
-          // booking-confirmation email; the owner no longer has to accept/reject.
-          await confirmPaidReservation(reservation.id, actualPaymentId ?? undefined);
-          // Purge branch page cache so the calendar shows the dates as taken
-          {
-            const { data: b } = await supabase.from("branches").select("slug").eq("id", reservation.branch_id).maybeSingle();
-            if (b?.slug) revalidatePath(`/branches/${b.slug}`);
-          }
+          await confirmAndNotifyReservation(reservation, actualPaymentId);
           break;
         }
         case "link.payment.failed":

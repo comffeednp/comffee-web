@@ -39,6 +39,23 @@ export async function POST(request: Request) {
     }
   }
 
+  // Idempotency: the server-side confirm path (webhook / hold-sweep rescue /
+  // admin) may already have posted this. Don't double up.
+  const { data: existing } = await supabase
+    .from("chat_messages")
+    .select("id")
+    .eq("conversation_id", conversation.id)
+    .eq("sender_type", "system")
+    .ilike("body", "%booking confirmed%")
+    .limit(1)
+    .maybeSingle();
+  if (existing) {
+    if (memberId) {
+      await supabase.from("chat_conversations").update({ member_id: memberId }).eq("id", conversation.id);
+    }
+    return NextResponse.json({ ok: true, duplicate: true });
+  }
+
   await supabase.from("chat_messages").insert({
     conversation_id: conversation.id,
     sender_type: "system",
@@ -49,6 +66,8 @@ export async function POST(request: Request) {
     .from("chat_conversations")
     .update({
       last_message_at: new Date().toISOString(),
+      last_message_body: confirmText,
+      last_message_sender_type: "system",
       ...(memberId ? { member_id: memberId } : {}),
     })
     .eq("id", conversation.id);
