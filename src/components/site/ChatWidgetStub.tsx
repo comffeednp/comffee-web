@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ImagePlus, Loader2, MessageSquare, Send, X } from "lucide-react";
+import { ArrowLeft, Camera, ImagePlus, Loader2, MessageSquare, Send, X } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -466,34 +466,34 @@ export default function ChatWidgetStub() {
     }
   };
 
-  // Guest sends a photo (e.g. an ID): upload, then post it as a message.
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Guest sends photos (e.g. IDs): upload + post each, one message per photo.
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const handleAttach = async (file: File) => {
-    if (!sessionToken || uploading) return;
+  const handleAttach = async (files: FileList | null) => {
+    if (!sessionToken || uploading || !files || files.length === 0) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("sessionToken", sessionToken);
-      const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
-      if (!up.ok) {
-        alert("Couldn't send that photo. Please use a JPG/PNG under 12 MB.");
-        return;
-      }
-      const { url } = (await up.json()) as { url?: string };
-      if (!url) return;
-      const res = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionToken, attachmentUrl: url, customerName: name || undefined }),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { message?: Message };
-        if (data.message) {
-          setMessages((prev) => (prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]));
-          broadcastChannelRef.current?.send({ type: "broadcast", event: "message", payload: { message: data.message } });
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("sessionToken", sessionToken);
+        const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
+        if (!up.ok) { alert("Couldn't send a photo. Please use a JPG/PNG under 12 MB."); continue; }
+        const { url } = (await up.json()) as { url?: string };
+        if (!url) continue;
+        const res = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken, attachmentUrl: url, customerName: name || undefined }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { message?: Message };
+          if (data.message) {
+            setMessages((prev) => (prev.find((x) => x.id === data.message!.id) ? prev : [...prev, data.message!]));
+            broadcastChannelRef.current?.send({ type: "broadcast", event: "message", payload: { message: data.message } });
+          }
         }
       }
     } finally {
@@ -779,19 +779,38 @@ export default function ChatWidgetStub() {
                   )}
                   <div className="flex gap-2">
                     <input
-                      ref={fileInputRef}
+                      ref={galleryInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAttach(f); e.target.value = ""; }}
+                      onChange={(e) => { handleAttach(e.target.files); e.target.value = ""; }}
+                    />
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => { handleAttach(e.target.files); e.target.value = ""; }}
                     />
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => cameraInputRef.current?.click()}
                       disabled={uploading || sending}
                       className="flex h-10 w-10 items-center justify-center bg-bg border border-line-bright text-cream-dim rounded-md disabled:opacity-40 hover:text-amber hover:border-amber transition shrink-0"
-                      aria-label="Send a photo (e.g. your ID)"
-                      title="Send a photo (e.g. your ID)"
+                      aria-label="Take a photo"
+                      title="Take a photo"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      disabled={uploading || sending}
+                      className="flex h-10 w-10 items-center justify-center bg-bg border border-line-bright text-cream-dim rounded-md disabled:opacity-40 hover:text-amber hover:border-amber transition shrink-0"
+                      aria-label="Send photos (e.g. your ID)"
+                      title="Send photos (e.g. your ID)"
                     >
                       {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                     </button>

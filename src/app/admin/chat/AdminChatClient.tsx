@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, BellOff, Loader2, Send, MessageSquarePlus, Paperclip, X, Plus, ImagePlus } from "lucide-react";
+import { Bell, BellOff, Loader2, Send, MessageSquarePlus, Paperclip, X, Plus, ImagePlus, Camera } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
@@ -241,23 +241,26 @@ export default function AdminChatClient({
     }
   }, [activeId, sending, postOne]);
 
-  // Admin "Add photo or video" — upload then post as an attachment message.
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Admin "Add photo" — upload + post each, one message per photo.
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
-  const handleAttach = useCallback(async (file: File) => {
-    if (!activeId || uploading) return;
+  const handleAttach = useCallback(async (files: FileList | null) => {
+    if (!activeId || uploading || !files || files.length === 0) return;
     setShowMenu(false);
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("folder", "chat-uploads");
-      const up = await fetch("/api/admin/upload", { method: "POST", body: fd });
-      if (!up.ok) return;
-      const { public_url } = (await up.json()) as { public_url?: string };
-      if (public_url) await postOne("", public_url);
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("folder", "chat-uploads");
+        const up = await fetch("/api/admin/upload", { method: "POST", body: fd });
+        if (!up.ok) continue;
+        const { public_url } = (await up.json()) as { public_url?: string };
+        if (public_url) await postOne("", public_url);
+      }
     } finally {
       setUploading(false);
     }
@@ -496,11 +499,20 @@ export default function AdminChatClient({
                   </div>
                 )}
                 <input
-                  ref={fileInputRef}
+                  ref={galleryInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAttach(f); e.target.value = ""; }}
+                  onChange={(e) => { handleAttach(e.target.files); e.target.value = ""; }}
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => { handleAttach(e.target.files); e.target.value = ""; }}
                 />
                 <div className="flex gap-2">
                   <div className="relative shrink-0">
@@ -509,8 +521,11 @@ export default function AdminChatClient({
                         <button type="button" onClick={() => { setShowMenu(false); setShowReplies(true); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left">
                           <MessageSquarePlus className="h-4 w-4 text-amber" /> Send saved reply
                         </button>
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left disabled:opacity-50">
-                          {uploading ? <Loader2 className="h-4 w-4 animate-spin text-amber" /> : <ImagePlus className="h-4 w-4 text-amber" />} Add photo
+                        <button type="button" onClick={() => galleryInputRef.current?.click()} disabled={uploading} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left disabled:opacity-50">
+                          {uploading ? <Loader2 className="h-4 w-4 animate-spin text-amber" /> : <ImagePlus className="h-4 w-4 text-amber" />} Add photos
+                        </button>
+                        <button type="button" onClick={() => cameraInputRef.current?.click()} disabled={uploading} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left disabled:opacity-50">
+                          <Camera className="h-4 w-4 text-amber" /> Take a photo
                         </button>
                       </div>
                     )}
