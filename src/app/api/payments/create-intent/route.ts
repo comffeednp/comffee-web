@@ -7,7 +7,8 @@ import {
   confirmReservation,
   createHold,
 } from "@/lib/reservations";
-import { addDays, nightsBetween } from "@/lib/dates";
+import { nightsBetween } from "@/lib/dates";
+import { computeReservationCharge } from "@/lib/booking-pricing";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getMemberOptional } from "@/lib/auth/require-member";
 import {
@@ -108,28 +109,27 @@ export async function POST(request: Request) {
 
   const accommodationTotal = Math.max(0, subtotal - discount);
 
-  // Partial: charge 30% of accommodation + deposit now; balance 70% due 3 days before check-in
-  const reservationFee = v.paymentType === "partial"
-    ? Math.ceil(accommodationTotal * 0.30)
-    : accommodationTotal;
-  const balancePhp = v.paymentType === "partial" ? accommodationTotal - reservationFee : 0;
-  const balanceDueDate = v.paymentType === "partial"
-    ? new Date(new Date(v.checkIn).getTime() - 3 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10)
-    : undefined;
+  // Pricing comes from the shared booking-pricing module so the amount we charge
+  // can never drift from what the booking UI displayed (30% split, balance due
+  // date, deposit + fee). `total` here is the amount charged NOW (= dueNow).
+  const charge = computeReservationCharge({
+    accommodationTotal,
+    paymentType: v.paymentType,
+    securityDepositPhp: SECURITY_DEPOSIT_PHP,
+    processingFeePhp: PROCESSING_FEE_PHP,
+    checkIn: v.checkIn,
+    nowMs: Date.now(),
+  });
 
-  // Partial payment only makes sense if the balance due date is far enough out
-  // to collect it. Mirror the client's gate so a crafted request can't create a
-  // partial booking whose balance is already due (or overdue).
-  if (v.paymentType === "partial") {
-    const phToday = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-    if (!balanceDueDate || balanceDueDate <= addDays(phToday, 1)) {
-      return NextResponse.json({ error: "partial_not_allowed_close_checkin" }, { status: 400 });
-    }
+  // A crafted request can't create a partial booking whose balance is already
+  // due (or too close to collect) — reject it using the same gate as the UI.
+  if (v.paymentType === "partial" && !charge.partialAllowed) {
+    return NextResponse.json({ error: "partial_not_allowed_close_checkin" }, { status: 400 });
   }
 
-  const total = reservationFee + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
+  const { reservationFee, balancePhp } = charge;
+  const balanceDueDate = charge.balanceDueDate ?? undefined;
+  const total = charge.dueNow;
 
   // Soft-hold (will throw with CONFLICT message if dates collide)
   let hold;

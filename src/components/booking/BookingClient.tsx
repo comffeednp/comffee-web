@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 // Calendar is used in SummaryRow below
 import { addDays, formatRange, fromDateString, nightsBetween, todayString } from "@/lib/dates";
+import { balanceDueDateFor, isPartialAllowed } from "@/lib/booking-pricing";
 import { formatPHP } from "@/lib/utils";
 import KycVerify, { KycResult } from "@/components/booking/KycVerify";
 import BookingCalendar from "@/components/booking/BookingCalendar";
@@ -144,14 +145,11 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   const accommodationTotal = promoApplied ? promoApplied.finalAmountPhp : subtotal;
   const reservationFee = Math.ceil(accommodationTotal * 0.30);
   const balancePhp = accommodationTotal - reservationFee;
-  // Balance for a 30% booking is due 3 days before check-in. Compute the gate the
-  // exact same way the server does (PH calendar dates, string-compared) so the
-  // partial option is never offered when /api/payments/create-intent would reject
-  // it with "partial_not_allowed_close_checkin".
-  const balanceDueStr = addDays(state.checkIn, -3); // YYYY-MM-DD
-  const balanceDueDate = fromDateString(balanceDueStr).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
-  const phTodayStr = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-  const partialAllowed = balanceDueStr > addDays(phTodayStr, 1);
+  // Gate + balance-due date come from the shared booking-pricing module — the
+  // exact same logic the server uses — so the 30% option is never shown when
+  // /api/payments/create-intent would reject it.
+  const partialAllowed = isPartialAllowed(state.checkIn, Date.now());
+  const balanceDueDate = fromDateString(balanceDueDateFor(state.checkIn)).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
   // A stale "partial" selection (e.g. user picked 30%, then changed check-in to a
   // too-soon date) must collapse to "full" — otherwise the summary shows the full
   // price while handleSubmit still sends "partial" and the server rejects it. This
