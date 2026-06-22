@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bell, BellOff, Loader2, Send, MessageSquarePlus, Paperclip, X } from "lucide-react";
+import { Bell, BellOff, Loader2, Send, MessageSquarePlus, Paperclip, X, Plus, ImagePlus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { formatDateTime } from "@/lib/utils";
@@ -241,6 +241,28 @@ export default function AdminChatClient({
     }
   }, [activeId, sending, postOne]);
 
+  // Admin "Add photo or video" — upload then post as an attachment message.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+
+  const handleAttach = useCallback(async (file: File) => {
+    if (!activeId || uploading) return;
+    setShowMenu(false);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "chat-uploads");
+      const up = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      if (!up.ok) return;
+      const { public_url } = (await up.json()) as { public_url?: string };
+      if (public_url) await postOne("", public_url);
+    } finally {
+      setUploading(false);
+    }
+  }, [activeId, uploading, postOne]);
+
   // Push notifications enable/disable
   const togglePush = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -473,15 +495,34 @@ export default function AdminChatClient({
                     ))}
                   </div>
                 )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAttach(f); e.target.value = ""; }}
+                />
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowReplies((v) => !v)}
-                    title="Saved replies"
-                    className="flex h-10 w-10 items-center justify-center bg-bg border border-line-bright rounded-md text-cream-dim hover:text-amber hover:border-amber shrink-0"
-                  >
-                    {showReplies ? <X className="h-4 w-4" /> : <MessageSquarePlus className="h-4 w-4" />}
-                  </button>
+                  <div className="relative shrink-0">
+                    {showMenu && (
+                      <div className="absolute bottom-12 left-0 z-10 w-56 border border-line-bright rounded-lg bg-bg-card shadow-xl overflow-hidden">
+                        <button type="button" onClick={() => { setShowMenu(false); setShowReplies(true); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left">
+                          <MessageSquarePlus className="h-4 w-4 text-amber" /> Send saved reply
+                        </button>
+                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-cream hover:bg-bg-elev text-left disabled:opacity-50">
+                          {uploading ? <Loader2 className="h-4 w-4 animate-spin text-amber" /> : <ImagePlus className="h-4 w-4 text-amber" />} Add photo
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowMenu((v) => !v)}
+                      title="Add saved reply or photo"
+                      className="flex h-10 w-10 items-center justify-center bg-bg border border-line-bright rounded-md text-cream-dim hover:text-amber hover:border-amber"
+                    >
+                      {showMenu ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={draft}

@@ -185,6 +185,7 @@ export async function postCustomerMessage(
   customerName?: string,
   memberId?: string,
   memberEmail?: string,
+  attachmentUrl?: string | null,
 ): Promise<{ conversation: ChatConversation; message: ChatMessage }> {
   const supabase = getSupabaseAdmin();
   const conversation = await findOrCreateConversation(
@@ -206,6 +207,7 @@ export async function postCustomerMessage(
       conversation_id: conversation.id,
       sender_type: "customer",
       body,
+      attachment_url: attachmentUrl ?? null,
     })
     .select("*")
     .single();
@@ -217,7 +219,7 @@ export async function postCustomerMessage(
     .update({
       last_message_at: new Date().toISOString(),
       status: "open",
-      last_message_body: body,
+      last_message_body: body || "📎 Photo",
       last_message_sender_type: "customer",
     })
     .eq("id", conversation.id);
