@@ -263,6 +263,7 @@ export async function postAdminMessage(
   conversationId: string,
   adminId: string,
   body: string,
+  attachmentUrl?: string | null,
 ): Promise<ChatMessage> {
   const supabase = getSupabaseAdmin();
   const { data: message, error } = await supabase
@@ -272,6 +273,7 @@ export async function postAdminMessage(
       sender_type: "admin",
       sender_id: adminId,
       body,
+      attachment_url: attachmentUrl ?? null,
     })
     .select("*")
     .single();
@@ -282,7 +284,7 @@ export async function postAdminMessage(
     .update({
       last_message_at: new Date().toISOString(),
       assigned_admin_id: adminId,
-      last_message_body: body,
+      last_message_body: body || "📎 Attachment",
       last_message_sender_type: "admin",
     })
     .eq("id", conversationId);

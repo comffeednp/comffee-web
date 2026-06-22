@@ -85,12 +85,20 @@ export async function postBookingConfirmedChat(reservation: ConfirmableReservati
     const supabase = getSupabaseAdmin();
     const { data: conv } = await supabase
       .from("chat_conversations")
-      .select("id")
+      .select("id, customer_name")
       .eq("member_id", reservation.member_id)
       .order("last_message_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!conv) return; // guest has no chat thread yet — nothing to post into
+
+    // Name the thread after the guest so the admin inbox doesn't show "Anonymous".
+    if (!conv.customer_name && reservation.guest_name) {
+      await supabase
+        .from("chat_conversations")
+        .update({ customer_name: reservation.guest_name })
+        .eq("id", conv.id);
+    }
 
     // Idempotency: don't post a second confirmation for the same booking.
     const { data: existing } = await supabase
