@@ -16,6 +16,10 @@ import {
 } from "@/lib/orders";
 import { verifyWebhookSignature } from "@/lib/paymongo";
 import { sendBalancePaidReceipt, sendOrderConfirmation } from "@/lib/email";
+import {
+  getGameTopupOrderByPaymongoId,
+  markGameTopupPaid,
+} from "@/lib/game-topups/settlement";
 
 export const runtime = "nodejs";
 
@@ -30,6 +34,9 @@ interface WebhookPayload {
         attributes?: {
           payments?: Array<{ data?: { id?: string } }>;
           payment_id?: string;
+          // A checkout-session payment.paid event carries the backing Payment Intent
+          // id (pi_) here — proven match key for checkout-session flows (see paymongo.ts).
+          payment_intent_id?: string;
           amount?: number;
         };
       };
@@ -110,10 +117,12 @@ export async function POST(request: Request) {
   if (inner?.attributes?.payments?.length) {
     actualPaymentId = inner.attributes.payments[0]?.data?.id ?? null;
   }
+  // Checkout-session flows (game top-ups) match on the backing Payment Intent id.
+  const innerPaymentIntentId = inner?.attributes?.payment_intent_id ?? null;
 
   // Find which entity this payment belongs to — reservation (initial payment),
-  // a reservation balance payment, an order, or a wallet top-up.
-  const [reservation, balanceRes, order, topupRes] = await Promise.all([
+  // a reservation balance payment, an order, a wallet top-up, or a game top-up.
+  const [reservation, balanceRes, order, topupRes, gameTopup] = await Promise.all([
     getReservationByIntent(linkOrPaymentId).catch(() => null),
     getReservationByBalanceIntent(linkOrPaymentId).catch(() => null),
     getOrderByIntent(linkOrPaymentId).catch(() => null),
@@ -129,6 +138,11 @@ export async function POST(request: Request) {
         return null;
       }
     })(),
+    getGameTopupOrderByPaymongoId([
+      linkOrPaymentId,
+      innerPaymentIntentId,
+      actualPaymentId,
+    ]).catch(() => null),
   ]);
 
   try {
@@ -249,6 +263,23 @@ export async function POST(request: Request) {
           break;
       }
       return NextResponse.json({ ok: true, kind: "topup" });
+    }
+
+    if (gameTopup) {
+      switch (eventType) {
+        case "checkout_session.payment.paid":
+        case "link.payment.paid":
+        case "payment.paid": {
+          // verified → pending: the order joins the staff fulfilment queue and the
+          // SLA clock starts. Idempotent + monotonic (only flips a 'verified' row),
+          // so a duplicate/retried webhook is a harmless no-op.
+          await markGameTopupPaid(gameTopup.id, actualPaymentId);
+          break;
+        }
+        // payment.failed: nothing to undo — the order stays 'verified' (the state
+        // machine has no verified→failed edge) so the customer can retry checkout.
+      }
+      return NextResponse.json({ ok: true, kind: "game_topup" });
     }
 
     return NextResponse.json({ ok: true, ignored: "no_match_for_link" });
