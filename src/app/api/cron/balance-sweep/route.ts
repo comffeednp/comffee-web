@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { checkCronAuth } from "@/lib/cron-auth";
-import { addDays } from "@/lib/dates";
+import { classifyBalanceSweep } from "@/lib/booking-pricing";
 import { sendBalanceReminder, sendBalancePaidReceipt, sendCancellationEmail } from "@/lib/email";
 import { getPaymentLink, isPaymongoConfigured } from "@/lib/paymongo";
 import { markBalancePaid } from "@/lib/reservations";
@@ -49,7 +49,6 @@ function phToday(): string {
 async function run() {
   const supabase = getSupabaseAdmin();
   const today = phToday();
-  const remindThrough = addDays(today, REMIND_DAYS_AHEAD);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://comffee.org";
 
   const { data, error } = await supabase
@@ -79,7 +78,14 @@ async function run() {
     const guestEmail = r.guest_email as string | null;
     const guestName = (r.guest_name as string | null) ?? "Guest";
 
-    if (due < today) {
+    const action = classifyBalanceSweep({
+      balanceDueDate: due,
+      today,
+      remindDaysAhead: REMIND_DAYS_AHEAD,
+      reminderAlreadySent: !!r.balance_reminder_sent_at,
+    });
+
+    if (action === "cancel") {
       // Before cancelling: reconcile against PayMongo in case the balance was
       // paid but its webhook never landed. A lost webhook must not forfeit a
       // paid stay.
@@ -138,7 +144,7 @@ async function run() {
         }).catch((e) => errors.push(`cancel-email ${r.id}: ${e instanceof Error ? e.message : e}`));
       }
       cancelled++;
-    } else if (due <= remindThrough && !r.balance_reminder_sent_at && guestEmail) {
+    } else if (action === "remind" && guestEmail) {
       const result = await sendBalanceReminder({
         to: guestEmail,
         guestName,
