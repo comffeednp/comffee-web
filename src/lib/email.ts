@@ -206,6 +206,11 @@ interface BookingEmailInput {
   totalPhp: number;
   reservationId: string;
   instructionPhotos?: Array<{ label: string; url: string }>;
+  // Partial (30%) bookings: the remaining balance still owed and when it's due.
+  // When balancePhp > 0 the receipt shows what was paid now plus the balance, so
+  // the guest is never led to believe a 30% payment settled the stay.
+  balancePhp?: number | null;
+  balanceDueDate?: string | null;
 }
 
 export async function sendBookingConfirmation(input: BookingEmailInput) {
@@ -222,6 +227,14 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
   const checkOutDate = new Date(input.checkOut + "T00:00:00").toLocaleDateString("en-PH", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
+
+  const balancePhp = Number(input.balancePhp ?? 0);
+  const hasBalance = balancePhp > 0;
+  const balanceDueLabel = input.balanceDueDate
+    ? new Date(input.balanceDueDate + "T00:00:00").toLocaleDateString("en-PH", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      })
+    : null;
 
   const photos = input.instructionPhotos ?? [];
   // Some branches (e.g. staffed houses) have no self check-in sheet — for those
@@ -247,8 +260,17 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
       ${receiptRow("Check-out date", checkOutDate)}
       ${input.checkOutTime ? receiptRow("Check-out time", input.checkOutTime) : ""}
       ${receiptRow("Guests", String(input.numGuests))}
-      ${receiptRow("Total paid", formatPHP(input.totalPhp), true)}
+      ${receiptRow(hasBalance ? "Paid now (30% reservation fee + deposit)" : "Total paid", formatPHP(input.totalPhp), true)}
+      ${hasBalance ? receiptRow(`Balance due${balanceDueLabel ? ` · ${balanceDueLabel}` : ""}`, formatPHP(balancePhp), true) : ""}
     </table>
+
+    ${hasBalance
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#fff4e6;border:1px solid #f0c98a;border-radius:12px;">
+          <tr><td style="padding:16px 20px;color:#7a4a12;font-size:14px;line-height:1.6;">
+            <strong>Your stay is reserved, not yet paid in full.</strong> You paid the 30% reservation fee plus the refundable deposit. The remaining balance of <strong>${formatPHP(balancePhp)}</strong> is due${balanceDueLabel ? ` no later than <strong>${balanceDueLabel}</strong>` : " before check-in"}. You can settle it anytime from <a href="${siteUrl}/account" style="color:#c98a2a;">your account</a>. If the balance isn&rsquo;t paid by the due date, the reservation is automatically cancelled and the reservation fee and deposit are forfeited.
+          </td></tr>
+        </table>`
+      : ""}
 
     <p style="margin:24px 0 8px;color:#8a7a68;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;text-transform:uppercase;">
       // house rules
@@ -302,7 +324,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput) {
       ctaLabel: "View reservation",
       ctaHref: lookupUrl,
     }),
-    text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. ${input.checkInTime ? `Check-in: ${input.checkInTime}.` : ""} ${input.checkOutTime ? `Check-out by: ${input.checkOutTime}.` : ""} ${input.branchAddress ?? ""} Total: ${formatPHP(input.totalPhp)}. Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
+    text: `Booking confirmed at ${input.branchName} for ${formatRange(input.checkIn, input.checkOut)}. ${input.checkInTime ? `Check-in: ${input.checkInTime}.` : ""} ${input.checkOutTime ? `Check-out by: ${input.checkOutTime}.` : ""} ${input.branchAddress ?? ""} ${hasBalance ? `Paid now: ${formatPHP(input.totalPhp)} (30% reservation fee + deposit). BALANCE DUE: ${formatPHP(balancePhp)}${balanceDueLabel ? ` by ${balanceDueLabel}` : ""} — pay from ${siteUrl}/account or the reservation is auto-cancelled and the fee + deposit are forfeited.` : `Total: ${formatPHP(input.totalPhp)}.`} Reservation ID: ${input.reservationId}. View: ${lookupUrl}`,
     ...(attachments.length ? { attachments } : {}),
   });
 }

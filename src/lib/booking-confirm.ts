@@ -28,6 +28,11 @@ export interface ConfirmableReservation {
   check_out: string;
   num_guests: number | null;
   total_php: number | string | null;
+  // Present on playcation rows (webhook selects *). 30% bookings carry an unpaid
+  // balance the confirmation email must disclose.
+  payment_type?: string | null;
+  balance_php?: number | string | null;
+  balance_due_date?: string | null;
 }
 
 interface BranchRow {
@@ -65,6 +70,8 @@ export async function sendReservationConfirmationEmail(reservation: ConfirmableR
     checkOutTime: rateWithTime?.check_out_time ?? null,
     numGuests: reservation.num_guests ?? 1,
     totalPhp: Number(reservation.total_php ?? 0),
+    balancePhp: reservation.payment_type === "partial" ? Number(reservation.balance_php ?? 0) : 0,
+    balanceDueDate: reservation.payment_type === "partial" ? (reservation.balance_due_date ?? null) : null,
     reservationId: reservation.id,
     instructionPhotos: (await listInstructionPhotos(reservation.branch_id)).map((p) => ({
       label: p.label,

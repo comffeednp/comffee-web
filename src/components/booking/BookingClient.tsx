@@ -15,7 +15,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 // Calendar is used in SummaryRow below
-import { addDays, formatRange, nightsBetween, todayString } from "@/lib/dates";
+import { addDays, formatRange, fromDateString, nightsBetween, todayString } from "@/lib/dates";
+import { balanceDueDateFor, computeAccommodation, isPartialAllowed } from "@/lib/booking-pricing";
 import { formatPHP } from "@/lib/utils";
 import KycVerify, { KycResult } from "@/components/booking/KycVerify";
 import BookingCalendar from "@/components/booking/BookingCalendar";
@@ -99,6 +100,15 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
     return () => { try { sessionStorage.removeItem("comffe.chat.dates"); } catch {} };
   }, [state.checkIn, state.checkOut]);
 
+  // A promo discount is computed against a specific subtotal. If the dates or
+  // guest count change after a code is applied, that discount is stale — the
+  // server re-validates against the new subtotal at checkout, so a kept promo
+  // would make the displayed price disagree with the amount charged. Clear it.
+  useEffect(() => {
+    setPromoApplied(null);
+    setPromoError(null);
+  }, [state.checkIn, state.checkOut, state.numGuests]);
+
   useEffect(() => {
     if (!summaryRef.current) return;
     const obs = new IntersectionObserver(
@@ -126,19 +136,29 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   }, [step, pendingReservationId, branch.slug, router]);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
-  const extraPax =
-    branch.maxPax != null ? Math.max(0, state.numGuests - branch.maxPax) : 0;
-  const extraPaxCharge =
-    extraPax > 0 && branch.extraPaxFeePhp ? extraPax * branch.extraPaxFeePhp * nights : 0;
-  const subtotal = nights * branch.baseNightlyRate + extraPaxCharge;
+  // Same helper the server uses (computePlaycationTotal) — display can't drift
+  // from the charged amount.
+  const { extraPax, extraPaxCharge, subtotal } = computeAccommodation({
+    nightlyRatePhp: branch.baseNightlyRate,
+    nights,
+    numGuests: state.numGuests,
+    maxPax: branch.maxPax,
+    extraPaxFeePhp: branch.extraPaxFeePhp,
+  });
   const accommodationTotal = promoApplied ? promoApplied.finalAmountPhp : subtotal;
   const reservationFee = Math.ceil(accommodationTotal * 0.30);
   const balancePhp = accommodationTotal - reservationFee;
-  const balanceDueDateObj = new Date(new Date(state.checkIn).getTime() - 3 * 24 * 60 * 60 * 1000);
-  const balanceDueDate = balanceDueDateObj.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
-  // Partial payment only makes sense if the balance due date is at least 1 day in the future
-  const partialAllowed = balanceDueDateObj.getTime() > Date.now() + 24 * 60 * 60 * 1000;
-  const dueNow = (paymentType === "partial" && partialAllowed ? reservationFee : accommodationTotal) + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
+  // Gate + balance-due date come from the shared booking-pricing module — the
+  // exact same logic the server uses — so the 30% option is never shown when
+  // /api/payments/create-intent would reject it.
+  const partialAllowed = isPartialAllowed(state.checkIn, Date.now());
+  const balanceDueDate = fromDateString(balanceDueDateFor(state.checkIn)).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+  // A stale "partial" selection (user picked 30%, then changed check-in to a
+  // too-soon date) collapses to "full" so the summary and the submitted intent
+  // never disagree. Single source of truth for what we charge AND submit.
+  const effectivePaymentType: "full" | "partial" =
+    paymentType === "partial" && partialAllowed ? "partial" : "full";
+  const dueNow = (effectivePaymentType === "partial" ? reservationFee : accommodationTotal) + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
   const total = accommodationTotal + SECURITY_DEPOSIT_PHP + PROCESSING_FEE_PHP;
 
   const handleApplyPromo = async () => {
@@ -212,7 +232,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             guestEmail: state.guestEmail,
             guestPhone: state.guestPhone,
             promoCode: promoApplied?.code ?? "",
-            paymentType,
+            paymentType: effectivePaymentType,
             memberId: memberId ?? null,
             kycSelfieUrl: kycData.selfieUrl,
             kycIdUrl: kycData.idUrl,
@@ -1050,7 +1070,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             </div>
 
             <div className="pt-4 border-t border-line space-y-2">
-              {paymentType === "partial" && partialAllowed && (
+              {effectivePaymentType === "partial" && (
                 <div className="flex items-baseline justify-between">
                   <span className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">// balance due {balanceDueDate}</span>
                   <span className="font-mono text-sm text-cream-dim">{formatPHP(balancePhp)}</span>
@@ -1058,7 +1078,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
               )}
               <div className="flex items-baseline justify-between">
                 <span className="font-mono text-[0.65rem] uppercase tracking-widest text-mocha">
-                  {paymentType === "partial" && partialAllowed ? "// due now" : "// total charged"}
+                  {effectivePaymentType === "partial" ? "// due now" : "// total charged"}
                 </span>
                 <span className="text-2xl font-display font-bold text-amber">
                   {formatPHP(dueNow)}

@@ -11,6 +11,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ReservationStatus } from "@/lib/supabase/types";
 import { nightsBetween } from "@/lib/dates";
+import { computeAccommodation } from "@/lib/booking-pricing";
 import { sendBookingConfirmation } from "@/lib/email";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
 
@@ -223,7 +224,7 @@ export async function confirmPaidReservation(
     .eq("id", reservationId)
     .in("status", ["pending_hold", "pending_approval"])
     .select(
-      "guest_email, guest_name, num_guests, total_php, check_in, check_out, branch_id",
+      "guest_email, guest_name, num_guests, total_php, check_in, check_out, branch_id, payment_type, balance_php, balance_due_date",
     );
   if (error) throw new Error(`confirmPaidReservation failed: ${error.message}`);
   const r = data && data[0];
@@ -254,6 +255,8 @@ export async function confirmPaidReservation(
         checkOutTime: rateWithTime?.check_out_time ?? null,
         numGuests: r.num_guests ?? 1,
         totalPhp: Number(r.total_php ?? 0),
+        balancePhp: r.payment_type === "partial" ? Number(r.balance_php ?? 0) : 0,
+        balanceDueDate: r.payment_type === "partial" ? (r.balance_due_date ?? null) : null,
         reservationId,
         instructionPhotos: (await listInstructionPhotos(r.branch_id)).map((p) => ({
           label: p.label,
@@ -398,11 +401,12 @@ export async function computePlaycationTotal(
   const nightly = rates.find((r) => r.unit === "night") ?? rates[0];
   if (!nightly) return 0;
 
-  const base = Number(nightly.price_php) * nights;
-  const maxPax = nightly.max_pax ?? null;
-  const extraFee = nightly.extra_pax_fee_php ?? 0;
-  const extraPax = maxPax != null ? Math.max(0, numGuests - maxPax) : 0;
-  const extraCharge = extraPax * extraFee * nights;
-
-  return base + extraCharge;
+  // Shared with the booking UI so client display and server charge can't diverge.
+  return computeAccommodation({
+    nightlyRatePhp: Number(nightly.price_php),
+    nights,
+    numGuests,
+    maxPax: nightly.max_pax ?? null,
+    extraPaxFeePhp: nightly.extra_pax_fee_php ?? null,
+  }).subtotal;
 }

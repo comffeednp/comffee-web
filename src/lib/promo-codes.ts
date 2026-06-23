@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { computePromoDiscount } from "@/lib/booking-pricing";
 
 export type PromoTarget = "order" | "reservation";
 
@@ -74,15 +75,12 @@ export async function validatePromoCode(
     throw new Error("PROMO_USED_UP");
   }
 
-  // Compute discount
-  let discountPhp: number;
-  if (promo.discount_type === "percent") {
-    discountPhp = (amountPhp * Number(promo.discount_value)) / 100;
-  } else {
-    discountPhp = Number(promo.discount_value);
-  }
-  // Round to 2 decimals + clamp at the total
-  discountPhp = Math.min(amountPhp, Math.round(discountPhp * 100) / 100);
+  // Compute discount (pure, shared, unit-tested in booking-pricing.test.ts)
+  const discountPhp = computePromoDiscount({
+    discountType: promo.discount_type,
+    discountValue: Number(promo.discount_value),
+    amountPhp,
+  });
   const finalAmountPhp = Math.max(0, amountPhp - discountPhp);
 
   return { promoCode: promo, discountPhp, finalAmountPhp };
