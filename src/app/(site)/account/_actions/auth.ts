@@ -22,22 +22,27 @@ export async function memberSignupAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
+  // Carry `next` through signup so a customer who creates an account mid-booking returns to booking
+  // (e.g. from the reserve-pc gate). Whitelisted to internal paths to prevent open redirects.
+  const next = String(formData.get("next") ?? "");
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
+  const nextQ = safeNext !== "/account" ? `&next=${encodeURIComponent(safeNext)}` : "";
 
   if (!email || !password || !fullName) {
-    redirect("/account/signup?error=missing_fields");
+    redirect(`/account/signup?error=missing_fields${nextQ}`);
   }
   if (password.length < 8) {
-    redirect("/account/signup?error=password_too_short");
+    redirect(`/account/signup?error=password_too_short${nextQ}`);
   }
   if (email.length > 254 || fullName.length > 120 || phone.length > 40) {
-    redirect("/account/signup?error=invalid_input");
+    redirect(`/account/signup?error=invalid_input${nextQ}`);
   }
 
   // Rate limit signup by IP — 5 per hour
   const ip = await getActionClientIp();
   const rl = checkRateLimit(`member-signup:${ip}`, 5, 60 * 60 * 1000);
   if (!rl.ok) {
-    redirect("/account/signup?error=rate_limited");
+    redirect(`/account/signup?error=rate_limited${nextQ}`);
   }
 
   const supabase = await getSupabaseServer();
@@ -50,12 +55,12 @@ export async function memberSignupAction(formData: FormData) {
   if (signUpErr) {
     // Generic error — never tell the attacker whether the email is registered
     console.error("signup failed", signUpErr.message);
-    redirect("/account/signup?error=signup_failed");
+    redirect(`/account/signup?error=signup_failed${nextQ}`);
   }
 
   const userId = signUpData.user?.id;
   if (!userId) {
-    redirect("/account/signup?error=signup_failed");
+    redirect(`/account/signup?error=signup_failed${nextQ}`);
   }
 
   // Create the members row using the service-role client (bypasses RLS)
@@ -72,17 +77,17 @@ export async function memberSignupAction(formData: FormData) {
 
   if (insertErr) {
     console.error("member row create failed", insertErr.message);
-    redirect("/account/signup?error=signup_failed");
+    redirect(`/account/signup?error=signup_failed${nextQ}`);
   }
 
   // If Supabase email confirmation is enabled, no session is returned —
   // tell the user to check their email. Otherwise log them straight in.
   if (!signUpData.session) {
-    redirect("/account/login?ok=check_email");
+    redirect(`/account/login?ok=check_email${nextQ}`);
   }
 
   revalidatePath("/", "layout");
-  redirect("/account");
+  redirect(safeNext);
 }
 
 export async function memberLoginAction(formData: FormData) {

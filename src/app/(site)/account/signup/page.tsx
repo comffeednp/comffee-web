@@ -1,19 +1,25 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getMemberOptional } from "@/lib/auth/require-member";
 import { memberSignupAction, googleSignInAction } from "../_actions/auth";
+import { isInAppBrowser } from "@/lib/in-app-browser";
+import WebviewNotice from "@/components/site/WebviewNotice";
 import { Power, UserPlus } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 interface Props {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }
 
 export default async function SignupPage({ searchParams }: Props) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
   const existing = await getMemberOptional();
-  if (existing) redirect("/account");
+  if (existing) redirect(next ?? "/account");
+
+  // Google OAuth is blocked inside in-app browsers — warn + guide to a real browser; email signup works.
+  const webview = isInAppBrowser((await headers()).get("user-agent"));
 
   return (
     <section className="container-edge py-20 md:py-28 flex justify-center">
@@ -30,8 +36,11 @@ export default async function SignupPage({ searchParams }: Props) {
             Reserve internet cafe stations, track your visits, and skip the line.
           </p>
 
+          {webview.inApp && <WebviewNotice appName={webview.name} />}
+
           {/* Google sign-in */}
           <form action={googleSignInAction} className="mt-8">
+            <input type="hidden" name="next" value={next ?? "/account"} />
             <button
               type="submit"
               title="Sign up with your Google account"
@@ -49,6 +58,7 @@ export default async function SignupPage({ searchParams }: Props) {
           </div>
 
           <form action={memberSignupAction} className="mt-6 space-y-5">
+            <input type="hidden" name="next" value={next ?? "/account"} />
             <Field label="full name *">
               <input name="full_name" required className="auth-input" autoComplete="name" />
             </Field>
@@ -93,7 +103,11 @@ export default async function SignupPage({ searchParams }: Props) {
 
           <p className="mt-8 text-center text-sm text-cream-dim">
             Already a member?{" "}
-            <Link href="/account/login" title="Sign in to your existing account" className="text-amber hover:underline">
+            <Link
+              href={`/account/login${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+              title="Sign in to your existing account"
+              className="text-amber hover:underline"
+            >
               Sign in
             </Link>
           </p>

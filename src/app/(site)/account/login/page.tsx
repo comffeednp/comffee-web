@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getMemberOptional } from "@/lib/auth/require-member";
 import { memberLoginAction, googleSignInAction } from "../_actions/auth";
+import { isInAppBrowser } from "@/lib/in-app-browser";
+import WebviewNotice from "@/components/site/WebviewNotice";
 import { LogIn, Power } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +17,10 @@ export default async function LoginPage({ searchParams }: Props) {
   const { error, ok, next } = await searchParams;
   const existing = await getMemberOptional();
   if (existing) redirect(next ?? "/account");
+
+  // Google OAuth is blocked inside in-app browsers (Messenger/FB/IG) — warn + guide to a real browser.
+  // Email sign-in below still works inside the webview.
+  const webview = isInAppBrowser((await headers()).get("user-agent"));
 
   return (
     <section className="container-edge py-20 md:py-28 flex justify-center">
@@ -35,6 +42,8 @@ export default async function LoginPage({ searchParams }: Props) {
               // confirmation email sent — check your inbox before signing in
             </p>
           )}
+
+          {webview.inApp && <WebviewNotice appName={webview.name} />}
 
           {/* Google sign-in */}
           <form action={googleSignInAction} className="mt-8">
@@ -88,7 +97,11 @@ export default async function LoginPage({ searchParams }: Props) {
 
           <p className="mt-8 text-center text-sm text-cream-dim">
             New here?{" "}
-            <Link href="/account/signup" title="Create a new member account" className="text-amber hover:underline">
+            <Link
+              href={`/account/signup${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+              title="Create a new member account"
+              className="text-amber hover:underline"
+            >
               Become a member
             </Link>
           </p>
