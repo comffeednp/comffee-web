@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { Coffee } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { googleSignInAction, switchAccountAction } from "@/app/(site)/account/_actions/auth";
+import { isInAppBrowser } from "@/lib/in-app-browser";
+import WebviewNotice from "@/components/site/WebviewNotice";
 import AttendanceClient from "@/components/partner/AttendanceClient";
 import { SubmitButton, LoadingLink } from "@/components/partner/GateButtons";
 import type { AttendanceStatus } from "@/lib/supabase/types";
@@ -65,6 +68,10 @@ export default async function AttendancePage({
 
   // Not signed in → render the Google sign-in gate, returning to THIS page after.
   if (!user) {
+    // Staff identity IS their Google account (the account chooser below is forced), so there's no email
+    // fallback here — but Google blocks OAuth inside in-app browsers (Messenger/FB/IG). Detect that and
+    // tell the staffer to open this page in a real browser, where Google works.
+    const webview = isInAppBrowser((await headers()).get("user-agent"));
     return (
       <div className="flex min-h-[100svh] items-center justify-center bg-bg p-6">
         <div className="w-[min(92vw,24rem)] rounded-2xl border border-line-bright bg-bg-elev p-7 text-center">
@@ -75,6 +82,7 @@ export default async function AttendancePage({
           <p className="mt-2 text-sm text-cream-dim">
             Sign in with your Google account to clock in or out.
           </p>
+          {webview.inApp && <WebviewNotice appName={webview.name} />}
           <form action={googleSignInAction} className="mt-6">
             <input
               type="hidden"
