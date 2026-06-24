@@ -10,9 +10,16 @@ import {
   getBranchPaymentDisplay,
   isPaymongoReservationActive,
 } from "@/lib/branch-payment-config";
+import { headers } from "next/headers";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { googleSignInAction, switchAccountAction } from "@/app/(site)/account/_actions/auth";
+import {
+  googleSignInAction,
+  memberLoginAction,
+  switchAccountAction,
+} from "@/app/(site)/account/_actions/auth";
 import { SubmitButton, LoadingLink } from "@/components/partner/GateButtons";
+import { isInAppBrowser } from "@/lib/in-app-browser";
+import WebviewNotice from "@/components/site/WebviewNotice";
 import ReservePCClient from "./ReservePCClient";
 import BranchChatContext from "@/components/site/BranchChatContext";
 import { ArrowLeft } from "lucide-react";
@@ -79,8 +86,13 @@ export default async function ReservePCPage({
     </Link>
   );
 
-  // Not signed in → Google sign-in gate, returning to THIS page (with ?go=1 to skip straight in).
+  // Not signed in → sign-in gate, returning to THIS page (with ?go=1 to skip straight in).
+  // Google works in a real browser but is BLOCKED inside in-app browsers (Messenger/FB/IG) by Google's
+  // "disallowed_useragent" policy — so we detect those, guide the user to a real browser, AND offer
+  // email sign-in (which works inside the webview) so a Messenger-link visitor is never dead-ended.
   if (!user) {
+    const nextUrl = `/branches/${slug}/reserve-pc?go=1${requestedPc ? `&pc=${encodeURIComponent(requestedPc)}` : ""}`;
+    const webview = isInAppBrowser((await headers()).get("user-agent"));
     return (
       <section className="container-edge py-16 md:py-24">
         {backToBranch}
@@ -89,15 +101,12 @@ export default async function ReservePCPage({
           <h1 className="mt-4 font-display text-2xl font-bold text-cream">
             Reserve a PC at {branch.name}
           </h1>
-          <p className="mt-2 text-sm text-cream-dim">
-            Sign in with your Google account to reserve a station online.
-          </p>
+          <p className="mt-2 text-sm text-cream-dim">Sign in to reserve a station online.</p>
+
+          {webview.inApp && <WebviewNotice appName={webview.name} />}
+
           <form action={googleSignInAction} className="mt-6">
-            <input
-              type="hidden"
-              name="next"
-              value={`/branches/${slug}/reserve-pc?go=1${requestedPc ? `&pc=${encodeURIComponent(requestedPc)}` : ""}`}
-            />
+            <input type="hidden" name="next" value={nextUrl} />
             <SubmitButton
               title="Sign in with Google to reserve a PC"
               pendingText="Opening Google…"
@@ -106,6 +115,54 @@ export default async function ReservePCPage({
               Continue with Google
             </SubmitButton>
           </form>
+
+          <div className="my-5 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest text-cream-dim">
+            <span className="h-px flex-1 bg-line-bright" />
+            or email
+            <span className="h-px flex-1 bg-line-bright" />
+          </div>
+
+          {/* Email/password works inside in-app browsers (no OAuth). On failure memberLoginAction
+              redirects to /account/login with the same next, so the customer is never dead-ended. */}
+          <form action={memberLoginAction} className="space-y-3 text-left">
+            <input type="hidden" name="next" value={nextUrl} />
+            <input
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+              aria-label="Email address"
+              className="w-full rounded-xl border border-line-bright bg-bg px-4 py-3 text-sm text-cream outline-none focus:border-amber"
+            />
+            <input
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              placeholder="Password"
+              aria-label="Password"
+              className="w-full rounded-xl border border-line-bright bg-bg px-4 py-3 text-sm text-cream outline-none focus:border-amber"
+            />
+            <SubmitButton
+              title="Sign in with email to reserve a PC"
+              pendingText="Signing in…"
+              className="w-full rounded-xl border border-amber/60 bg-transparent px-4 py-3 text-sm font-bold text-amber transition hover:bg-amber/10"
+            >
+              Sign in with email
+            </SubmitButton>
+          </form>
+
+          <p className="mt-4 text-xs text-cream-dim">
+            New here?{" "}
+            <Link
+              href={`/account/signup?next=${encodeURIComponent(nextUrl)}`}
+              title="Create a Comffee account to reserve a PC"
+              className="font-bold text-amber hover:underline"
+            >
+              Create an account
+            </Link>
+          </p>
         </div>
       </section>
     );
