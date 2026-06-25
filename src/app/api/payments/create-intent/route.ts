@@ -178,6 +178,33 @@ export async function POST(request: Request) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "hold_failed";
     const isConflict = msg.startsWith("CONFLICT");
+    if (isConflict) {
+      // If the blocking hold is the member's OWN still-active one (they bailed
+      // from checkout and re-submitted the same dates), hand it back so the
+      // client can resume payment instead of dead-ending with "dates taken".
+      try {
+        const { data: own } = await supabase
+          .from("reservations")
+          .select("id")
+          .eq("branch_id", v.branchId)
+          .eq("member_id", member.id)
+          .eq("status", "pending_hold")
+          .lt("check_in", v.checkOut)
+          .gt("check_out", v.checkIn)
+          .gt("hold_expires_at", new Date().toISOString())
+          .order("hold_expires_at", { ascending: false })
+          .limit(1);
+        const ownHold = own?.[0];
+        if (ownHold) {
+          return NextResponse.json(
+            { error: "dates_taken", resumeReservationId: ownHold.id },
+            { status: 409 },
+          );
+        }
+      } catch {
+        /* fall through to the generic conflict response */
+      }
+    }
     return NextResponse.json(
       { error: isConflict ? "dates_taken" : msg },
       { status: isConflict ? 409 : 500 },

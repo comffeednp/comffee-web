@@ -44,7 +44,7 @@ interface Props {
   initialCheckOut?: string;
 }
 
-type Step = "dates" | "guest" | "terms" | "verify" | "review" | "loading" | "paying" | "error";
+type Step = "dates" | "guest" | "terms" | "verify" | "review" | "loading" | "error";
 
 interface BookingState {
   checkIn: string;
@@ -81,7 +81,6 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
   });
   const [step, setStep] = useState<Step>("dates");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const [paymentType, setPaymentType] = useState<"full" | "partial">("full");
@@ -118,22 +117,6 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
     obs.observe(summaryRef.current);
     return () => obs.disconnect();
   }, []);
-
-  // Poll reservation status when waiting for PayMongo payment confirmation
-  useEffect(() => {
-    if (step !== "paying" || !pendingReservationId) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/payments/status?id=${pendingReservationId}`);
-        const data = await res.json() as { status?: string };
-        if (data.status === "confirmed") {
-          clearInterval(interval);
-          router.push(`/playcation/${branch.slug}/confirmed/${pendingReservationId}`);
-        }
-      } catch {}
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [step, pendingReservationId, branch.slug, router]);
 
   const nights = nightsBetween(state.checkIn, state.checkOut);
   // Same helper the server uses (computePlaycationTotal) — display can't drift
@@ -244,14 +227,23 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
         });
         const data = await res.json();
         if (!res.ok) {
+          // Dates collided with the member's OWN still-active hold (they bailed
+          // from checkout and came back). Don't dead-end with "dates taken" —
+          // take them straight to that booking, where they can finish paying.
+          if (data.resumeReservationId) {
+            router.push(`/playcation/${branch.slug}/confirmed/${data.resumeReservationId}`);
+            return;
+          }
           setStep("error");
           setErrorMsg(data.error ?? "booking failed");
           return;
         }
         if (data.checkoutUrl) {
-          window.open(data.checkoutUrl, "_blank", "noopener");
-          setPendingReservationId(data.reservationId);
-          setStep("paying");
+          // Navigate in the SAME tab. window.open(_blank) is silently blocked in
+          // in-app browsers (Messenger/Instagram/FB webview), which left guests on
+          // a QR-less hold screen with no way to pay. PayMongo redirects back to
+          // the confirmed page after payment; that page also offers a resume link.
+          window.location.href = data.checkoutUrl;
           return;
         }
         if (data.simulated && data.reservationId) {
@@ -942,41 +934,6 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
                     transition={{ duration: 3, ease: "easeInOut" }}
                   />
                 </div>
-              </motion.div>
-            )}
-
-            {/* ----- PAYING ----- */}
-            {step === "paying" && (
-              <motion.div
-                key="paying"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="py-20 text-center space-y-6"
-              >
-                <div className="flex justify-center">
-                  <div className="relative">
-                    <div className="h-20 w-20 rounded-full border-4 border-line-bright border-t-amber animate-spin" />
-                    <Power className="absolute inset-0 m-auto h-7 w-7 text-amber" />
-                  </div>
-                </div>
-                <div>
-                  <p className="font-mono text-sm text-phosphor">// WAITING FOR PAYMENT...</p>
-                  <p className="mt-2 font-mono text-xs text-cream-dim max-w-xs mx-auto">
-                    Complete your payment in the tab that just opened. This page will automatically redirect once confirmed.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pendingReservationId) {
-                      router.push(`/playcation/${branch.slug}/confirmed/${pendingReservationId}`);
-                    }
-                  }}
-                  className="key-cap font-mono text-xs"
-                >
-                  I&apos;ve already paid → view booking
-                </button>
               </motion.div>
             )}
 

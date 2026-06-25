@@ -8,7 +8,9 @@ import { formatRange, nightsBetween } from "@/lib/dates";
 import { formatPHP } from "@/lib/utils";
 import ConfirmedAnimation from "@/components/booking/ConfirmedAnimation";
 import BookingConfirmedNotifier from "@/components/booking/BookingConfirmedNotifier";
-import { Calendar, MapPin, Power, Users } from "lucide-react";
+import ReservationStatusPoller from "@/components/booking/ReservationStatusPoller";
+import { getPaymentLink, isPaymongoConfigured } from "@/lib/paymongo";
+import { Calendar, MapPin, Power, QrCode, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,24 @@ export default async function ConfirmedPage({
   // Request-to-book: after payment the booking WAITS for the owner. Don't tell
   // the guest they're "confirmed" until the host actually accepts.
   const isPendingApproval = reservation.status === "pending_approval";
+  // Still a hold = the guest hasn't paid yet. The old flow could strand them here
+  // with no QR. Fetch the PayMongo hosted-checkout URL (which renders the QR Ph
+  // code) so we can ALWAYS show a "Complete payment" button. Best-effort: if
+  // PayMongo is unreachable, the receipt + status poller below still work.
+  const isHold = !isConfirmed && !isPendingApproval;
+  const paymongoIntentId =
+    (reservation as { paymongo_intent_id?: string | null }).paymongo_intent_id ?? null;
+  let resumeCheckoutUrl: string | null = null;
+  if (isHold && paymongoIntentId && isPaymongoConfigured()) {
+    try {
+      const link = (await getPaymentLink(paymongoIntentId)) as {
+        data?: { attributes?: { checkout_url?: string } };
+      };
+      resumeCheckoutUrl = link?.data?.attributes?.checkout_url ?? null;
+    } catch {
+      /* PayMongo unreachable — poller + account links still give a path forward */
+    }
+  }
 
   const r = reservation as {
     payment_type?: string | null;
@@ -66,6 +86,7 @@ export default async function ConfirmedPage({
         checkIn={reservation.check_in}
         checkOut={reservation.check_out}
       />
+      <ReservationStatusPoller reservationId={reservationId} initialStatus={reservation.status} />
       <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none" />
       <div className="container-edge relative">
         <div className="max-w-3xl mx-auto text-center">
@@ -95,8 +116,33 @@ export default async function ConfirmedPage({
               ? "Your reservation is locked in. We'll have the controllers charged and the espresso ready."
               : isPendingApproval
               ? "Payment received and your dates are held. The host reviews each booking — you'll get a confirmation the moment it's approved, or a full refund if it can't be accepted."
-              : "Your slot is held for 20 minutes while payment processes. We'll email you the moment it's confirmed."}
+              : "Your slot is held for 20 minutes. Pay now via QR Ph (GCash, Maya, or any bank) and your booking confirms the moment payment lands."}
           </p>
+
+          {isHold && (
+            <div className="mt-10">
+              {resumeCheckoutUrl ? (
+                <>
+                  <a
+                    href={resumeCheckoutUrl}
+                    className="key-cap key-cap-primary !px-8 !py-4 text-base"
+                    title="Open the secure payment page with your QR Ph code"
+                  >
+                    <QrCode className="h-5 w-5" />
+                    Complete payment
+                  </a>
+                  <p className="mt-3 font-mono text-xs text-cream-dim">
+                    // Opens the secure PayMongo page with your QR Ph code. This page updates on its own once payment lands.
+                  </p>
+                </>
+              ) : (
+                <p className="font-mono text-sm text-amber">
+                  // Preparing your payment link — refresh in a moment, or open this booking from{" "}
+                  <Link href="/account" className="underline">your account</Link> to pay.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Receipt-style monitor */}
           <div className="mt-12 monitor-frame text-left">
