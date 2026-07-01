@@ -37,34 +37,53 @@ export async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; i
     );
     return { ok: false, error: "not_configured" };
   }
-  try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: process.env.RESEND_FROM ?? DEFAULT_FROM,
-        to: input.to,
-        subject: input.subject,
-        html: input.html,
-        text: input.text,
-        reply_to: input.replyTo,
-        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-      }),
-    });
-    if (!res.ok) {
+  const payload = JSON.stringify({
+    from: process.env.RESEND_FROM ?? DEFAULT_FROM,
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
+    reply_to: input.replyTo,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+  });
+
+  // Resend intermittently returns transient 5xx (and 429 under load). A single blip must NOT
+  // hard-fail a money-adjacent send — e.g. a POS Void approval code, where the caller deletes the
+  // pending request and blocks the void when the email errors. So retry transient failures with a
+  // short backoff. 4xx (invalid/unverified `from`, bad recipient) are permanent → never retried.
+  const MAX_ATTEMPTS = 3;
+  let lastError = "send_failed";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        },
+        body: payload,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { id?: string };
+        return { ok: true, id: data.id };
+      }
       const body = await res.text();
-      console.error(`[email] Resend ${res.status}: ${body}`);
-      return { ok: false, error: `resend_${res.status}` };
+      lastError = `resend_${res.status}`;
+      const transient = res.status >= 500 || res.status === 429;
+      console.error(
+        `[email] Resend ${res.status}${transient ? ` (transient, attempt ${attempt}/${MAX_ATTEMPTS})` : ""}: ${body}`,
+      );
+      if (!transient) return { ok: false, error: lastError }; // permanent — stop immediately
+    } catch (e) {
+      lastError = "network_error";
+      console.error(
+        `[email] send failed (attempt ${attempt}/${MAX_ATTEMPTS})`,
+        e instanceof Error ? e.message : e,
+      );
     }
-    const data = (await res.json()) as { id?: string };
-    return { ok: true, id: data.id };
-  } catch (e) {
-    console.error("[email] send failed", e instanceof Error ? e.message : e);
-    return { ok: false, error: "network_error" };
+    if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 400 * attempt)); // 400ms, 800ms
   }
+  return { ok: false, error: lastError };
 }
 
 /* ---------------- shared template chrome ---------------- */
