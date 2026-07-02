@@ -12,6 +12,7 @@ import {
 import { getSupabaseServer } from "@/lib/supabase/server";
 import RefundButton from "@/components/admin/RefundButton";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
+import ActionSubmitButton from "@/components/admin/ActionSubmitButton";
 import { ArrowLeft, Check, X } from "lucide-react";
 import { formatDate, formatDateTime, formatPHP } from "@/lib/utils";
 import { nightsBetween } from "@/lib/dates";
@@ -142,40 +143,40 @@ export default async function BookingDetailPage({ params, searchParams }: Props)
         {reservation.status !== "confirmed" &&
           reservation.status !== "cancelled" &&
           reservation.status !== "pending_approval" && (
-            <form action={manualConfirmAction}>
-              <input type="hidden" name="id" value={reservation.id} />
-              <button type="submit" title="Manually confirm this booking" className="key-cap key-cap-phosphor">
-                <Check className="h-4 w-4" />
-                Manually confirm
-              </button>
-            </form>
+            <ActionSubmitButton
+              action={manualConfirmAction}
+              fields={{ id: reservation.id }}
+              title="Manually confirm this booking"
+              pendingLabel="Confirming…"
+              className="key-cap key-cap-phosphor"
+            >
+              <Check className="h-4 w-4" />
+              Manually confirm
+            </ActionSubmitButton>
           )}
         {reservation.status === "confirmed" && reservation.guest_email && (
-          <form action={resendConfirmationAction}>
-            <input type="hidden" name="id" value={reservation.id} />
-            <button
-              type="submit"
-              title="Re-send the confirmation email + chat message to the guest"
-              className="inline-flex items-center gap-2 border border-line-bright rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber"
-            >
-              <Check className="h-3.5 w-3.5" />
-              Resend confirmation
-            </button>
-          </form>
+          <ActionSubmitButton
+            action={resendConfirmationAction}
+            fields={{ id: reservation.id }}
+            title="Re-send the confirmation email + chat message to the guest"
+            pendingLabel="Sending…"
+            className="inline-flex items-center gap-2 border border-line-bright rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-cream-dim hover:text-amber hover:border-amber"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Resend confirmation
+          </ActionSubmitButton>
         )}
         {reservation.status !== "cancelled" && reservation.status !== "pending_approval" && (
-          <form action={cancelBookingAction}>
-            <input type="hidden" name="id" value={reservation.id} />
-            <input type="hidden" name="reason" value="cancelled by admin" />
-            <button
-              type="submit"
-              title="Cancel this booking"
-              className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
-            >
-              <X className="h-3.5 w-3.5" />
-              Cancel
-            </button>
-          </form>
+          <ActionSubmitButton
+            action={cancelBookingAction}
+            fields={{ id: reservation.id, reason: "cancelled by admin" }}
+            title="Cancel this booking"
+            pendingLabel="Cancelling…"
+            className="inline-flex items-center gap-2 border border-red-700 rounded-md px-4 py-2 text-xs font-mono uppercase tracking-widest text-red-400 hover:bg-red-950/40"
+          >
+            <X className="h-3.5 w-3.5" />
+            Cancel
+          </ActionSubmitButton>
         )}
       </div>
 
