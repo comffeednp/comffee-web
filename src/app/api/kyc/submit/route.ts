@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { originAllowed, rateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // two Vision calls (15s cap each) + 3 storage uploads
 
 // This endpoint necessarily uses the service-role client (writes to a PRIVATE
 // bucket) and calls a BILLED Google Vision API — and the booking flow that uses
@@ -11,10 +12,17 @@ export const runtime = "nodejs";
 // bounded: same-origin only, IP rate-limited, total + per-file size capped, and
 // image/PDF MIME only. The storage folder is SERVER-generated (never the caller's
 // memberId) so no one can write into another booking's folder or traverse paths.
-const MAX_TOTAL_BYTES = 30 * 1024 * 1024; // whole multipart payload (3 files + fields)
-const MAX_FILE_BYTES = 12 * 1024 * 1024; // per file
+//
+// SIZE LIMITS: Vercel hard-rejects any request body over 4.5 MB with a platform
+// 413 BEFORE this code runs — limits above that are fiction and once stranded
+// real guests ("Network error" on every retry). The client compresses images to
+// ≤ ~0.9 MB and caps PDFs at 1.8 MB (src/lib/kyc-upload.ts), so a normal submit
+// is ~1–3 MB; these server checks are the backstop, aligned to the platform.
+const MAX_TOTAL_BYTES = Math.floor(4.5 * 1024 * 1024); // Vercel request-body cap
+const MAX_FILE_BYTES = 3 * 1024 * 1024; // per file (client targets ≤ 1.8 MB)
 const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const DOC_TYPES = new Set([...IMAGE_TYPES, "application/pdf"]); // id/billing may be a PDF
+const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
 
 const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 const VISION_URL = "https://vision.googleapis.com/v1/images:annotate";
@@ -177,9 +185,15 @@ export async function POST(request: Request) {
   ];
   for (const { label, file, allowed } of fileChecks) {
     if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: `${label} file is too large (max 12 MB).`, failedStep: label }, { status: 413 });
+      return NextResponse.json({ error: `The ${label} file is too large (max 3 MB) — use “Take photo”, or upload a smaller image.`, failedStep: label }, { status: 413 });
     }
-    if (!allowed.has((file.type || "").toLowerCase())) {
+    const mime = (file.type || "").toLowerCase();
+    // HEIC (Android default on some phones) can't go through Vision — tell the
+    // guest exactly what to do instead of a generic unsupported-type error.
+    if (HEIC_TYPES.has(mime) || /\.hei[cf]$/i.test(file.name)) {
+      return NextResponse.json({ error: `HEIC photos aren't supported for the ${label} — use “Take photo”, or upload a JPG or PNG.`, failedStep: label }, { status: 415 });
+    }
+    if (!allowed.has(mime)) {
       return NextResponse.json({ error: `Unsupported file type for ${label}. Upload a JPG, PNG${allowed.has("application/pdf") ? ", or PDF" : ""}.`, failedStep: label }, { status: 415 });
     }
   }

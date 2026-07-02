@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/release-expired-holds",
-      "schedule": "0 0 * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/send-arrival-reminders",

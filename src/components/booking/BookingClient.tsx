@@ -225,7 +225,13 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             kycLongitude: kycData.longitude ?? null,
           }),
         });
-        const data = await res.json();
+        // Parse defensively: platform-level errors (Vercel 413/5xx pages,
+        // gateway timeouts) are NOT JSON — a bare res.json() here used to throw
+        // and show the guest the raw parse exception.
+        let data: { error?: string; resumeReservationId?: string; checkoutUrl?: string; simulated?: boolean; reservationId?: string } = {};
+        try {
+          data = await res.json();
+        } catch {}
         if (!res.ok) {
           // Dates collided with the member's OWN still-active hold (they bailed
           // from checkout and came back). Don't dead-end with "dates taken" —
@@ -235,7 +241,7 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
             return;
           }
           setStep("error");
-          setErrorMsg(data.error ?? "booking failed");
+          setErrorMsg(data.error ?? `server error (${res.status}) — your details are saved, tap Try again`);
           return;
         }
         if (data.checkoutUrl) {
@@ -252,9 +258,11 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
         }
         setStep("error");
         setErrorMsg("unexpected response from server");
-      } catch (e) {
+      } catch {
+        // Never show a raw exception ("Failed to fetch", JSON parse noise) —
+        // the guest needs to know their inputs survived and retry is safe.
         setStep("error");
-        setErrorMsg(e instanceof Error ? e.message : "network error");
+        setErrorMsg("connection problem — check your internet and tap Try again. Your details and verification are saved.");
       }
     });
   };
@@ -949,7 +957,9 @@ export default function BookingClient({ branch, initialBlocked, memberId, member
                 <p className="mt-6 font-mono text-sm text-red-400">// {errorMsg}</p>
                 <button
                   onClick={() => {
-                    setStep("dates");
+                    // KYC + guest info survive in state — a transient failure
+                    // resumes at review instead of forcing all 5 steps again.
+                    setStep(kycData ? "review" : "dates");
                     setErrorMsg(null);
                   }}
                   className="mt-6 key-cap"

@@ -59,6 +59,14 @@ const PERMISSIONS_ATTENDANCE =
 // same trap the attendance page hit — see the note above PERMISSIONS_STRICT).
 const PERMISSIONS_PARTNERS =
   "camera=(), microphone=(), geolocation=(self), interest-cohort=(), payment=(self), usb=()";
+// The Playcation booking page runs KYC: "Take photo" (getUserMedia selfie/ID capture) plus a
+// geolocation stamp on the submitted documents. Under the strict policy camera=() rejected
+// getUserMedia WITHOUT prompting, which forced every guest into raw file uploads — three
+// uncompressed phone photos then blew Vercel's 4.5 MB request cap and surfaced as "Network
+// error" (guest incident, 2026-07-02). Same silent-denial trap as attendance; grant camera +
+// geolocation on this one route only.
+const PERMISSIONS_BOOKING =
+  "camera=(self), microphone=(), geolocation=(self), interest-cohort=(), payment=(self), usb=()";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -105,13 +113,19 @@ const nextConfig: NextConfig = {
         source: "/partners",
         headers: [{ key: "Permissions-Policy", value: PERMISSIONS_PARTNERS }],
       },
-      // Everything ELSE: fully locked down. INVARIANT: this catch-all MUST stay LAST. Next overrides
-      // on duplicate header keys (last matching rule wins), so if this rule MATCHED /partners or the
-      // attendance route it would override their geolocation=(self) back to strict and silently
-      // re-break location. The two negative lookaheads exist precisely to stop it from matching those
-      // two routes. Keep it last AND keep the lookaheads — that is what protects the grants above.
+      // Playcation booking page: camera + geolocation for the KYC verify step (see PERMISSIONS_BOOKING).
       {
-        source: "/((?!partners/[^/]+/attendance)(?!partners/?$).*)",
+        source: "/playcation/:slug/book",
+        headers: [{ key: "Permissions-Policy", value: PERMISSIONS_BOOKING }],
+      },
+      // Everything ELSE: fully locked down. INVARIANT: this catch-all MUST stay LAST. Next overrides
+      // on duplicate header keys (last matching rule wins), so if this rule MATCHED /partners, the
+      // attendance route, or the booking page it would override their grants back to strict and
+      // silently re-break camera/location. The negative lookaheads exist precisely to stop it from
+      // matching those routes. Keep it last AND keep the lookaheads — that is what protects the
+      // grants above.
+      {
+        source: "/((?!partners/[^/]+/attendance)(?!partners/?$)(?!playcation/[^/]+/book/?$).*)",
         headers: [{ key: "Permissions-Policy", value: PERMISSIONS_STRICT }],
       },
     ];

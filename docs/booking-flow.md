@@ -199,3 +199,45 @@ detector/banner from the first cut of this fix were dropped in favour of main's.
 - Marked checklist done, recorded verification + commit refs in this doc.
 - Branch `fix/booking-flow-qr-inapp-browser` is ready for review/PR. NOT pushed to
   `main` (main auto-deploys to Vercel; customer-facing deploy stays gated).
+
+## Incident 2 (2026-07-02) — "Network error" on the KYC verify step
+
+A guest reported a **network error while uploading verification documents**
+(step 04). Root cause was a four-link chain, all fixed:
+
+1. **Our own Permissions-Policy killed the camera.** `next.config.ts` sent
+   `camera=()` on the booking page, so "Take photo" (getUserMedia) rejected
+   WITHOUT prompting → every guest was forced into raw file upload. (Same
+   silent-denial trap the attendance page hit for geolocation.) Geolocation was
+   also dead, so the KYC geo-stamp was always null.
+2. **Raw phone photos are 3–12 MB and the client did zero compression** — three
+   of them went in ONE multipart POST.
+3. **Vercel hard-rejects request bodies > 4.5 MB** with a platform 413 before
+   the route runs. The route's own 30 MB/12 MB limits were unreachable fiction.
+4. **The client parsed the non-JSON platform error page with `res.json()`**,
+   which threw → catch → "Network error. Please try again." Retry could never
+   succeed. Dead end.
+
+### Fixes (this iteration)
+- `next.config.ts`: `camera=(self), geolocation=(self)` on
+  `/playcation/:slug/book` only; catch-all lookaheads extended (invariant kept).
+- `src/lib/kyc-upload.ts` (new): client-side compression via
+  `browser-image-compression` (already a dep, was unused) — images → JPEG
+  ≤ ~0.9 MB / 1800 px at capture time; PDFs capped 1.5 MB; pre-flight total
+  guard 4.2 MB so a doomed request never leaves the phone; status→message
+  mapper (unit-tested in `kyc-upload.test.ts`) so platform 413/5xx, rate
+  limits, timeouts, and dropped connections each get a specific, retryable
+  message — files stay in state, retry is one tap.
+- `KycVerify.tsx`: compress/validate BEFORE a file counts as captured
+  (failures show inline at that step); 120 s fetch timeout; HEIC gets explicit
+  guidance; selfie input is image-only.
+- `api/kyc/submit`: limits aligned to platform truth (4.5 MB total / 3 MB per
+  file), HEIC-specific 415 message, `maxDuration = 60`.
+- `BookingClient.tsx`: create-intent response parsed defensively (no more raw
+  `Unexpected token '<'` shown to guests); "Try again" resumes at review when
+  KYC is already done instead of restarting all 5 steps.
+- `vercel.json`: `release-expired-holds` was scheduled DAILY (`0 0 * * *`) —
+  the route itself is written for a 5-min cadence and is the only rescue for
+  paid-but-webhook-missed bookings when the guest closed the page. Now
+  `*/10 * * * *`. (The calendar itself was never poisoned: availability filters
+  expired holds and `createHold` pre-sweeps them inline.)

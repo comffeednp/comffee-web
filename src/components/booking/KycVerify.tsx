@@ -2,6 +2,14 @@
 
 import { useRef, useState } from "react";
 import { Camera, Upload, Check, RefreshCw } from "lucide-react";
+import {
+  prepareKycDocument,
+  prepareKycSelfie,
+  SUBMIT_TOTAL_BUDGET_BYTES,
+  uploadErrorMessage,
+  uploadNetworkMessage,
+  type PreparedFile,
+} from "@/lib/kyc-upload";
 
 export interface KycResult {
   selfieUrl: string;
@@ -26,17 +34,21 @@ interface Captured {
   billing: File | null;
 }
 
-function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
+function CameraCapture({ label, hint, accept, onCapture, prepare, facingMode = "environment" }: {
   label: string;
   hint: string;
+  /** File-input accept attribute — selfie is image-only, docs also allow PDF. */
+  accept: string;
   onCapture: (file: File) => void;
+  /** Compress / validate the raw capture BEFORE it counts as captured. */
+  prepare: (file: File) => Promise<PreparedFile>;
   facingMode?: "user" | "environment";
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mode, setMode] = useState<"choose" | "camera" | "preview">("choose");
+  const [mode, setMode] = useState<"choose" | "camera" | "processing" | "preview">("choose");
   const [preview, setPreview] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const stopCamera = () => {
@@ -45,16 +57,35 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
   };
 
   const startCamera = async () => {
-    setCameraError(null);
+    setCaptureError(null);
     setMode("camera");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch {
-      setCameraError("Camera access denied. Use file upload instead.");
+      setCaptureError("Camera not available here — use Upload file instead.");
       setMode("choose");
     }
+  };
+
+  // Compress/validate first; only a file that survived `prepare` (i.e. one the
+  // server and the platform payload cap will accept) ever counts as captured.
+  const finalize = async (raw: File) => {
+    setCaptureError(null);
+    setMode("processing");
+    const result = await prepare(raw);
+    if ("error" in result) {
+      setCaptureError(result.error);
+      setMode("choose");
+      return;
+    }
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(result.file);
+    });
+    setMode("preview");
+    onCapture(result.file);
   };
 
   const snap = () => {
@@ -66,26 +97,24 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
     c.getContext("2d")?.drawImage(v, 0, 0);
     c.toBlob((blob) => {
       if (!blob) return;
-      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-      const url = URL.createObjectURL(blob);
-      setPreview(url);
-      setMode("preview");
       stopCamera();
-      onCapture(file);
+      void finalize(new File([blob], "capture.jpg", { type: "image/jpeg" }));
     }, "image/jpeg", 0.92);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Allow re-selecting the same file after a failed prepare.
+    e.target.value = "";
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    setMode("preview");
-    onCapture(file);
+    void finalize(file);
   };
 
   const retake = () => {
-    setPreview(null);
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
     setMode("choose");
     stopCamera();
   };
@@ -99,8 +128,8 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
 
       {mode === "choose" && (
         <div className="border border-line-bright rounded-xl p-5 bg-bg space-y-3">
-          {cameraError && (
-            <p className="font-mono text-xs text-red-400">// {cameraError}</p>
+          {captureError && (
+            <p className="font-mono text-xs text-red-400">// {captureError}</p>
           )}
           <div className="flex flex-wrap gap-3">
             <button
@@ -115,9 +144,15 @@ function CameraCapture({ label, hint, onCapture, facingMode = "environment" }: {
             <label className="flex items-center gap-2 key-cap cursor-pointer">
               <Upload className="h-3.5 w-3.5" />
               Upload file
-              <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={handleFileUpload} />
+              <input type="file" accept={accept} className="sr-only" onChange={handleFileUpload} />
             </label>
           </div>
+        </div>
+      )}
+
+      {mode === "processing" && (
+        <div className="border border-line-bright rounded-xl p-5 bg-bg">
+          <p className="font-mono text-xs text-cream-dim animate-pulse">// preparing photo…</p>
         </div>
       )}
 
@@ -170,6 +205,23 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
 
   const handleSubmit = async () => {
     if (!captured.selfie || !captured.id || !captured.billing) return;
+
+    // Pre-flight: Vercel rejects request bodies over 4.5 MB before our route
+    // runs, with a non-JSON error page. Never send a request that is doomed —
+    // point the guest at the biggest document instead.
+    const files: Array<{ step: Exclude<SubStep, "submitting">; file: File }> = [
+      { step: "selfie", file: captured.selfie },
+      { step: "id", file: captured.id },
+      { step: "billing", file: captured.billing },
+    ];
+    const totalBytes = files.reduce((sum, f) => sum + f.file.size, 0);
+    if (totalBytes > SUBMIT_TOTAL_BUDGET_BYTES) {
+      const biggest = files.reduce((a, b) => (b.file.size > a.file.size ? b : a));
+      setError(`Your documents are too large to send together — retake the ${biggest.step === "id" ? "ID" : biggest.step} using “Take photo”, or upload a smaller image.`);
+      setSubStep(biggest.step);
+      return;
+    }
+
     setSubStep("submitting");
     setError(null);
 
@@ -194,15 +246,26 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
     if (longitude != null) form.append("longitude", String(longitude));
 
     try {
-      const res = await fetch("/api/kyc/submit", { method: "POST", body: form });
-      const data = await res.json() as {
-        ok?: boolean; error?: string; failedStep?: SubStep;
+      const res = await fetch("/api/kyc/submit", {
+        method: "POST",
+        body: form,
+        // A hung mobile connection should surface a retry message, not spin
+        // forever. 120s covers a ~3 MB upload on slow data + server checks.
+        signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(120_000) : undefined,
+      });
+      // Platform-level failures (Vercel 413/5xx pages) are NOT JSON — parse
+      // defensively so they get a real message instead of a thrown parse error.
+      let data: {
+        ok?: boolean; error?: string; failedStep?: SubStep; retry_after_seconds?: number;
         selfieUrl?: string; idUrl?: string; billingUrl?: string;
         ipAddress?: string | null; latitude?: number | null; longitude?: number | null;
-      };
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "Upload failed. Please try again.");
-        setSubStep(data.failedStep ?? "billing");
+      } | null = null;
+      try {
+        data = await res.json();
+      } catch {}
+      if (!res.ok || !data?.ok) {
+        setError(uploadErrorMessage(res.status, data));
+        setSubStep(data?.failedStep ?? "billing");
         return;
       }
       onComplete({
@@ -213,8 +276,8 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
         latitude: data.latitude ?? null,
         longitude: data.longitude ?? null,
       });
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (e) {
+      setError(uploadNetworkMessage(e));
       setSubStep("billing");
     }
   };
@@ -245,6 +308,8 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_1 · selfie"
             hint="Take a clear photo of your face. Make sure it's well lit and your eyes are visible."
+            accept="image/*"
+            prepare={prepareKycSelfie}
             onCapture={(f) => { update("selfie", f); setError(null); }}
             facingMode="user"
           />
@@ -266,6 +331,8 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_2 · government id"
             hint="Take a photo or upload your Philippine government-issued ID — PhilSys, UMID, Driver's License, or Passport."
+            accept="image/*,application/pdf"
+            prepare={prepareKycDocument}
             onCapture={(f) => { update("id", f); setError(null); }}
           />
           {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
@@ -289,6 +356,8 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
           <CameraCapture
             label="// step_3 · proof of billing"
             hint="Take a photo or upload a utility bill (Meralco, Maynilad, Converge, PLDT, Globe) showing your name and address. Must be within the last 3 months."
+            accept="image/*,application/pdf"
+            prepare={prepareKycDocument}
             onCapture={(f) => { update("billing", f); setError(null); }}
           />
           {error && <p className="font-mono text-xs text-red-400">// {error}</p>}
@@ -310,7 +379,7 @@ export default function KycVerify({ memberId, onComplete, onFail }: Props) {
       {subStep === "submitting" && (
         <div className="py-12 text-center space-y-3">
           <p className="font-mono text-sm text-cream animate-pulse">// uploading documents...</p>
-          <p className="font-mono text-xs text-mocha">capturing location data</p>
+          <p className="font-mono text-xs text-mocha">this can take a minute on a slow connection — keep this page open</p>
         </div>
       )}
     </div>
