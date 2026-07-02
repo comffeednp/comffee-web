@@ -57,6 +57,17 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
     >
       <head>
+        {/* Start every full page load at the top instead of restoring the previous
+            scroll. The app already jumps to top on client navigation (SmoothScroll),
+            and restoring a mid-page scroll on RELOAD raced the reveal-on-scroll
+            observers and left sections invisible — fine only in a fresh tab. Runs
+            during parse, before the browser would restore. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'if("scrollRestoration" in history){history.scrollRestoration="manual";}',
+          }}
+        />
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#0a0807" />
         <link rel="icon" href="/favicon-512.png" type="image/png" sizes="512x512" />
