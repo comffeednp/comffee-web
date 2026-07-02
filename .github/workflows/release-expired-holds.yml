@@ -1,0 +1,31 @@
+name: Release expired holds
+
+# Sweeps pending_hold reservations past hold_expires_at: reconciles paid-but-
+# webhook-missed bookings with PayMongo (rescues them to confirmed) and cancels
+# the rest. The route is written for a frequent cadence — this is the ONLY path
+# that confirms a guest who paid but closed the page before our webhook landed.
+# GitHub Actions because Vercel free cron is daily-only (the vercel.json entry
+# stays as a daily backstop; deploying a */10 schedule there FAILS the build —
+# learned 2026-07-02).
+#
+# Required GitHub repo secrets (already used by chat-escalations / daily-cleanup):
+#   SITE_URL     - e.g. https://www.comffee.org
+#   CRON_SECRET  - same value as the CRON_SECRET in Vercel env vars
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger expired-hold sweep
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/release-expired-holds" \
+            | tee out.json
+          echo
+          cat out.json | grep -q '"ok":true' || (echo "sweep failed" && exit 1)

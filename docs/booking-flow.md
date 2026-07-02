@@ -236,8 +236,11 @@ A guest reported a **network error while uploading verification documents**
 - `BookingClient.tsx`: create-intent response parsed defensively (no more raw
   `Unexpected token '<'` shown to guests); "Try again" resumes at review when
   KYC is already done instead of restarting all 5 steps.
-- `vercel.json`: `release-expired-holds` was scheduled DAILY (`0 0 * * *`) —
-  the route itself is written for a 5-min cadence and is the only rescue for
-  paid-but-webhook-missed bookings when the guest closed the page. Now
-  `*/10 * * * *`. (The calendar itself was never poisoned: availability filters
-  expired holds and `createHold` pre-sweeps them inline.)
+- `release-expired-holds` cadence: the Vercel cron was DAILY (`0 0 * * *`) but
+  the route is written for a 5-min cadence and is the only rescue for
+  paid-but-webhook-missed bookings when the guest closed the page. A `*/10`
+  schedule in `vercel.json` FAILS the deploy (Vercel free cron is daily-only —
+  that's why chat-escalations already lives in GitHub Actions), so the 10-min
+  sweep is now `.github/workflows/release-expired-holds.yml`, with the daily
+  Vercel cron kept as a backstop. (The calendar itself was never poisoned:
+  availability filters expired holds and `createHold` pre-sweeps them inline.)
