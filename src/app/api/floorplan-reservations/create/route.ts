@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { guardMutating } from "@/lib/security";
 import { getBranchPaymentConfig, isPaymongoReservationActive } from "@/lib/branch-payment-config";
 import { createCheckoutSession, bookingPaymentMethods } from "@/lib/paymongo";
+import { settleFloorplanPendings } from "@/lib/floorplan-settle";
 
 export const runtime = "nodejs";
 
@@ -77,6 +78,10 @@ export async function POST(request: Request) {
   if (isFuture && !el.accept_advance) {
     return NextResponse.json({ error: "advance_not_allowed" }, { status: 400 });
   }
+
+  // Settle stale unpaid holds first so an abandoned checkout can't keep blocking this window
+  // (verified-paid ones get confirmed by the same sweep). Bounded; no-op when nothing is stale.
+  await settleFloorplanPendings({ branchId: v.branchId, staleOnly: true }).catch(() => {});
 
   // No double-book: reject overlap with another pending/confirmed online reservation on this spot.
   const { data: clash } = await supabase
@@ -155,7 +160,9 @@ export async function POST(request: Request) {
       description: `Comffee reservation · ${branch.name} · ${el.label}`,
       lineItemName: `${el.label} (${v.durationMin} min)`,
       paymentMethodTypes: bookingPaymentMethods(amountPhp),
-      successUrl: `${siteUrl()}/branches/${branch.slug}?reserved=1`,
+      // fr=<id> lets the branch page poll [id]/status on return — that poll is what confirms the
+      // booking and shows the customer their reservation code (webhooks can't do it per-branch).
+      successUrl: `${siteUrl()}/branches/${branch.slug}?reserved=1&fr=${created.id}`,
       cancelUrl: `${siteUrl()}/branches/${branch.slug}`,
       remarks: `floorplan_reservation:${created.id}`,
       secretKey: config!.paymongo_secret_key!,

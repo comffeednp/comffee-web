@@ -187,6 +187,66 @@ export async function createCheckoutSession(
   };
 }
 
+// Retrieved Checkout Session, reduced to the one question callers ask: was it paid?
+// PayMongo's paid signals vary by flow, so the parser accepts every shape we've seen:
+// payments[] entries as bare Payment resources OR wrapped in {data}, and the backing
+// payment_intent reaching 'succeeded'. Exported (pure) so tests can pin each shape.
+export interface RetrievedCheckoutSession {
+  id: string;
+  status: string; // 'active' | 'expired' | ...
+  paid: boolean;
+  paymentId: string | null;
+}
+
+interface CheckoutSessionJson {
+  data?: {
+    id?: string;
+    attributes?: {
+      status?: string;
+      payments?: Array<{
+        id?: string;
+        attributes?: { status?: string };
+        data?: { id?: string; attributes?: { status?: string } };
+      }>;
+      payment_intent?: { id?: string; attributes?: { status?: string } } | null;
+    };
+  };
+}
+
+export function checkoutSessionPaid(json: CheckoutSessionJson): { paid: boolean; paymentId: string | null } {
+  const attrs = json?.data?.attributes ?? {};
+  for (const p of attrs.payments ?? []) {
+    if (p?.attributes?.status === "paid") return { paid: true, paymentId: p?.id ?? null };
+    if (p?.data?.attributes?.status === "paid") return { paid: true, paymentId: p?.data?.id ?? null };
+  }
+  if (attrs.payment_intent?.attributes?.status === "succeeded") {
+    return { paid: true, paymentId: null };
+  }
+  return { paid: false, paymentId: null };
+}
+
+/**
+ * Retrieve a Checkout Session and report whether it was paid. Throws on any API/network
+ * failure — callers must treat a throw as "couldn't verify", NEVER as "not paid".
+ */
+export async function retrieveCheckoutSession(
+  id: string,
+  secretKey?: string,
+): Promise<RetrievedCheckoutSession> {
+  const res = await fetch(`${API_BASE}/checkout_sessions/${id}`, {
+    headers: { Authorization: authHeader(secretKey) },
+  });
+  if (!res.ok) throw new Error(`PayMongo get checkout failed: ${res.status}`);
+  const json = (await res.json()) as CheckoutSessionJson;
+  const { paid, paymentId } = checkoutSessionPaid(json);
+  return {
+    id: json?.data?.id ?? id,
+    status: json?.data?.attributes?.status ?? "",
+    paid,
+    paymentId,
+  };
+}
+
 /** The methods a booking pay-page should offer for a given amount.
  *
  * QRPh is the base (owner activated QRPh, NOT individual gcash/maya/grab_pay — 2026-06-01). It's the

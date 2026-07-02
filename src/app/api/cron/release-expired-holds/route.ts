@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getPaymentLink, isPaymongoConfigured } from "@/lib/paymongo";
 import { confirmAndNotifyReservation } from "@/lib/booking-confirm";
+import { settleFloorplanPendings } from "@/lib/floorplan-settle";
 
 export const runtime = "nodejs";
 
@@ -83,7 +84,18 @@ async function handleSweep() {
     released++;
   }
 
-  return { ok: true, released, rescued, skipped, errors: errors.length ? errors : undefined };
+  // PS5/table floor-plan reservations ride the same sweep: per-branch PayMongo accounts have no
+  // webhook into us, so this is the safety net that confirms a PAID booking whose customer never
+  // came back to the branch page (and expires stale unpaid holds). staleOnly=false so a paid
+  // booking is rescued within ~10 min, not 20.
+  let floorplan: { checked: number; confirmed: number; expired: number } | undefined;
+  try {
+    floorplan = await settleFloorplanPendings({ staleOnly: false });
+  } catch (e) {
+    errors.push(`floorplan sweep: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  return { ok: true, released, rescued, skipped, floorplan, errors: errors.length ? errors : undefined };
 }
 
 function isAuthorized(request: Request): boolean {

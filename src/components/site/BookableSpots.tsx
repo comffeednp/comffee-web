@@ -124,6 +124,17 @@ export default function BookableSpots({
   // through the per-second tick so an open dropdown doesn't churn; live `now` still gates the Pay button.
   const [bNow, setBNow] = useState(() => Date.now());
 
+  // Return-from-checkout (?fr=<reservation id> on PayMongo's success URL): poll the status route —
+  // that poll is what CONFIRMS a paid booking (per-branch PayMongo has no webhook into us) — then
+  // show the customer their reservation code. The cron sweep still confirms if they never return.
+  const [payRes, setPayRes] = useState<{
+    id: string;
+    state: "checking" | "confirmed" | "failed" | "slow";
+    code?: string | null;
+    label?: string | null;
+    startAt?: string | null;
+  } | null>(null);
+
   const canBook = (el: FloorplanElement) => !!(el.reservable && el.accept_online);
 
   async function loadAvailability(el: FloorplanElement) {
@@ -198,6 +209,47 @@ export default function BookableSpots({
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Pick up ?fr=<id> once on mount, then strip it from the URL so refresh/back doesn't re-open.
+  useEffect(() => {
+    const fr = new URLSearchParams(window.location.search).get("fr");
+    if (!fr || !/^[0-9a-f-]{36}$/i.test(fr)) return;
+    const u = new URL(window.location.href);
+    u.searchParams.delete("fr");
+    u.searchParams.delete("reserved");
+    window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    setPayRes({ id: fr, state: "checking" });
+  }, []);
+
+  // Poll while "checking": confirmed → show code; expired/cancelled → released message; after ~30s
+  // of pending → "still processing" (the 10-min cron finishes the job server-side).
+  useEffect(() => {
+    if (!payRes || payRes.state !== "checking") return;
+    const id = payRes.id;
+    let stop = false;
+    let tries = 0;
+    let t: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      tries++;
+      try {
+        const r = await fetch(`/api/floorplan-reservations/${id}/status`, { cache: "no-store" });
+        const j = await r.json();
+        if (stop) return;
+        if (r.ok && j.status === "confirmed") {
+          setPayRes({ id, state: "confirmed", code: j.reservationCode, label: j.elementLabel, startAt: j.startAt });
+          return;
+        }
+        if (!r.ok || j.status === "expired" || j.status === "cancelled") {
+          setPayRes({ id, state: "failed" });
+          return;
+        }
+      } catch { /* transient — keep polling */ }
+      if (tries >= 10) { setPayRes({ id, state: "slow" }); return; }
+      t = setTimeout(poll, 3000);
+    };
+    t = setTimeout(poll, 300);
+    return () => { stop = true; clearTimeout(t); };
+  }, [payRes]);
 
   // Poll the branch's live fields so a session a staffer just started appears within seconds.
   useEffect(() => {
@@ -419,6 +471,65 @@ export default function BookableSpots({
                 {bBusy ? "…" : book.billing_mode === "time_rate" ? "Pay & reserve" : "Reserve"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {payRes && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => payRes.state !== "checking" && setPayRes(null)}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-bg-card p-6 border border-line text-center" onClick={(e) => e.stopPropagation()}>
+            {payRes.state === "checking" && (
+              <>
+                <h3 className="font-display text-2xl font-bold text-cream">Checking your payment…</h3>
+                <p className="mt-2 text-sm text-cream-dim">One moment — we&apos;re confirming it with the payment provider.</p>
+              </>
+            )}
+            {payRes.state === "confirmed" && (
+              <>
+                <h3 className="font-display text-2xl font-bold text-phosphor">Reservation confirmed!</h3>
+                <p className="mt-2 text-sm text-cream-dim">
+                  {payRes.label || "Your spot"}
+                  {payRes.startAt
+                    ? ` · ${new Date(payRes.startAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, ${fmtClock(new Date(payRes.startAt))}`
+                    : ""}
+                </p>
+                {payRes.code && (
+                  <>
+                    <p className="mt-4 font-mono text-4xl font-bold tracking-[0.3em] text-cream">{payRes.code}</p>
+                    <p className="mt-2 text-xs text-cream-dim">Your reservation code — show it at the counter when you arrive.</p>
+                  </>
+                )}
+              </>
+            )}
+            {payRes.state === "failed" && (
+              <>
+                <h3 className="font-display text-2xl font-bold text-amber">Reservation not completed</h3>
+                <p className="mt-2 text-sm text-cream-dim">
+                  This booking wasn&apos;t paid in time, so its slot was released. If you already paid,
+                  don&apos;t worry — the payment is recorded on the cafe&apos;s side; give your name at the counter.
+                </p>
+              </>
+            )}
+            {payRes.state === "slow" && (
+              <>
+                <h3 className="font-display text-2xl font-bold text-cream">Payment still processing</h3>
+                <p className="mt-2 text-sm text-cream-dim">
+                  We haven&apos;t seen the payment land yet. If you paid, your booking confirms automatically
+                  within a few minutes and the cafe will see it — you can also give your name at the counter.
+                </p>
+              </>
+            )}
+            <button
+              className="mt-5 w-full rounded-lg bg-phosphor py-2 font-semibold text-bg disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setPayRes(null)}
+              disabled={payRes.state === "checking"}
+              title="Close"
+            >
+              {payRes.state === "checking" ? "…" : "Done"}
+            </button>
           </div>
         </div>
       )}

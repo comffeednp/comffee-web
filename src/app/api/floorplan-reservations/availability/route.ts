@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { settleFloorplanPendings } from "@/lib/floorplan-settle";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ export async function GET(request: Request) {
   }
 
   const supabase = getSupabaseAdmin();
+  // Settle stale unpaid holds first so the "already reserved" list doesn't show dead checkouts.
+  await settleFloorplanPendings({ branchId, staleOnly: true }).catch(() => {});
   const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // include a session that's ending now
   const { data, error } = await supabase
     .from("floorplan_reservations")
