@@ -10,6 +10,7 @@ import ConfirmedAnimation from "@/components/booking/ConfirmedAnimation";
 import BookingConfirmedNotifier from "@/components/booking/BookingConfirmedNotifier";
 import ReservationStatusPoller from "@/components/booking/ReservationStatusPoller";
 import { getPaymentLink, isPaymongoConfigured } from "@/lib/paymongo";
+import { signChatSessionToken } from "@/lib/lookup-token";
 import { Calendar, MapPin, Power, QrCode, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -79,13 +80,19 @@ export default async function ConfirmedPage({
 
   return (
     <section className="relative min-h-[80vh] py-20 md:py-32 overflow-hidden">
-      <BookingConfirmedNotifier
-        reservationId={reservationId}
-        branchId={(reservation as { branch_id?: string }).branch_id ?? ""}
-        branchName={branch.name}
-        checkIn={reservation.check_in}
-        checkOut={reservation.check_out}
-      />
+      {/* Only when ACTUALLY confirmed — the notifier posts "✓ Booking confirmed!"
+          into chat, which must never fire for an unpaid hold or a booking still
+          waiting on owner approval. */}
+      {isConfirmed && (
+        <BookingConfirmedNotifier
+          reservationId={reservationId}
+          branchId={(reservation as { branch_id?: string }).branch_id ?? ""}
+          branchName={branch.name}
+          checkIn={reservation.check_in}
+          checkOut={reservation.check_out}
+          sessionToken={signChatSessionToken(reservationId)}
+        />
+      )}
       <ReservationStatusPoller reservationId={reservationId} initialStatus={reservation.status} />
       <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none" />
       <div className="container-edge relative">

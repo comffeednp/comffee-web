@@ -16,6 +16,8 @@ import { confirmReservation } from "@/lib/reservations";
 import { sendBookingConfirmation, sendNewReservationToAdmins } from "@/lib/email";
 import { listInstructionPhotos } from "@/lib/branch-instructions";
 import { formatRange } from "@/lib/dates";
+import { findOrCreateConversation } from "@/lib/chat";
+import { signChatSessionToken } from "@/lib/lookup-token";
 
 export interface ConfirmableReservation {
   id: string;
@@ -81,23 +83,40 @@ export async function sendReservationConfirmationEmail(reservation: ConfirmableR
 }
 
 /**
- * Post a "your booking is confirmed" message into the guest's in-app chat
- * thread (keyed by member_id, like notifyOwnerOfBookingRequest). Idempotent —
- * skips if a confirmation message already exists in the thread, so it never
- * doubles up with the client-side /api/chat/booking-confirmed nudge. Best-effort.
+ * Open (or find) the booking's chat thread and post the "your booking is
+ * confirmed" message into it. The thread is keyed by a deterministic
+ * per-reservation session token (signChatSessionToken), so EVERY confirmed
+ * booking gets a conversation the moment payment lands — the admin inbox shows
+ * it immediately, and the guest's browser adopts the same token on the
+ * confirmed page (BookingConfirmedNotifier). Previously this only posted into
+ * a pre-existing member thread, so a guest who had never opened chat got no
+ * conversation on either side (Imus booking, 2026-07-02). Idempotent — skips
+ * if a confirmation message already exists in the thread, so it never doubles
+ * up with the client-side /api/chat/booking-confirmed nudge. Best-effort.
  */
 export async function postBookingConfirmedChat(reservation: ConfirmableReservation): Promise<void> {
-  if (!reservation.member_id) return;
   try {
+    const token = signChatSessionToken(reservation.id);
+    if (!token) return; // no HMAC secret configured — cannot key a booking thread
     const supabase = getSupabaseAdmin();
-    const { data: conv } = await supabase
-      .from("chat_conversations")
-      .select("id, customer_name")
-      .eq("member_id", reservation.member_id)
-      .order("last_message_at", { ascending: false })
-      .limit(1)
+
+    const { data: branchRow } = await supabase
+      .from("branches")
+      .select("name")
+      .eq("id", reservation.branch_id)
       .maybeSingle();
-    if (!conv) return; // guest has no chat thread yet — nothing to post into
+
+    const conv = await findOrCreateConversation(
+      token,
+      reservation.guest_name ?? undefined,
+      reservation.branch_id,
+      (branchRow as { name?: string } | null)?.name,
+      reservation.check_in,
+      reservation.check_out,
+      undefined,
+      reservation.member_id ?? undefined,
+      reservation.guest_email ?? undefined,
+    );
 
     // Name the thread after the guest so the admin inbox doesn't show "Anonymous".
     if (!conv.customer_name && reservation.guest_name) {

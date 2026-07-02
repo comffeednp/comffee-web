@@ -9,6 +9,13 @@ interface Props {
   branchName: string;
   checkIn: string;
   checkOut: string;
+  /**
+   * Deterministic per-reservation chat token computed server-side
+   * (signChatSessionToken). The payment webhook opens the booking's thread
+   * under this token; adopting it here makes the guest's widget show the SAME
+   * thread the admin already sees — instead of creating a parallel one.
+   */
+  sessionToken?: string;
 }
 
 const SESSIONS_KEY = "comffe.chat.sessions";
@@ -43,7 +50,7 @@ function upsertSession(entry: SessionEntry) {
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(rest.slice(0, 20)));
 }
 
-export default function BookingConfirmedNotifier({ reservationId, branchId, branchName, checkIn, checkOut }: Props) {
+export default function BookingConfirmedNotifier({ reservationId, branchId, branchName, checkIn, checkOut, sessionToken: bookingToken }: Props) {
   useEffect(() => {
     const firedKey = `comffe.notified.${reservationId}`;
     if (typeof window === "undefined" || localStorage.getItem(firedKey)) return;
@@ -61,55 +68,59 @@ export default function BookingConfirmedNotifier({ reservationId, branchId, bran
         }
       } catch {}
 
-      // Try to find an existing session token for this booking
+      // Prefer the booking's own deterministic token (the webhook opens the
+      // thread under it). Fallback for a missing prop: an existing inquiry
+      // session from this browser, so we never strand the nudge.
+      let sessionToken: string | null = bookingToken || null;
       const inquiryKey = getInquiryKey(branchId, checkIn, checkOut);
-      const candidateKeys = [
-        inquiryKey,
-        getInquiryKey(undefined, checkIn, checkOut),
-        "comffe.chat.v2.general",
-      ];
-
-      let sessionToken: string | null = null;
-      for (const key of candidateKeys) {
-        try {
-          const stored = JSON.parse(localStorage.getItem(key) ?? "null") as { sessionToken?: string } | null;
-          if (stored?.sessionToken) { sessionToken = stored.sessionToken; break; }
-        } catch {}
+      if (!sessionToken) {
+        const candidateKeys = [
+          inquiryKey,
+          getInquiryKey(undefined, checkIn, checkOut),
+          "comffe.chat.v2.general",
+        ];
+        for (const key of candidateKeys) {
+          try {
+            const stored = JSON.parse(localStorage.getItem(key) ?? "null") as { sessionToken?: string } | null;
+            if (stored?.sessionToken) { sessionToken = stored.sessionToken; break; }
+          } catch {}
+        }
       }
 
-      // No prior session — create one now so the booking always appears in chat
-      if (!sessionToken) {
-        try {
-          const startRes = await fetch("/api/chat/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              customerName: authName || undefined,
-              branchId: branchId || undefined,
+      // find-or-create the thread under that token (webhook may have created
+      // it already; whoever runs first wins, the other finds the same thread)
+      // and learn its conversationId so the widget can list it.
+      try {
+        const startRes = await fetch("/api/chat/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionToken: sessionToken || undefined,
+            customerName: authName || undefined,
+            branchId: branchId || undefined,
+            branchName: branchName || undefined,
+            checkIn: checkIn || undefined,
+            checkOut: checkOut || undefined,
+            avatarUrl: avatarUrl || undefined,
+          }),
+        });
+        if (startRes.ok) {
+          const data = await startRes.json() as { sessionToken?: string; conversationId?: string };
+          if (data.sessionToken && data.conversationId) {
+            sessionToken = data.sessionToken;
+            localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken, name: authName || undefined }));
+            upsertSession({
+              key: inquiryKey,
+              sessionToken,
+              conversationId: data.conversationId,
               branchName: branchName || undefined,
               checkIn: checkIn || undefined,
               checkOut: checkOut || undefined,
-              avatarUrl: avatarUrl || undefined,
-            }),
-          });
-          if (startRes.ok) {
-            const data = await startRes.json() as { sessionToken?: string; conversationId?: string };
-            if (data.sessionToken && data.conversationId) {
-              sessionToken = data.sessionToken;
-              localStorage.setItem(inquiryKey, JSON.stringify({ sessionToken, name: authName || undefined }));
-              upsertSession({
-                key: inquiryKey,
-                sessionToken,
-                conversationId: data.conversationId,
-                branchName: branchName || undefined,
-                checkIn: checkIn || undefined,
-                checkOut: checkOut || undefined,
-                updatedAt: new Date().toISOString(),
-              });
-            }
+              updatedAt: new Date().toISOString(),
+            });
           }
-        } catch {}
-      }
+        }
+      } catch {}
 
       if (!sessionToken) return;
 
