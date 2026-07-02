@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { marked } from "marked";
+import { mdToSafeHtml } from "@/lib/markdown";
 import { getBranchBySlug } from "@/lib/branches";
 import HeroParallax from "@/components/site/HeroParallax";
 import PhotoStrip from "@/components/site/PhotoStrip";
@@ -187,7 +187,7 @@ export default async function PartnerCafeDetailPage({
             <Reveal delay={0.1}>
               <div
                 className="prose-comffe"
-                dangerouslySetInnerHTML={{ __html: marked(branch.description_md) }}
+                dangerouslySetInnerHTML={{ __html: mdToSafeHtml(branch.description_md) }}
               />
             </Reveal>
           </div>

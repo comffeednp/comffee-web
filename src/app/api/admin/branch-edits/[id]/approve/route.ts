@@ -180,10 +180,18 @@ export async function POST(
   // 2) Replace photos/amenities/rates. DELETE-then-INSERT is simpler than diffing; OK because
   //    the payload always carries the FULL list (read-only stage's POS already pulls the full set
   //    and edits it as one block).
+  //    EVERY write is CHECKED (2026-07-02): these used to be fire-and-forget, so a failed insert
+  //    after a successful delete silently wiped the branch's photos/amenities/rates while the
+  //    submission was still marked approved. Now any failure returns 500 and the submission STAYS
+  //    'pending' (step 3 never runs) — a retry re-applies the full replace and converges, which is
+  //    the retry-safety this route's design promises.
+  const replaceFailed = (what: string, detail?: string) =>
+    NextResponse.json({ ok: false, error: `${what}_replace_failed`, detail }, { status: 500 });
   if (Array.isArray(payload.photos)) {
-    await admin.from("branch_photos").delete().eq("branch_id", branchId);
+    const { error: delErr } = await admin.from("branch_photos").delete().eq("branch_id", branchId);
+    if (delErr) return replaceFailed("photos", delErr.message);
     if (payload.photos.length) {
-      await admin.from("branch_photos").insert(
+      const { error: insErr } = await admin.from("branch_photos").insert(
         payload.photos.map((p, i) => ({
           branch_id: branchId,
           storage_path: p.storage_path ?? "",
@@ -192,12 +200,14 @@ export async function POST(
           sort_order: p.sort_order ?? i,
         })),
       );
+      if (insErr) return replaceFailed("photos", insErr.message);
     }
   }
   if (Array.isArray(payload.amenities)) {
-    await admin.from("branch_amenities").delete().eq("branch_id", branchId);
+    const { error: delErr } = await admin.from("branch_amenities").delete().eq("branch_id", branchId);
+    if (delErr) return replaceFailed("amenities", delErr.message);
     if (payload.amenities.length) {
-      await admin.from("branch_amenities").insert(
+      const { error: insErr } = await admin.from("branch_amenities").insert(
         payload.amenities.map((a, i) => ({
           branch_id: branchId,
           icon: a.icon ?? "sparkles",
@@ -206,12 +216,14 @@ export async function POST(
           sort_order: a.sort_order ?? i,
         })),
       );
+      if (insErr) return replaceFailed("amenities", insErr.message);
     }
   }
   if (Array.isArray(payload.rates)) {
-    await admin.from("branch_rates").delete().eq("branch_id", branchId);
+    const { error: delErr } = await admin.from("branch_rates").delete().eq("branch_id", branchId);
+    if (delErr) return replaceFailed("rates", delErr.message);
     if (payload.rates.length) {
-      await admin.from("branch_rates").insert(
+      const { error: insErr } = await admin.from("branch_rates").insert(
         payload.rates.map((r, i) => ({
           branch_id: branchId,
           category: r.category ?? "internet",
@@ -222,12 +234,15 @@ export async function POST(
           sort_order: r.sort_order ?? i,
         })),
       );
+      if (insErr) return replaceFailed("rates", insErr.message);
     }
   }
 
   // 3) Mark submission approved + bind to branchId (covers the "new branch" case where
-  //    branch_id was null before).
-  await admin
+  //    branch_id was null before). Checked: if this fails the changes ARE applied but the
+  //    submission still shows pending — surfacing the error lets the admin just re-approve
+  //    (the full-replace apply is idempotent) instead of silently seeing a stuck "pending".
+  const { error: markErr } = await admin
     .from("branch_edit_submissions")
     .update({
       status: "approved",
@@ -236,6 +251,12 @@ export async function POST(
       branch_id: branchId,
     })
     .eq("id", id);
+  if (markErr) {
+    return NextResponse.json(
+      { ok: false, error: "submission_mark_failed", detail: markErr.message },
+      { status: 500 },
+    );
+  }
 
   // Refresh the public pages that may have changed (their slug → page revalidation).
   revalidatePath("/branches");

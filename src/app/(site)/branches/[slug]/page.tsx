@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { marked } from "marked";
+import { mdToSafeHtml } from "@/lib/markdown";
 import { getAllBranchSlugs, getBranchBySlug } from "@/lib/branches";
 import { getPCStationsForBranch } from "@/lib/pc-stations";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -268,7 +268,7 @@ export default async function BranchDetailPage({
             <Reveal delay={0.1}>
               <div
                 className="prose-comffe"
-                dangerouslySetInnerHTML={{ __html: marked(branch.description_md) }}
+                dangerouslySetInnerHTML={{ __html: mdToSafeHtml(branch.description_md) }}
               />
             </Reveal>
           </div>
